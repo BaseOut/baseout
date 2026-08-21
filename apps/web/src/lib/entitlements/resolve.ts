@@ -19,10 +19,12 @@ import {
   addonCatalog,
   addonPurchases,
   features,
+  organizationMembers,
   planFeatures,
   plans,
   subscriptionItems,
   subscriptions,
+  users,
 } from '../../db/schema'
 import {
   composeEntitlements,
@@ -30,6 +32,7 @@ import {
   type FeatureValueType,
   type MeterKind,
 } from '@baseout/db-schema'
+import { isInternalEmail } from '../capabilities/internal-access'
 
 export interface EntitlementResolution {
   planId: string
@@ -37,11 +40,84 @@ export interface EntitlementResolution {
   entitlements: EntitlementMap
 }
 
+/**
+ * Internal product unlock: only owner/admin membership counts. Inviting an
+ * Openside staffer as a member of a customer org must not grant that customer
+ * enterprise entitlements.
+ */
+async function orgIsInternal(db: AppDb, organizationId: string): Promise<boolean> {
+  const rows = await db
+    .select({ email: users.email })
+    .from(organizationMembers)
+    .innerJoin(users, eq(users.id, organizationMembers.userId))
+    .where(
+      and(
+        eq(organizationMembers.organizationId, organizationId),
+        inArray(organizationMembers.role, ['owner', 'admin']),
+      ),
+    )
+  return rows.some((r) => isInternalEmail(r.email))
+}
+
+async function resolvePlanEntitlements(
+  db: AppDb,
+  planRow: { planId: string; planSlug: string },
+  now: Date,
+): Promise<EntitlementResolution> {
+  const planFeatureRows = await db
+    .select({
+      slug: features.slug,
+      valueType: features.valueType,
+      enumValues: features.enumValues,
+      meterable: features.meterable,
+      meterKind: features.meterKind,
+      valueBool: planFeatures.valueBool,
+      valueNumeric: planFeatures.valueNumeric,
+      valueEnum: planFeatures.valueEnum,
+    })
+    .from(planFeatures)
+    .innerJoin(features, eq(features.id, planFeatures.featureId))
+    .where(eq(planFeatures.planId, planRow.planId))
+
+  const entitlements = composeEntitlements({
+    features: planFeatureRows.map((r) => ({
+      slug: r.slug,
+      valueType: r.valueType as FeatureValueType,
+      enumValues: (r.enumValues as string[] | null) ?? null,
+      meterable: r.meterable,
+      meterKind: (r.meterKind as MeterKind | null) ?? null,
+    })),
+    planFeatures: planFeatureRows.map((r) => ({
+      featureSlug: r.slug,
+      valueBool: r.valueBool,
+      valueNumeric: r.valueNumeric,
+      valueEnum: r.valueEnum,
+    })),
+    overrides: [],
+    addons: [],
+    now,
+  })
+
+  return { planId: planRow.planId, planSlug: planRow.planSlug, entitlements }
+}
+
 export async function resolveEntitlements(
   db: AppDb,
   organizationId: string,
   now: Date = new Date(),
 ): Promise<EntitlementResolution | null> {
+  if (await orgIsInternal(db, organizationId)) {
+    const [enterprisePlan] = await db
+      .select({ planId: plans.id, planSlug: plans.slug })
+      .from(plans)
+      .where(eq(plans.slug, 'enterprise'))
+      .limit(1)
+
+    if (enterprisePlan) {
+      return resolvePlanEntitlements(db, enterprisePlan, now)
+    }
+  }
+
   // 1. The org's active plan — V1 has a single platform item carrying plan_id.
   const [planRow] = await db
     .select({ planId: plans.id, planSlug: plans.slug })

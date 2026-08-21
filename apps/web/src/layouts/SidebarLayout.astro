@@ -1,17 +1,12 @@
 ---
-import { env } from 'cloudflare:workers';
 import Layout from './Layout.astro';
 import Sidebar from '../components/patterns/AppShellSidebar.astro';
 import Header  from '../components/patterns/AppShellHeader.astro';
 import Inbox   from '../components/layout/Inbox.astro';
-import ConnectionHealthBanner from '../components/patterns/ConnectionHealthBanner.astro';
-import ConnectionHealthPill from '../components/patterns/ConnectionHealthPill.astro';
+import InboxOverlay from './InboxOverlay.astro';
+import ConnectionHealthChrome from './ConnectionHealthChrome.astro';
 import { getPageContext } from '../lib/config';
-import { getConnectionHealthSummary } from '../lib/integrations';
-import { deriveBannerProps } from '../lib/connection-health';
-import { createBackupEngine } from '../lib/backup-engine';
-import { fetchInboxItems } from '../lib/inbox-feed';
-import type { ConnectionBannerProps } from '../components/patterns/connection-health-banner';
+import { resolveLayoutInboxItems } from '../lib/shell-chrome';
 import type { NavItem, UserInfo, Breadcrumb } from '../lib/types';
 import { attentionCount, type InboxItem } from '../components/layout/inbox';
 
@@ -35,14 +30,20 @@ interface Props {
   breadcrumbs?:        Breadcrumb[];
 
   // Inbox — the notification center (see the `pattern-inbox` storybook entry).
-  // When omitted, the layout fans the engine-brokered feed out across the
-  // account's Spaces itself (web-notifications-inbox §5.1); pass an explicit
-  // array to override (previews/fixtures).
+  // Overlay chrome loads after first paint (InboxOverlay + server:defer). Pass
+  // an explicit array to override (the /inbox page, previews/fixtures).
   inboxItems?:         InboxItem[];
 
   // Page interior re-renders on Space switch when true.
   // Default false: switch updates the sidebar pill but leaves the page body alone.
   spaceScoped?:        boolean;
+
+  // Mount the sidebar-overlay Inbox dropdown. Default true — every page carries it.
+  // The /inbox page renders the SAME feed as a full page (InboxView) in its body,
+  // so it suppresses the overlay: two `[data-inbox]` panels would collide, and
+  // inbox-client wires the first one it finds. Suppressing leaves the page's panel
+  // as the sole `[data-inbox]`. (web-notifications-inbox full-page promotion.)
+  showInbox?:          boolean;
 }
 
 const ctx = getPageContext(Astro.locals);
@@ -51,45 +52,11 @@ const spacesState = {
   activeSpaceId: Astro.locals.account?.space?.id ?? null,
 };
 
-// App-wide connection-health banner, derived from the active org's connection
-// status. Guarded + best-effort: a banner-read failure must never break the
-// shell, so it degrades to no banner rather than throwing on every page.
-let bannerProps: ConnectionBannerProps | null = null;
-try {
-  const orgId = Astro.locals.account?.organization?.id;
-  if (orgId && Astro.locals.db) {
-    bannerProps = deriveBannerProps(await getConnectionHealthSummary(Astro.locals.db, orgId));
-  }
-} catch {
-  bannerProps = null;
-}
-
-// Inbox feed — engine-brokered per-Space alerts, fanned out IN PARALLEL across
-// the account's Spaces and merged newest-first with Space labels
-// (web-notifications-inbox §5.1). Guarded + best-effort like the banner above:
-// no account (marketing/auth pages) or no engine binding ⇒ skip entirely;
-// any failure or timeout degrades to [] and the panel's designed zero-states —
-// the feed must never block or error a page render.
-let resolvedInboxItems: InboxItem[] = Astro.props.inboxItems ?? [];
-if (Astro.props.inboxItems === undefined) {
-  try {
-    const accountSpaces = Astro.locals.account?.organization
-      ? (Astro.locals.account.spaces ?? [])
-      : [];
-    if (accountSpaces.length > 0 && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
-      const engine = createBackupEngine({
-        binding: env.BACKUP_ENGINE,
-        internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
-      });
-      resolvedInboxItems = await fetchInboxItems(
-        engine,
-        accountSpaces.map((s) => ({ id: s.id, name: s.name })),
-      );
-    }
-  } catch {
-    resolvedInboxItems = [];
-  }
-}
+// Overlay inbox is chrome, not page body — never await the engine fan-out here
+// (3s timeout hostage + viewport-prefetch amplification). InboxOverlay loads
+// it after first paint via server:defer. Pass `inboxItems` to skip that
+// (the /inbox page already fetched the same feed for the body).
+const resolvedInboxItems: InboxItem[] = resolveLayoutInboxItems(Astro.props.inboxItems);
 
 const {
   title,
@@ -107,6 +74,7 @@ const {
   breadcrumbs,
 
   spaceScoped   = false,
+  showInbox     = true,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
@@ -142,16 +110,22 @@ const inboxAttentionCount = attentionCount(resolvedInboxItems, new Date());
     <div class="relative flex flex-1 flex-col min-w-0">
       {/* The Inbox OVERLAYS the work area from its left edge — it never pushes the
           page narrower (at 1280px that hid ~340px of the Backups table). Still
-          non-modal: no scrim, no focus trap, the page behind stays interactive. */}
-      <Inbox items={resolvedInboxItems} />
+          non-modal: no scrim, no focus trap, the page behind stays interactive.
+          Suppressed on /inbox, where the same feed renders as a full page in the
+          body and a second `[data-inbox]` would collide with it. */}
+      {showInbox && (
+        <div transition:persist="baseout-inbox">
+          <InboxOverlay server:defer>
+            <Inbox items={[]} slot="fallback" />
+          </InboxOverlay>
+        </div>
+      )}
 
-      <Header>
-        {bannerProps?.state === 'broken' && (
-          <ConnectionHealthPill slot="topbar-status" {...bannerProps} />
-        )}
-      </Header>
+      <Header />
 
-      {bannerProps && <ConnectionHealthBanner {...bannerProps} bleed />}
+      <ConnectionHealthChrome server:defer>
+        <span slot="fallback" hidden></span>
+      </ConnectionHealthChrome>
 
       <script
         type="application/json"

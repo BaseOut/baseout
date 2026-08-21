@@ -1,0 +1,1319 @@
+---
+/**
+ * DataComments — the Data page's Comments tab (openspec `comments-explorer`, first slice).
+ *
+ * A date-ordered stream of every captured record comment across the Space, newest first,
+ * grouped by day. It is the THIRD feed on the shared changelog row grid
+ * (`pattern-changelog-timeline`, CSS in styles/global.css): node · Location · What · Type ·
+ * Time, remapped here to base › table › record · author + snippet · status · Airtable time.
+ * No second stream primitive — that reuse is the whole point of the CSS extraction that
+ * landed with this component.
+ *
+ * Deliberately OUT of this slice (each waits on a decision, and guessing would bake it in):
+ * the thread view / expansion mechanism, the records with/without-comments filter, and any
+ * retention or erasure copy. `reactions` is carried in the type and in the fixtures but is NOT
+ * rendered here. `attachments` IS rendered (founder, 2026-07-31) — see the Attachments column
+ * below and `pattern-changelog-timeline`'s 2026-07-31 addendum.
+ *
+ * Three things this surface must not overstate, all settled by Airtable's API rather than taste:
+ *  · There is no deleted flag on a comment, no comment webhook and no comment audit event. A
+ *    comment's absence is inferable only by diffing captures, and is indistinguishable from the
+ *    record leaving backup scope or from a missed capture window. So the badge reads
+ *    "Record deleted" (founder-named, 2026-07-31) with the last-seen date in its tooltip.
+ *  · There is no profile picture on a comment author, so there is no avatar. Identity is the
+ *    name → email → "Airtable user" chain and nothing else.
+ *  · `lastUpdatedTime` is non-null only after an edit and the previous text is never returned,
+ *    so "Edited" is an honest marker and a "view previous version" affordance would be a lie.
+ *
+ * Freshness is NOT stamped per tab: DataView already states "Synced as of …" once at page level
+ * and says it applies to every tab.
+ */
+import FacetFilter, { type FacetGroup } from '../schema/FacetFilter.astro';
+import { groupByWorkspace } from '../schema/workspaceGroups';
+import ExportControl from '../patterns/ExportControl.astro';
+import TablePager from '../ui/TablePager.astro';
+import DateRangePicker from '../ui/DateRangePicker.astro';
+import { fmtDay, fmtDayShort, fmtTime } from '../../lib/time';
+import Badge from '../ui/Badge.astro';
+import EmptyState from '../ui/EmptyState.astro';
+import { authorLabel, authorInitials, authorIsNamed, commentSnippet, commentStatus, COMMENT_STATUS_PAINT } from './commentText';
+import type { DataBase, DataTable, DataRecord, DataComment } from './dataTypes';
+import { entityIconMarkup, entityIconClass } from '../schema/entityIcon';
+
+interface Props {
+  bases: DataBase[];
+  tables: DataTable[];
+  comments: DataComment[];
+  /** Records in this backup — resolves a comment's record to its primary-field name. */
+  records: DataRecord[];
+  /** The Space's latest capture. A comment last seen BEFORE this has left the source since. */
+  lastSyncedAt?: string;
+}
+const { bases, tables, comments, records, lastSyncedAt } = Astro.props;
+
+const baseName = Object.fromEntries(bases.map((b) => [b.id, b.name]));
+const tableName = Object.fromEntries(tables.map((t) => [t.id, t.name]));
+const tableBase = Object.fromEntries(tables.map((t) => [t.id, t.baseId]));
+const recPrimary = Object.fromEntries(records.map((r) => [r.id, r.primary]));
+const multiBase = bases.length > 1;
+
+
+// Attachments column (founder, 2026-07-31): "an attachments column on the listing table". The
+// dense row gets a COUNT only — Mobbin evidence (Mercury, the closest analogue to this exact
+// dense-table + side-panel layout, ships no attachment column at all; ClickUp's is a count) says
+// nobody puts filenames in a table row. The tooltip is where the names actually live, truncated
+// so a comment with a dozen files doesn't grow an unreadable tooltip.
+const ATT_TIP_MAX = 6;
+const attachmentTip = (atts: NonNullable<DataComment['attachments']>): string => {
+  const names = atts.map((a, i) => a.filename || `Attachment ${i + 1}`);
+  if (names.length <= ATT_TIP_MAX) return names.join(', ');
+  return `${names.slice(0, ATT_TIP_MAX).join(', ')} +${names.length - ATT_TIP_MAX} more`;
+};
+
+// One row per comment, newest first, with everything the row + the filters need pre-resolved.
+// Resolution happens HERE and not in the fixture, because `primary` is not a field the Airtable
+// comment payload has — inventing one on the type would misrepresent the source.
+const rows = comments
+  .slice()
+  .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  .map((c) => {
+    const baseId = tableBase[c.tableId] ?? '';
+    // undefined = the commented record is not in this backup (the dangling-reference case). It is
+    // also what separates a certain deletion from an unverifiable one — see commentStatus.
+    const primary = recPrimary[c.recordId] as string | undefined;
+    return {
+      c,
+      baseId,
+      baseLabel: baseName[baseId] ?? baseId,
+      tableLabel: tableName[c.tableId] ?? c.tableId,
+      primary,
+      author: authorLabel(c.author),
+      authorNamed: authorIsNamed(c.author),
+      initials: authorInitials(c.author),
+      snippet: commentSnippet(c),
+      status: commentStatus(c, { recordCaptured: primary !== undefined, latestSyncAt: lastSyncedAt }),
+      attCount: c.attachments?.length ?? 0,
+      attTip: c.attachments?.length ? attachmentTip(c.attachments) : '',
+    };
+  });
+
+/**
+ * GROUP BY — Date · Base · Table (founder, 2026-08-04: "on comments, I wonder if we need a kind of
+ * a similar grouping option where you could group by base, table … Or the other option is by date.
+ * So maybe the grouping has date, base, or table").
+ *
+ * This is the answer to the question comments-explorer decision 2 left open — whether a stream
+ * sorted by something other than time should regroup — and it is answered by making the axis a
+ * control rather than by picking one for the user.
+ *
+ *  · THE SAME CONTROL AS ATTACHMENTS, not a second one. `single` + `end` + `labelTrigger`
+ *    FacetFilter, in the right cluster after the Export divider, keyed on its own facet name so
+ *    Clear never resets it and it never flips the "filters are active" state. See DataMedia.astro's
+ *    Group-by note for the full argument; it is not restated here, because two copies of a
+ *    rationale drift the same way two copies of a control do.
+ *  · NO `Record` option (founder ruled it out in the same sentence: "if we don't do record, maybe
+ *    just table is enough"), and for the reason Attachments already banked: a record carries one or
+ *    two comments, so grouping by record prints a heading per row — a wall of one-row groups is
+ *    strictly worse than no grouping. The record is the DESTINATION of the row, not a level of it.
+ *  · `None`, AND IT IS THE DEFAULT (D11 / J06-F5a, 2026-08-10 — this reverses the two bullets that
+ *    stood here). They read: "NO `None` … this feed has grouped by day since it shipped and has no
+ *    ungrouped state to return to", and "DATE IS THE DEFAULT". Both were arguments from what the
+ *    file already did, which is the one argument a convergence does not accept. The costs measured
+ *    in J06: there was no way to ungroup at all, so filtering to `Deleted` drew 15 rows inside
+ *    FOURTEEN one-row cards — the wall of headings that Record was rejected for, arriving through
+ *    the default; and the sibling tab one click away opens flat, so the same section answers "how
+ *    do I start" two ways. A retrieval surface starts flat: the reader came with a term, not with
+ *    an axis. Grouping is the thing you reach for once the list is too long to read, which is
+ *    exactly when you know which axis you want.
+ *    Date is not lost — it is one click, it is the first axis offered, and the day is now printed
+ *    on every row in the Time column whenever the cards are not carrying it (see the controller).
+ *  · The ungrouped state has NO ungrouped-only markup. `None` renders the same rows into the same
+ *    `.cl-entries` body, minus the card — so the rail, the row grid and the column header are one
+ *    arrangement drawn with or without a frame around it, not two feeds.
+ *  · EVERY AXIS DRAWS THE SAME CARD, DATE INCLUDED (Oleh, 2026-08-04 — the bare heading was "just a
+ *    label saying how much is inside"). Date was the one that could plausibly have stayed a
+ *    divider, and it is the one that must NOT: it is the default, so leaving it as a heading would
+ *    mean the arrangement almost everybody sees is the only one that never got the thing that was
+ *    asked for. The volume argument runs the same way — at 20 rows a page and ~37 comments a day,
+ *    a Date page carries ONE card or two, which is the lightest card stack of the three axes, not
+ *    the heaviest. The sparse fixture is the honest counter-case (15 comments over 5 days = five
+ *    small cards) and it is still five things you can fold rather than five labels you cannot.
+ *  · ONE AXIS AT A TIME. Grouping by Base or Table REMOVES the day headings rather than nesting
+ *    them: a base group split by day would print ~14 headings inside every card, which is the
+ *    heading-per-row failure the record option was rejected to avoid, arriving through the back
+ *    door. The date is still on every row, in the Time column, and Time-range filtering is
+ *    untouched.
+ */
+const groupGroups: FacetGroup[] = [
+  { items: [
+    { value: '', label: 'None' },
+    { value: 'date', label: 'Date', icon: 'lucide--calendar-days' },
+    { value: 'base', label: 'Base', icon: entityIconClass('base') },
+    { value: 'table', label: 'Table', icon: entityIconClass('table') },
+  ] },
+];
+
+/**
+ * "Captured in last run" — the shared event preset, from the same `lastSyncedAt` that anchors the
+ * picker's relative windows. Identical construction to Attachments' (`DataMedia.astro`), and
+ * deliberately the identical LABEL: two tabs of one section asking the same question of the same
+ * backup must not word it two ways. Absent when the Space has no as-of, exactly as there.
+ */
+const eventPresets = lastSyncedAt ? [{ label: 'Captured in last run', from: lastSyncedAt }] : [];
+
+/**
+ * DAY, NOT MONTH (measured on the fixtures, 2026-08-04). The run picker chose MONTH this week for
+ * near-daily data, and the rule behind that choice — a heading earns its line only if it stands
+ * over more than a row or two — points the other way here: the volume fixture is 520 comments over
+ * 14 days, ~37 a day, so a day heading stands over roughly two full pages at the default size of
+ * 20. Month would collapse all 520 into ONE heading called "July 2026", which groups nothing.
+ * The sparse fixture (`?fixture=fewcomments`, 15 hand-written comments) is the honest counter-case
+ * and it still spans only a handful of days. Density decides, and this data is dense.
+ *
+ * D11 (2026-08-10): THE SERVER-RENDERED DEFAULT IS NOW FLAT, because the default axis is `None`.
+ * The day-bucketing loop that stood here is gone rather than kept behind a condition — the
+ * controller builds every arrangement from the same rows, including the day one, so a second
+ * build-time copy of that logic would have been the only thing on this surface with two
+ * implementations. What is server-rendered is still the DEFAULT arrangement and still needs no
+ * JavaScript to appear; the default just changed. The reasoning above is kept because it is still
+ * the reasoning for the DATE axis whenever the reader picks it.
+ */
+
+// Facets. Base groups by Airtable workspace, exactly as the other two feeds do.
+const baseGroups: FacetGroup[] = groupByWorkspace(bases).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  items: g.items.map((b) => ({ value: b.id, label: b.name })),
+}));
+const commentedTableIds = new Set(comments.map((c) => c.tableId));
+const tableGroups: FacetGroup[] = bases
+  .map((b) => ({
+    label: multiBase ? b.name : undefined,
+    items: tables.filter((t) => t.baseId === b.id && commentedTableIds.has(t.id)).map((t) => ({ value: t.id, label: t.name })),
+  }))
+  .filter((g) => g.items.length);
+// Authors are a facet of who is actually in the feed, labelled by the same fallback chain the
+// rows use — so a nameless author is filterable as "Airtable user" rather than being unreachable.
+const authorItems = [...new Map(comments.map((c) => [c.author.id, authorLabel(c.author)])).entries()]
+  .sort((a, b) => a[1].localeCompare(b[1]))
+  .map(([value, label]) => ({ value, label }));
+const authorGroups: FacetGroup[] = [{ items: authorItems }];
+// Status is a multi-select toggle, not a radio — filter facets are toggles app-wide.
+const statusGroups: FacetGroup[] = [{ items: [
+  { value: 'present', label: 'Active' },          // D19: the founder's word. Was 'In the last capture' — the same state under a second name.
+  { value: 'deleted', label: 'Deleted' },         // D19: matches the badge and the panel copy; 'in Airtable' is where, not what.
+  { value: 'recordDeleted', label: 'Record deleted' },
+] }];
+
+// Two different absences, worded apart. Collapsing them would trade a fact for a guess.
+const DELETED_TIP = 'Deleted in Airtable · preserved here. The record was captured again without this comment in its comment list, so we know it is gone rather than merely unseen.';
+// The badge drops the year to stay inside its column; the tooltip carries the full date, so the
+// short form is a shortening rather than a loss.
+// Named by the founder, 2026-07-31: "1) Active 2) Deleted 3) Record Deleted". Our wording had
+// hedged ("Last seen <date>") because we could not tell a deleted record from one that merely
+// left backup scope. He named the state, so the row states it — the last-seen date moves into
+// the tooltip, where it is context rather than the headline.
+const recordDeletedTip = (iso: string) =>
+  `The record this comment was on has been deleted, so the comment went with it. Last seen in the ${fmtDay(iso)} capture and preserved here.`;
+const EDITED_TIP = 'Edited in Airtable. Airtable never returns a comment’s previous text, so there is no earlier version to show.';
+
+// Location-column concept glyphs (2026-07-30) — matches the drawer breadcrumb (.sb-crumb-ic),
+// from the ONE shared entityIcon.ts mapping. Record has none yet (open, Oleh's call) — its column
+// intentionally carries no glyph.
+const BASE_IC = entityIconMarkup('base', { extraClass: 'cl-base-ic' });
+const TABLE_IC = entityIconMarkup('table', { extraClass: 'cl-loc-appic' });
+---
+
+<div class="cl cm" data-datacomments data-synced={lastSyncedAt ?? ''} data-multibase={multiBase ? '1' : '0'}>
+  {comments.length > 0 ? (
+    <>
+      {/* Toolbar — the shared .sch-tb pattern, same construction as the Changelog tab, plus the
+          two facets this feed adds: Author and Status. */}
+      <div class="sch-tb cl-filters">
+        {/* THE SEARCH SAYS WHAT IT SEARCHES, AND THE `/` SHORTCUT SAYS IT EXISTS (D11 / J06-F1).
+            This feed's haystack was already the broad one — the row's whole rendered text, which is
+            why Attachments was converged onto it and not the other way round — but the placeholder
+            said `Search comments…`, which describes the narrow version. Both tabs now name the
+            three things worth typing. `data-sch-search` is the hook `wireSectionTabs` looks for;
+            without it the `/` shortcut this page already ships silently did nothing on this tab. */}
+        <label class="input input-sm sch-tb-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" placeholder="Search comments, records, authors…" data-cm-search data-sch-search aria-label="Search comments, records and authors" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+        {multiBase && <FacetFilter label="Bases" name="cmbase" groups={baseGroups} groupToggles />}
+        <FacetFilter label="Tables" name="cmtable" groups={tableGroups} />
+        <FacetFilter label="Authors" name="cmauthor" groups={authorGroups} />
+        <FacetFilter label="Status" name="cmstatus" groups={statusGroups} />
+        {/* D09 item 3 — the same DateRangePicker Attachments and the Data changelog use, anchored
+            on this backup's as-of and printing that anchor on its own trigger.
+            D11 adds the LAST HALF THAT WAS STILL MISSING: `Captured in last run`. The control and
+            the anchor converged in D09; the preset did not, so the two tabs still offered different
+            answers to the same question. J06 called it "a genuinely good preset the Comments tab
+            should also have", and it is built from data both tabs already hold — the Space's own
+            as-of, which is on `data-synced` here and drives the anchor above. */}
+        <DateRangePicker name="cmdate" presets={[7, 30, 90]} eventPresets={eventPresets} anchor={lastSyncedAt ?? null} />
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-cm-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+        <div class="sch-tb-right">
+          <ExportControl tab="comments" format="csv" formats={['csv', 'json']} noun="comments" total={comments.length} rowSelector="[data-cm-entry]" />
+          {/* The divider says the cluster holds two KINDS of control, exactly as Attachments' does:
+              Export is an action that leaves with your data, Group by only rearranges what is
+              already on screen. Group by sits in the right cluster and NOT at the end of the
+              filters, because the filter row changes WHAT is in the list and this changes HOW it is
+              arranged — `pattern-toolbar`, "the left group narrows, the right cluster arranges".
+              `end` right-aligns the panel: without it a trigger this close to the edge opens a menu
+              that runs off the viewport. Same props as `mdgroup`, on purpose. */}
+          <span class="sch-tb-div" aria-hidden="true"></span>
+          <FacetFilter single end label="Group by" name="cmgroup" groups={groupGroups} labelTrigger />
+        </div>
+      </div>
+
+      {/* The stream — the shared .cl-* feed + row grid from global.css. */}
+      {/* `data-narrow-pan` — the shared narrow scroller plus the `minmax(max-content, 1fr)` track
+          that keeps this header the same width as its rows once the container scrolls. The audit
+          found the attribute had gone to four Schema containers and to none of the four Data tabs
+          (S08-F4); this is the second of the four to get it. */}
+      {/* `tbl-frame` — the shared listing surface, adopted rather than re-declared. Comments and
+          Records were the two Data tabs whose rows sat directly on the page ground while
+          Attachments and Changelog sat in the frame; four tabs of one section, two answers to
+          "what does a list sit on". A card against the ground measures 1.16:1 in light, which is a
+          surface boundary — without it the rows have nothing to be on. */}
+      <div class="tbl-frame cl-feed" data-cm-feed data-narrow-pan>
+        {/* Header labels carry a leading glyph, the same construction the Browse grid uses for its
+            field headers (`dg-th-ic`). With six columns of plain small-caps text the row read as
+            one run of words rather than as headings (Oleh, 2026-07-30); a glyph gives each label a
+            fixed anchor the eye can land on. Record reuses the canonical record glyph, so the
+            header and the concept agree. */}
+        {/* THE HEAD IS NO LONGER `aria-hidden`, AND IT SORTS (catalog `table`, "THE ONE RECIPE" —
+            its usageDont names this exact defect: "Don't render a static aria-hidden head over a
+            scrolling list of hundreds and call it a header — it cannot be sorted, and a screen
+            reader is told to ignore the only column labels on screen"). 547 comments were reachable
+            in exactly one order, and the labels naming the columns were explicitly hidden from
+            assistive tech.
+
+            The `data-sort-col` + `[data-sort-dir]` contract and the CSS caret are the app-wide ones
+            (global.css:1448); the behaviour is tableSort.ts, delegated by `closest('[data-sort-col]')`,
+            which is element-agnostic — this feed's head is a GRID row rather than a <thead>, and
+            the recipe says "`.tbl-colhead` on the <thead> OR the head row" for that reason. Making
+            it a real <table> is NOT possible inside this component: `.cl-fhead` / `.cl-entry` are the
+            shared changelog-timeline row grid (global.css:1624-1657) that Schema ▸ Changelog also
+            renders, so a table here would either break that feed or fork Comments onto a bespoke
+            second recipe — see the note at the top of the sort wiring below.
+
+            WHICH COLUMNS SORT — Location · Record · Author · Time, and the arithmetic decides the
+            rest rather than taste. The shared caret is a fixed cost of about 13px on every sortable
+            header (a 7px triangle plus its gap), paid whether or not that column is the active one.
+            This head's tracks are sized for the DATA, not the labels, and two of them are already
+            narrower than their own label: Files is 48px against a label that measures ~58px, and
+            Status is 44px against ~66px — both spill into the 24px column gap today. Adding 13px
+            more would push Status's label into Time's. Neither loses anything by staying static:
+            Status is a three-value axis the Status FACET already filters on (Active · Deleted ·
+            Record deleted, untouched), and Files is a 0-or-N marker, not an ordering. Comment is not
+            sortable either — alphabetising a message body answers no question anyone has. The two
+            spacer cells (rail node, chevron) carry no label and no sort. */}
+        <div class="tbl-colhead cl-fhead" role="group" aria-label="Sort comments">
+          <span></span>
+          <span><button type="button" class="cm-sortbtn" data-sort-col="0" aria-label="Sort by location"><span class="iconify lucide--database cm-th-ic" aria-hidden="true"></span>Location</button></span>
+          <span><button type="button" class="cm-sortbtn" data-sort-col="1" aria-label="Sort by record"><span class="iconify lucide--circle-dot cm-th-ic" aria-hidden="true"></span>Record</button></span>
+          <span><button type="button" class="cm-sortbtn" data-sort-col="2" aria-label="Sort by author"><span class="iconify lucide--user cm-th-ic" aria-hidden="true"></span>Author</button></span>
+          <span><span class="iconify lucide--message-square-text cm-th-ic" aria-hidden="true"></span>Comment</span>
+          <span><span class="iconify lucide--paperclip cm-th-ic" aria-hidden="true"></span>Files</span>
+          <span><span class="iconify lucide--activity cm-th-ic" aria-hidden="true"></span>Status</span>
+          <span class="cl-fh-end"><button type="button" class="cm-sortbtn" data-sort-col="3" aria-label="Sort by time"><span class="iconify lucide--clock cm-th-ic" aria-hidden="true"></span>When</button></span>
+          <span></span>
+        </div>
+        {/* The rows live in their own container — the shared `.grp-list` (global.css) — because the
+            controller repaints it from scratch on every filter, page and Group-by change; the same
+            arrangement Attachments uses (`[data-md-groups]`). The column header and the pager are
+            siblings of it and are never touched by a repaint. The rail is not a sibling either: it
+            belongs to the `.cl-entries` BODY, which is the card's body when there is a card and
+            this container's only child when there is not (see the is:global block).
+
+            WHAT IS SERVER-RENDERED IS THE DEFAULT ARRANGEMENT, AND THE DEFAULT IS NOW FLAT (D11).
+            One `.cl-entries` holding every row, no card — the same body a group card carries, so
+            the rail, the row grid and the column header above are one arrangement drawn with or
+            without a frame around it. The card, its collapse and its relocated rail are still
+            exactly as they were; they are just built by `paintGroups` when an axis is chosen, which
+            is now the only thing on this surface that builds one. */}
+        <div class="grp-list" data-cm-groups>
+          <div class="cl-entries">
+              {/* Each row carries its sort keys in the head row's column order, in the same
+                  `data-sort-<n>` vocabulary the Reports list uses — so no new sort attribute name
+                  enters the app. Location sorts on base › table (the trail as read), Record on the
+                  primary value with the dangling id as its own fallback, and Time on the millisecond
+                  stamp rather than the "3:42 PM" label the cell prints, which would sort 10 AM
+                  before 9 AM. */}
+              {rows.map((r) => (
+                <div
+                  class="cl-entry row-clickable"
+                  role="button"
+                  tabindex="0"
+                  data-cm-entry
+                  data-comment={r.c.id}
+                  data-record={r.c.recordId}
+                  data-base={r.baseId}
+                  data-table={r.c.tableId}
+                  data-base-name={r.baseLabel}
+                  data-table-name={r.tableLabel}
+                  data-author={r.c.author.id}
+                  data-status={r.status}
+                  data-date={r.c.createdAt}
+                  data-sort-0={`${r.baseLabel} › ${r.tableLabel}`.toLowerCase()}
+                  data-sort-1={(r.primary ?? r.c.recordId).toLowerCase()}
+                  data-sort-2={r.author.toLowerCase()}
+                  data-sort-3={new Date(r.c.createdAt).getTime()}
+                >
+                  <span class="cl-node" aria-hidden="true"></span>
+                  {/* Location — base › table ONLY. The record moved to its own column (founder,
+                      2026-07-30), which is what finally gives the base room to render in full: it
+                      is the orientation anchor, so the TABLE yields first here, not the base.
+
+                      EVERY SEGMENT IS A REAL CONTROL (D11 / J06-F3, 2026-08-10). Both were `<span>`s
+                      until now — inert, inside a row that sets `cursor: pointer`, so the trail
+                      advertised itself as a link and the click fell through to the row and opened
+                      the RECORD. Measured: clicking `Sales CRM` opened a panel titled
+                      `Cyberdyne Soylent`. Meanwhile the sibling tab, one click away, renders four
+                      working buttons for the same trail. Converged on Attachments, which does it
+                      right — and it is also the only route back: from a comment there was no way to
+                      reach its table or its base at all.
+
+                      `data-entity-open` and NOT a new `data-cl-entity` hook. That attribute is the
+                      app-wide route to the page's ONE panel host (EntityPanel's module-scope
+                      delegate), it already carries ⌘/Ctrl and middle-click open-beside, and it
+                      already declines a target that sits inside another kind's sheet. A private
+                      hook here would be a second implementation of a thing the page ships once.
+                      (DataMedia dispatches `data:openMediaEntity` instead for a reason that has
+                      since expired — it dated from when this page mounted four drawer roots and
+                      `data-entity-open` would have raised a second one. There is one host now and
+                      both names land in it; the OLDER, narrower one is not the one to copy.)
+
+                      The row declines a click that landed on a segment — see `segAt` in the script.
+                      Nothing calls `stopPropagation`, which is what keeps one gesture from opening
+                      two panels without either handler having to know about the other. */}
+                  <div class="cl-c-loc">
+                    <span class="cl-loclink">
+                      <button type="button" class="cl-locseg cl-locseg-b" data-entity-open={r.baseId}><span set:html={BASE_IC} /><span class="cl-basename">{r.baseLabel}</span></button>
+                      <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><button type="button" class="cl-locseg cl-locseg-t" data-entity-open={r.c.tableId}><span set:html={TABLE_IC} /><span class="cl-loc-appname">{r.tableLabel}</span></button></span>
+                    </span>
+                  </div>
+                  {/* Record — the primary-field value, or the dangling reference named as missing
+                      rather than a bare id pretending to be a name. */}
+                  <div class="cm-c-rec">
+                    {r.primary ? (
+                      <span class="cm-rec">{r.primary}</span>
+                    ) : (
+                      <span class="cm-rec cm-loc-missing tooltip tooltip-top" data-tip="This record is no longer in the backup."><span class="iconify lucide--unlink size-3.5" aria-hidden="true"></span>{r.c.recordId}</span>
+                    )}
+                  </div>
+                  {/* Author — initials chip + name. There is no avatar to show (Airtable ships no
+                      profile picture), and a repeated identical person-glyph would mark every row
+                      the same; initials at least tell two people apart.
+                      AN ABSENCE IS DRAWN AS AN ABSENCE (D11 / J06-F13). "Author not captured" wears
+                      the muted-italic register the sibling tab gives "Record not in this backup" —
+                      `.md-loc-gone` there, `.cm-author-gone` here (the class families are each
+                      surface's own; the treatment is one). Before this it rendered in the same
+                      weight, size and colour as `Sam Silva` beside it, so on the default fixture
+                      four of the first eight rows read as if we knew who wrote them. The chip rule
+                      is untouched: no name means no initials, so an unnamed row already carries no
+                      chip, and nothing here invents an identity. */}
+                  <div class="cm-c-author">
+                    {r.initials && <span class="cm-ini" aria-hidden="true">{r.initials}</span>}
+                    <span class:list={['cm-author', !r.authorNamed && 'cm-author-gone']}>{r.author}</span>
+                  </div>
+                  {/* Comment — the one-line snippet, with every @[id] token already resolved to a
+                      name (a raw id must never reach the screen). Its own column, so the "Comment"
+                      header sits over the comment instead of over the author's name. */}
+                  <div class="cl-c-what">
+                    <p class="cl-summary">
+                      <span class="cm-text">{r.snippet}</span>
+                      {r.c.lastUpdatedAt && (
+                        <span class="cm-edited tooltip tooltip-top" data-tip={EDITED_TIP}>edited</span>
+                      )}
+                    </p>
+                  </div>
+                  {/* Attachments (founder, 2026-07-31) — a paperclip + COUNT only, never filenames
+                      in the dense row (Mobbin: Mercury ships no attachment column at all for this
+                      exact dense-table + side-panel layout; ClickUp's is a count). The tooltip
+                      names the files; nothing renders when there are none, same principle as
+                      Status below. */}
+                  <div class="cl-c-att">
+                    {r.attCount > 0 && (
+                      <span class="cm-att tooltip tooltip-left" data-tip={r.attTip}>
+                        <span class="iconify lucide--paperclip size-3.5" aria-hidden="true"></span>{r.attCount}
+                      </span>
+                    )}
+                  </div>
+                  {/* ONLY the exceptions carry a badge. Marking the normal case put 18 identical
+                      pills in a 20-row view and 526 in the volume fixture — a column that shouts on
+                      every row stops being read (Oleh 2026-07-29, measured). The two exceptions are
+                      worded and coloured APART: one is a fact, the other is the limit of what we
+                      can tell. The Status facet still filters on all three values.
+                      ICON-ONLY (2026-07-31): the text moved fully into the tooltip so the column
+                      could shrink from 8.5rem to 2.75rem — that reclaimed width is what pays for
+                      the new Attachments column. The colour is not lost: the same colour repeats
+                      on the rail node (`.cl-entry[data-status=…] .cl-node`), and the Status facet
+                      keeps the full labels. The `role="img" aria-label` is NOT optional: going
+                      icon-only deleted the only text that named this state, and the glyph is
+                      aria-hidden — without the label the cell is silent to a screen reader, and
+                      the row's own accessible name (it is a role=button) loses the status too. */}
+                  {/* The catalog `Badge` primitive, not a hand-typed class list (THE SEQUENCE step
+                      1). It could not be used until 2026-08-14: the component destructured its four
+                      props and rendered a bare span, so migrating these two would have DROPPED the
+                      `role="img"` + `aria-label` the note above documents as not optional, and the
+                      `data-tip` with it. `Badge.astro` now forwards `...rest`, so both survive —
+                      and the variant/glyph/label come from `COMMENT_STATUS_PAINT`, shared with the
+                      record panel, which renders this same state as an HTML string. */}
+                  <div class="cl-c-type">
+                    {r.status === 'deleted' && (
+                      <Badge
+                        size="sm"
+                        variant={COMMENT_STATUS_PAINT.deleted.variant}
+                        class="tooltip tooltip-left"
+                        role="img"
+                        aria-label={COMMENT_STATUS_PAINT.deleted.ariaLabel}
+                        data-tip={DELETED_TIP}
+                      >
+                        <span class={`iconify ${COMMENT_STATUS_PAINT.deleted.icon} size-3.5`} aria-hidden="true"></span>
+                      </Badge>
+                    )}
+                    {r.status === 'recordDeleted' && (
+                      <Badge
+                        size="sm"
+                        variant={COMMENT_STATUS_PAINT.recordDeleted.variant}
+                        class="tooltip tooltip-left"
+                        role="img"
+                        aria-label={COMMENT_STATUS_PAINT.recordDeleted.ariaLabel}
+                        data-tip={recordDeletedTip(r.c.lastSeenAt)}
+                      >
+                        <span class={`iconify ${COMMENT_STATUS_PAINT.recordDeleted.icon} size-3.5`} aria-hidden="true"></span>
+                      </Badge>
+                    )}
+                  </div>
+                  {/* WHEN — the day AND the time, with the day shown only while the arrangement is
+                      not already carrying it (D11 / J06-F5d, 2026-08-10).
+
+                      This cell printed `4:59 PM` and nothing else, which was fine for exactly one
+                      of the four arrangements: grouped by Date, where the card above says the day.
+                      Group by Base and the day vanished from the surface entirely — 20 rows all
+                      reading a time, on a feed spanning 14 days, with `data-date` on every row
+                      holding the answer. `None`, now the default, has the same gap.
+
+                      So the day is on the row and the CARD is what suppresses it, not the other way
+                      round: `.cl-feed[data-cm-axis="date"]` hides `.cm-when-d`, one CSS rule
+                      against a single attribute the controller stamps. No per-row JavaScript, and
+                      the server-rendered default is correct before the controller wires.
+
+                      `fmtDayShort` is the Attachments listing's own date form ("Jul 14") — the two
+                      tabs print a date one way. The year is not here for the reason stated there:
+                      the feed is newest-first and the full date is in the panel the row opens. */}
+                  <span class="cl-c-time mono-data"><span class="cm-when-d">{fmtDayShort(r.c.createdAt)}</span>{fmtTime(r.c.createdAt)}</span>
+                  <span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ONE pager for the whole feed in every arrangement, paging the COMMENTS in group order —
+          never the groups. Same rule Attachments settled on 2026-08-03: paging groups bounds
+          nothing (three bases over 520 comments is one 520-row page), and paging the comments keeps
+          the pager's sentence counting the same unit it counts today. */}
+      <TablePager name="cm" sizes={[10, 20, 50]} selected={20} />
+
+      <div class="cl-nomatch" data-cm-nomatch hidden>
+        <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
+        <p>No comments match these filters.</p>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-cm-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+      </div>
+    </>
+  ) : (
+    <EmptyState
+      icon="lucide--message-square-text"
+      title="No comments captured yet"
+      description="Comments left on records in Airtable are captured with each backup and show up here — newest first, with the base, table, and record they belong to."
+    />
+  )}
+</div>
+
+<style is:global>
+  /* Everything structural comes from the shared `.cl-*` feed + row grid in styles/global.css
+     (catalog: pattern-changelog-timeline). Only what is genuinely this feed's own lives here.
+     `is:global` — same rule as DataMedia/DataChangelog: client-repainted rows must see these
+     selectors (a scoped style block never reaches script-injected DOM). */
+
+  /* This feed's own COLUMN WIDTHS. The grid mechanism, the class names and the row rhythm all
+     stay shared — only the track sizes are ours, because a comment's Location carries base › table
+     while the changelog's carries base › table › field, and the record needed a column of its own
+     (founder, 2026-07-30). Declared here and NOT in global.css on purpose: `.cl-entry` is now the
+     row for three feeds, and widening it for one would silently reflow the other two. */
+  /* Author is 11.5rem, not the 8.5rem it started at. An email is the COMMON case (founder,
+     2026-07-30) and roughly twice the width of "Dana Reyes", so the column has to be sized for
+     the address rather than for the comfortable name — at 8.5rem, 19 of 20 cells clipped. The
+     32px came off Location, which carries only base › table since the record moved out and had
+     room to spare. Long addresses still truncate, visibly, with the full value on hover: that is
+     the ONE mechanism this row uses for everything too long, and the author cell is not allowed
+     its own (a local-part-only label was tried and rejected — it hid the domain with no ellipsis
+     to admit it, and in an agency's Space the domain says which client a person belongs to). */
+  /* 20px between columns, not the shared grid's 12px. Six columns of text at 12px sat close
+     enough to read as one continuous run rather than as separate fields (Oleh, 2026-07-30) — this
+     feed has more columns than the changelog the grid was sized for, so it needs more air between
+     them. The 56px it costs comes out of the flexible Comment column, which is the only track that
+     can give it without something becoming unreadable. */
+  /* Attachments column added + Status compacted (founder, 2026-07-31 — "attachments column on
+     the listing table"). The arithmetic, at a 1440 viewport (~1110px of content): the new 3rem
+     (48px) column plus the ONE extra 24px gap it introduces costs 72px; shrinking Status from
+     8.5rem (136px) to 2.75rem (44px) returns 92px. Net +20px, which is why Comment (the flexible
+     `1fr` track) comes out WIDER than before (~182px → ~202px) rather than narrower — it was
+     already the row's most-truncated cell and this pays it back instead of taxing it again. */
+  /* WHEN grew 4.25rem → 6.75rem (D11 / J06-F5d). The cell now prints the DAY as well as the time
+     whenever the arrangement is not already carrying it — `Jul 14  4:59 PM` measures ~102px at 12px
+     tabular-nums against the 68px this track was, so the column had to pay for it or the day would
+     have clipped on every row of the default arrangement.
+     THE 40px COMES OUT OF `1fr`, the Comment track (~202px → ~162px), and that is the deliberate
+     part rather than the incidental one. Comment is the only track that can give width without
+     something becoming unreadable — it is prose, it already truncates, and since D10 it carries a
+     measured clip tooltip, so what is lost from the cell is recoverable on hover. Every other track
+     here is sized to a name or a glyph and would lose information rather than characters. The
+     alternative considered and rejected: a second line in the When cell, which would have moved the
+     row height off the 48px the whole family shares. */
+  /* ── EVERY TRACK CARRIES A REAL FLOOR (audit S07-F1, 2026-08-12) ───────────────────────────
+     This declaration held FOUR `minmax(0, …)` tracks — Location, Record, Author and Comment — and
+     `minmax(0, …)` beside fixed tracks is the one construction D15 exists to ban: it promises "take
+     what is left" and cannot keep the promise once everything else is fixed-width. Four promises,
+     one row.
+
+     Measured before this change, on the running app:
+
+       1280   grid resolved to `24 192 120 200 **5** 48 44 108 20`
+              COMMENT — the column this tab is NAMED for — 5px against 78px of content.
+              STATUS 44px against 62px, clipped.
+       500    `24 **5.7** **5.7** **5.7** **0** 48 44 108 20`
+              Location, Record and Author at six pixels each; Comment at zero.
+              Five of nine tracks destroyed, and the page does not scroll, so it is simply gone.
+
+     The floors below are the width at which each cell still says something rather than the width it
+     would like: a base ▸ table path needs ~7rem before it is initials, a record name ~5rem, an
+     author ~7rem, and prose needs 12rem before truncation stops being truncation and starts being
+     deletion. Their maxima are unchanged, so nothing about the 1440 layout moves — this only stops
+     the collapse below it. */
+  .cm .cl-fhead,
+  .cm .cl-entry {
+    grid-template-columns: 1.5rem minmax(7rem, 12rem) minmax(5rem, 7.5rem) minmax(7rem, 12.5rem) minmax(12rem, 1fr) 3rem 4.25rem 6.75rem 1.25rem;
+    column-gap: 24px;
+  }
+  /* STATUS was 2.75rem and its own HEADING did not fit: measured 44px of track against 62px of
+     `⊙ STATUS`, so the word clipped on every render at every width. The 2.75 was chosen to pay for
+     the Attachments column and the cells below it do fit — a badge is small — but a column whose
+     label cannot be read has spent its compaction on the wrong thing. 4.25rem clears the glyph, the
+     6px gap and the word, and the 24px comes from Comment, which is the track this file has always
+     said is the one that can give. */
+
+  /* ── NARROW ────────────────────────────────────────────────────────────────────────────────
+     The shared narrow block in global.css cannot reach this grid and that is not an accident of
+     ordering: `.cm .cl-fhead` is two classes plus Astro's `[data-astro-cid-…]`, so it out-specifies
+     `.cl-fhead` at every width. A surface that overrides the family's grid has to answer the
+     family's narrow question itself.
+     Nine columns will not fit 459px at any honest size, so this pans — the same answer Browse,
+     Automations, Relationships and the run list already give. 24px gaps become 8: at this width the
+     gap was buying separation the smaller type no longer needs, and eight of them is 128px that the
+     columns can have instead. */
+  @media (max-width: 1279.98px) {
+    .cm .cl-fhead,
+    .cm .cl-entry {
+      grid-template-columns: 1.5rem 6.5rem 5rem 6rem 14rem 2.5rem 4rem 6rem 1.25rem;
+      column-gap: 8px;
+      padding-block: 8px;
+    }
+    /* Each cell ends at its own edge. Without this the content of a shrunken cell paints over its
+       neighbour instead of truncating — the defect measured on the run list as six descendants
+       escaping their own cell. */
+    .cm .cl-entry > *, .cm .cl-fhead > * { min-width: 0; overflow: hidden; }
+  }
+  /* Header glyph — same idea as the Browse grid's `.dg-th-ic`, sized down to the 11px label. */
+  .cm .cl-fhead > span { display: inline-flex; align-items: center; gap: 6px; } /* ds-ok: 6px optical icon↔label gap, matches .rp-seclabel */
+  .cm .cl-fhead .cl-fh-end { justify-content: flex-end; }
+  /* ── A SORTABLE HEAD IS A BUTTON, NOT A SPAN WEARING `role="button"` ──────────────────────────
+   * The catalog `table` entry's rule is "a sortable column is a `<button>` or nothing", and the
+   * vessel enforces it by construction for every real `<table>`. This feed cannot BE the vessel —
+   * `.cl-fhead` / `.cl-entry` are the shared changelog-timeline grid that Schema ▸ Changelog also
+   * renders, so a `<table>` here would fork it — but the rule is about the CONTROL, not the tag
+   * around it, and nothing stopped this head from obeying it.
+   *
+   * What it buys beyond conformance: the delegated `keydown` block that used to sit in the script
+   * below existed ONLY to give four `role="button"` spans Enter and Space, and it was the ninth
+   * hand-rolled copy of that block in this app — the pattern D46 exists to end. A real control gets
+   * both keys from the UA, so the copy is deleted rather than maintained. `wireTableSort` is
+   * untouched: it resolves heads through `[data-sort-col]`, which never named an element.
+   *
+   * THE BUTTON IS NESTED INSIDE THE CELL SPAN, and that is measured rather than stylistic. The
+   * shared label type is `global.css:1905` — `.tbl-colhead > span, .tbl-colhead th` — and a button
+   * promoted INTO the cell slot matches neither, so it rendered at 16px sentence-case #111 beside
+   * 11px uppercase statics (measured here at 1440/430/390 before this arrangement). global.css
+   * already solves exactly this for real tables one rule later (`.tbl-colhead th :is(button, a,
+   * span) { font: inherit }`, written up as "measured on the Attachments table, 2026-07-31") — it
+   * simply has no `> span` counterpart. So the cell stays a span and the control sits inside it,
+   * which is the same shape the vessel's own `th > .tbl-sortbtn` has. See the report: the one-line
+   * fix belongs in global.css, and this local rule goes when it lands.
+   *
+   * The reset itself is the vessel's `.tbl-sortbtn`, for the same reason — a `.btn` would repaint
+   * the band with daisyUI's own height, padding and background. */
+  .cm .cl-fhead > span > .cm-sortbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* ds-ok: 6px optical icon↔label gap, the same one the cell span above uses */
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+    text-align: inherit;
+    cursor: pointer;
+  }
+  /* The focus ring is the point of the exercise — this head was reachable by Tab and showed nothing.
+     2px offset so it clears the sort caret the shared `[data-sort-col]` rule draws beside the label. */
+  .cm .cl-fhead > span > .cm-sortbtn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: var(--r-4);
+  }
+  .cm-th-ic { font-size: var(--t-13); opacity: .55; flex: none; }
+
+  /* Record — its own column now. Truncates from the right like any name cell. */
+  .cm-c-rec { min-width: 0; }
+  .cm-rec { display: block; font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cm-c-rec .cm-loc-missing { display: flex; align-items: center; gap: .25rem; }
+
+  /* Author — initials chip + name, one line. The chip is identity, not decoration: with no avatar
+     available it is the only thing that tells two authors apart at a glance. */
+  .cm-c-author { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cm-ini {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 9999px;
+    background: oklch(from var(--color-base-content) l c h / .08);
+    color: oklch(from var(--color-base-content) l c h / .65);
+    font-size: var(--t-12); font-weight: 650; letter-spacing: .01em;
+  }
+  /* An explicit size: this cell set only a weight and silently inherited 16px from the page,
+     which is why the email read as oversized against every neighbour (Oleh, 2026-07-30). */
+  .cm-author { min-width: 0; font-size: var(--t-14); font-weight: 600; color: var(--color-base-content); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The worded-absence register (D11) — the same italic + .55 the sibling tab gives `.md-loc-gone`.
+     Two classes deep so it outranks the weight and colour stated one line above, which are one
+     class each and would otherwise win on source order. */
+  .cm-author.cm-author-gone { font-style: italic; font-weight: 400; color: oklch(from var(--color-base-content) l c h / .65); }
+  /* THE COMMENT DID NOT TRUNCATE — IT SPILLED, and this file's own reasoning depended on the
+     opposite. The block above `.cm .cl-fhead` argues that Comment is the track that can safely give
+     width because *"it is prose, it already truncates, and since D10 it carries a measured clip
+     tooltip, so what is lost from the cell is recoverable on hover"*. Measured at 1280: `.cl-c-what`
+     was `overflow: visible`, `.cm-text` was `text-overflow: clip`, and the snippet painted **134px**
+     across the FILES column. `clipTips`' selector list (`.cm-rec, .cm-author, .cl-summary,
+     .cl-basename, .cl-loc-appname`) never contained `.cm-text` either, so the hover recovery the
+     argument rests on did not exist.
+     None of that was wrong on purpose — the sentence is true of `.cl-summary` on the Schema feed,
+     which is where the pattern came from. It simply was never made true here. It is now: the cell
+     clips, the span ellipses, and `.cm-text` is in the clip-tip list, so a truncated comment is one
+     hover from being read. */
+  .cm .cl-c-what { overflow: hidden; }
+  .cm-text { color: oklch(from var(--color-base-content) l c h / .85); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* Edited marker — a fact, not a control. There is deliberately no "view previous version"
+     affordance: Airtable never returns the earlier text, so the link would go nowhere. */
+  .cm-edited { margin-left: 8px; font-size: var(--t-11); font-style: italic; color: oklch(from var(--color-base-content) l c h / .65); cursor: help; }
+  /* A commented record that is not in this backup — same treatment as a doc's missing record
+     chip: named as missing, never a bare id pretending to be a name. */
+  .cm-loc-missing { color: oklch(from var(--color-base-content) l c h / .65); cursor: help; }
+  /* One line, always. A wrapping name gave rows two different heights (40px and 55px measured),
+     and a stream is scannable precisely because every row is the same height. Priority reversed
+     from the first cut (Oleh 2026-07-30): the BASE never shrinks and the table yields, because the
+     base is what you orient by — "Marke…" on every second row is a stream you cannot read. The
+     base still ellipsises rather than overflowing if a name is pathological. */
+  .cm .cl-c-loc { flex-wrap: nowrap; overflow: hidden; }
+  /* THE TRUNCATION ORDER IS UNCHANGED, RESTATED ONE LEVEL OUT (D11). Each segment gained a
+     `<button>` wrapper, and the wrapper — not the name span — is now the flex item of
+     `.cl-loclink`, so the shrink rules have to be asked of it or the base would start yielding.
+     Same priority as before: the BASE never shrinks (it is the orientation anchor, and "Marke…" on
+     every second row is a stream you cannot read), the table yields. The name spans keep their own
+     ellipsis, which is what `clipTips` measures — the tip must land on the span that CLIPS, never
+     on the button around it, or `tooltip.ts`'s echo rule eats it silently. */
+  .cm .cl-c-loc .cl-locseg-b { flex: 0 0 auto; max-width: 100%; }
+  .cm .cl-c-loc .cl-basename { flex: 0 1 auto; max-width: 100%; }
+  .cm .cl-c-loc .cl-loc { flex: 0 1 auto; min-width: 2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cm .cl-c-loc .cl-locseg-t { flex: 0 1 auto; min-width: 0; }
+  /* Node dot: matches the row's badge, so the rail reads at a glance. The shared grid only ships
+     change-type colours, and a comment's status is not a change type. */
+  .cm .cl-entry[data-status="deleted"] .cl-node { background: var(--color-error); }
+  .cm .cl-entry[data-status="recordDeleted"] .cl-node { background: var(--color-warning); }
+
+  /* Attachments — paperclip + count only (founder, 2026-07-31). Nothing renders on a comment with
+     no files, same "only the exception is marked" principle Status uses; the count's tooltip
+     (attachmentTip, above) is where the filenames actually live. */
+  .cl-c-att { min-width: 0; }
+  .cm-att { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); cursor: help; }
+</style>
+
+<style is:global>
+  /* GROUP CHROME (Group by: date / base / table).
+     `is:global`, and not because it is shared: every group section on this feed is written into the
+     DOM by the controller on every repaint, and a scoped style block only ever reaches elements Astro
+     stamped with its scope attribute at BUILD time. The rows keep their scope attribute and so keep
+     the column widths above wherever they are moved; the cards around them never had one.
+     Every selector below is qualified by `.cm`, so nothing here can reach the other two feeds on
+     the shared `.cl-*` grid — which matters more than usual, because one of these rules switches
+     OFF a rule those feeds depend on. */
+
+  /* The CARD is the shared `.grp-*` block in global.css — container, frame, tinted header button,
+     rotating caret, `[data-collapsed]`. Nothing of it is restated here; what IS here is the one
+     thing no other host of that card needs: putting the TIMELINE RAIL inside it.
+
+     THE RAIL, RELOCATED (2026-08-04). Ungrouped-timeline feeds draw ONE rail down the whole feed
+     (`.cl-feed::before`, global). That rail is an absolutely-positioned pseudo-element of an
+     ANCESTOR of the cards, so a card's `overflow: hidden` cannot clip it and it would simply run
+     straight through every header band and every 8px seam between cards — a line that crosses the
+     thing it is supposed to be bounded by. So on THIS feed the feed-level rail is switched off and
+     each card grows its own, on the card's `.cl-entries` body. Consequences worth stating: a
+     COLLAPSED card has no rail, because it has no nodes to hang on one; and the seams between cards
+     are now empty, which is what makes the stack read as sections rather than as one stream.
+     Switched off with `content: none` rather than by deleting the rule, because two other feeds
+     (Schema ▸ Changelog, and any future one) still want the continuous rail — this is a Comments
+     override under `.cm`, exactly as the column widths are. */
+  .cm .cl-feed::before { content: none; }
+  /* THE BODY, CARD OR NO CARD (D11). `.grp` is dropped from the selector because `None` is now the
+     default and its body has no card around it — the rail belongs to the ENTRIES, which is the one
+     element both arrangements have. Nothing else changes: same x, same inset, same 4px padding, so
+     a card built at runtime and the flat list it replaces draw the identical rail. */
+  .cm .cl-entries { position: relative; padding: 4px 0; }
+  /* Same x as the shared rail: `calc(.75rem - 1px)` centres a 2px line on 12px, which is the centre
+     of the row grid's 1.5rem node column, so the dots sit on it unchanged. Inset 12px top and
+     bottom so the line starts and stops between the first and last node rather than running into
+     the header band and the card's bottom edge. */
+  .cm .cl-entries::before {
+    content: ""; position: absolute; top: 12px; bottom: 12px; left: calc(.75rem - 1px); width: 2px; z-index: 0;
+    background: var(--color-base-300);
+  }
+  /* THE DAY ON THE ROW, SUPPRESSED ONLY WHERE A CARD IS ALREADY SAYING IT (D11 / J06-F5d).
+     One rule against one attribute the controller stamps on the feed, rather than a per-row write
+     on every repaint: the day is the row's own fact and the ARRANGEMENT is what decides whether it
+     is redundant. `is:global` because the rows are moved into runtime-built cards — a scoped rule
+     would follow the rows (they keep their scope attribute) but this one is keyed on the FEED, and
+     the feed is the ancestor, so it is stated here beside the other arrangement rules. */
+  .cm .cl-feed[data-cm-axis="date"] .cm-when-d { display: none; }
+  .cm-when-d { margin-right: 6px; opacity: .55; } /* ds-ok: 6px optical day↔time gap inside one cell, matches .cl-fhead's icon gap */
+</style>
+
+<script>
+  import { mountRefineCollapse } from '../../lib/refineCollapse';
+  import { createPager } from '../ui/tablePager';
+  import { fmtDayLong } from '../../lib/time';
+  import { wireTableSort } from '../schema/tableSort';
+  import { mountClipTips } from '../../lib/clipTips';
+  import { wireViewState, facetField, facetSingleField, dateRangeField, inputField } from '../ui/viewState';
+  import { wireRowKeys } from '../../lib/wireRowKeys';
+
+  function wireDataComments() {
+    const root = document.querySelector<HTMLElement>('[data-datacomments]');
+    if (!root || root.dataset.cmWired) return;
+    root.dataset.cmWired = '1';
+    const feed = root.querySelector<HTMLElement>('[data-cm-feed]');
+    if (!feed) return;
+
+    const entries = Array.from(root.querySelectorAll<HTMLElement>('[data-cm-entry]'));
+    // D07 — comment id → the record it is on, taken from the SERVER-RENDERED feed before anything
+    // pages, groups or sorts it. `?comment=` must reach a comment on page 14 of 28 exactly as it
+    // reaches one on page 1, and `entries` does not survive the sorter's re-take intact enough to
+    // be trusted for that: measured, a `?comment=` pointing outside the first window opened nothing
+    // while one inside it opened correctly — a deep link that works only for what is already on
+    // screen is not a deep link.
+    const recordByComment = new Map(entries.map((e) => [e.dataset.comment || '', e.dataset.record || '']));
+    const groupsEl = root.querySelector<HTMLElement>('[data-cm-groups]');
+    if (!groupsEl) return;
+    const searchInput = root.querySelector<HTMLInputElement>('[data-cm-search]');
+    const noMatch = root.querySelector<HTMLElement>('[data-cm-nomatch]');
+    const clears = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-cm-clear]'));
+    // `cmgroup` is deliberately excluded. Clear resets FILTERS; the grouping is an ARRANGEMENT and
+    // survives it, exactly as Attachments' `mdgroup` does — keyed on the NAME, so the control can
+    // move on the toolbar without this breaking.
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('.ff[data-facet]')).filter((f) => f.dataset.facet !== 'cmgroup');
+    const multiBaseRt = root.dataset.multibase === '1';
+    const searchText = new Map(entries.map((e) => [e, (e.textContent || '').toLowerCase()]));
+
+    // Recover what truncation hides (Oleh, 2026-07-30). A record's primary field is often a whole
+    // sentence — a ticket subject, a task title — not "ORD-1000", so the Record and Comment cells
+    // clip constantly and the row is where someone SCANS rather than where they click through.
+    //
+    // THE MACHINERY IS SHARED NOW (D10 fix pass, 2026-08-10): `lib/clipTips.ts`, which is this
+    // block, moved out verbatim with its reasoning. It lived here privately while the two
+    // changelogs — the surfaces every other list is told to copy — had no clip tooltips at all.
+    //
+    // The SELECTOR gained the Location spans, and that is the substantive change, not the move:
+    // `.cl-basename` and `.cl-loc-appname` were never in this list even though they are shared
+    // classes this feed renders and clip on the narrowest column in the row.
+    const clipTips = mountClipTips({
+      observe: feed,
+      rows: () => entries,
+      // `.cm-text` added 2026-08-12: it is the comment itself, the most-truncated string on the
+      // surface, and it was the one string here with no way to read what was cut off.
+      selector: '.cm-rec, .cm-author, .cl-summary, .cm-text, .cl-basename, .cl-loc-appname',
+    });
+
+    // Hidden-value sets per multi facet + the single-select Time range — the same contract every
+    // other faceted surface uses (`facetchange` carries `hidden[]` for multi, `value` for single).
+    const hidden: Record<string, Set<string>> = { cmbase: new Set(), cmtable: new Set(), cmauthor: new Set(), cmstatus: new Set() };
+    // The date window as the shared picker emits it: ISO day strings, either end open.
+    let dateFrom = '';
+    let dateTo = '';
+    let query = '';
+
+    // ── GROUP BY ──────────────────────────────────────────────────────────────
+    // 'date' | 'base' | 'table'. ONE axis at a time: picking base or table REPLACES the day
+    // cards rather than nesting inside them. Nesting would print ~14 day heads inside every
+    // base card, which is the heading-per-row failure grouping exists to prevent. Not persisted —
+    // grouping answers the question you are asking right now, and Attachments does not persist its
+    // choice either.
+    // '' (None) | 'date' | 'base' | 'table'. `None` IS THE DEFAULT (D11 / J06-F5a) — see the
+    // Group-by note in the frontmatter for why the previous default was reversed. `''` is Flat and
+    // an axis is Tree, the same vocabulary Attachments uses, so the two tabs' controls read the same.
+    let groupBy = '';
+    // D07 — see the block at the foot of this function. Nothing writes until `restore()` has run.
+    let urlReady = false;
+    let syncUrl: () => void = () => {};
+    // The comment the address currently names (`?comment=`), set when a row opens its record.
+    let openCommentId = '';
+    const GROUP_IC: Record<string, string> = {
+      date: 'lucide--calendar-days',
+      base: 'lucide--database concept-ic-base',
+      table: 'lucide--table-2 concept-ic-table',
+    };
+    /**
+     * THE HEAD'S COUNT NAMES BOTH NUMBERS WHEN THEY DIFFER (D11 / J06-F5b).
+     *
+     * It was the whole group's count alone, defended by the grouped-pager invariant below — which
+     * is right about what it protects. J06 measured what the reader gets from it in practice: a
+     * card reading "39 comments" over 20 rows with "1–20 of 547" underneath, three numbers and no
+     * relation between them. D10 settled the sibling case the other way round, printing the count
+     * the heading is actually heading.
+     *
+     * Both are printed, and the form says which is which: "20 of 39 comments" while the page holds
+     * part of the group, "39 comments" when it holds all of it. The invariant survives — the second
+     * number is still the whole group, computed from `g.items` and never from the window — and the
+     * reader can now count the rows and arrive at the first one. Identical construction to
+     * Attachments' `groupMeta`, on purpose.
+     */
+    const countLabel = (drawn: number, total: number) => {
+      const noun = total === 1 ? 'comment' : 'comments';
+      return drawn < total
+        ? `${drawn.toLocaleString()} of ${total.toLocaleString()} ${noun}`
+        : `${total.toLocaleString()} ${noun}`;
+    };
+
+    type Group = { key: string; label: string; icon: string; items: HTMLElement[] };
+
+    /**
+     * Which group a row belongs to, and what that group is CALLED.
+     *
+     * The labels are the ones the ROW already shows, read from data attributes rather than
+     * re-derived from the Location cell — that cell truncates, and a heading built from truncated
+     * text would read "Marke…". A table name repeats across bases, so a table heading carries its
+     * base whenever the Space has more than one, the same distance Attachments qualifies its own.
+     */
+    const groupOf = (e: HTMLElement): { key: string; label: string; icon: string } => {
+      if (groupBy === 'base') {
+        return { key: `b:${e.dataset.base || ''}`, label: e.dataset.baseName || 'Base not in this backup', icon: GROUP_IC.base };
+      }
+      if (groupBy === 'table') {
+        const t = e.dataset.tableName || 'Table not in this backup';
+        const b = e.dataset.baseName || '';
+        return { key: `t:${e.dataset.table || ''}`, label: multiBaseRt && b ? `${b} › ${t}` : t, icon: GROUP_IC.table };
+      }
+      if (groupBy === 'date') {
+        const iso = e.dataset.date || '';
+        return { key: `d:${iso.slice(0, 10)}`, label: fmtDayLong(iso), icon: GROUP_IC.date };
+      }
+      // `None` — ONE bucket for the whole feed. It draws no card and no head (see `paintGroups`),
+      // so the label and the glyph are never read; the single key is what keeps `buildGroups`,
+      // the window and the pager on one code path instead of growing an ungrouped branch of their own.
+      return { key: '', label: '', icon: '' };
+    };
+
+    /**
+     * Bucket the matched rows.
+     *
+     * ORDER differs by axis on purpose, because "sorted" means a different thing per axis: dates
+     * run NEWEST FIRST (this is a stream — alphabetising "April, August, December" would be
+     * nonsense), bases and tables run alphabetically by their heading. Row order inside a group is
+     * untouched, so every group stays newest-first.
+     */
+    const buildGroups = (matched: HTMLElement[]): Group[] => {
+      const byKey = new Map<string, Group>();
+      for (const e of matched) {
+        const g = groupOf(e);
+        let bucket = byKey.get(g.key);
+        if (!bucket) byKey.set(g.key, (bucket = { ...g, items: [] }));
+        bucket.items.push(e);
+      }
+      const out = [...byKey.values()];
+      return groupBy === 'date' ? out.sort((a, b) => b.key.localeCompare(a.key)) : out.sort((a, b) => a.label.localeCompare(b.label));
+    };
+
+    /**
+     * WHICH GROUPS ARE FOLDED, by group key, for this visit only.
+     *
+     * Not persisted — matched to Attachments (`DataMedia.astro`, the same in-memory `Set`) rather
+     * than invented: a fold answers "not this one, right now", and a fold restored from a previous
+     * session would hide comments a reader never chose to hide on a feed whose whole job is that
+     * nothing is missing. It DOES survive a repaint (filter, search, page, axis change), which is
+     * the reason it is held here and not read off the DOM — `paintGroups` rebuilds every card.
+     * Keys are axis-prefixed (`d:` / `b:` / `t:`, see `groupOf`), so switching axis and switching
+     * back finds the same folds and no two axes can ever collide on one key.
+     *
+     * A collapsed group still spends its rows against the page, exactly as Attachments has it:
+     * collapse hides what a group SHOWS, it does not remove its comments from the list. Anything
+     * else would make "1–20 of 547" depend on which cards happen to be folded, and a pager whose
+     * denominator moves when you fold a section is a pager you cannot trust.
+     */
+    const collapsed = new Set<string>();
+
+    /**
+     * The group CARD's head — the shared `.grp-head` button (global.css `.grp-*`, the same chrome
+     * Attachments and Schema ▸ Automations draw). A BUTTON, not a div: collapse is its whole job,
+     * so it has to be one focusable, Enter/Space-activated control.
+     *
+     * Built as real nodes rather than an HTML string so a base called `<script>` is text and never
+     * markup.
+     *
+     * `g.items` is the WHOLE group; only `win` is drawn. So a head can sit above 12 rows and still
+     * say "37 comments", and it is telling the truth about the group. A count of what fits on this
+     * page would be a lie the reader cannot detect — the invariant that makes paging a grouped
+     * list honest (`pattern-data-grid`).
+     */
+    const headEl = (g: Group, drawn: HTMLElement[]) => {
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'grp-head';
+      head.dataset.cmTwist = '';
+      head.setAttribute('aria-expanded', String(!collapsed.has(g.key)));
+      const caret = document.createElement('span');
+      caret.className = 'iconify lucide--chevron-down size-4 grp-caret';
+      caret.setAttribute('aria-hidden', 'true');
+      const ic = document.createElement('span');
+      ic.className = `iconify ${g.icon} size-4 grp-ic`;
+      ic.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.className = 'grp-name';
+      label.textContent = g.label;
+      const n = document.createElement('span');
+      n.className = 'grp-meta';
+      // "· continued" — D10's marker for a heading whose group began on an earlier page, for the
+      // same reason it exists there: the pager windows COMMENTS in group order, so a card can open
+      // mid-group, and one with no marker reads as a smaller group rather than as the rest of a
+      // bigger one. Read off `g.items` (the whole MATCHED group) against what is drawn, never off
+      // the DOM, so a filter that removes a group's opening rows does not read as a split.
+      const carried = g.items.length > 0 && drawn.length > 0 && drawn[0] !== g.items[0];
+      n.textContent = countLabel(drawn.length, g.items.length) + (carried ? ' · continued' : '');
+      head.append(caret, ic, label, n);
+      return head;
+    };
+
+    /**
+     * Draw this page's worth of cards. A group with nothing on this page draws no card — so the
+     * empty state and the filtered-to-nothing state never grow a frame around nothing; and the
+     * rows are MOVED rather than cloned — they are the model, they carry their own listeners
+     * and their Astro scope attribute (which is what keeps the column widths above applying to
+     * them wherever they land).
+     */
+    const paintGroups = (ordered: Group[], win: HTMLElement[]) => {
+      const inWin = new Set(win);
+      groupsEl.textContent = '';
+      /**
+       * `None` (D11) — one body, no card, no head. NOT a second render path: it walks the same
+       * `ordered`/`win` pair through the same `.cl-entries` body the cards use, so the rail, the
+       * row grid and the row order are produced by exactly the same code. `buildGroups` returns a
+       * single bucket on this axis (see `groupOf`), which is what makes the two branches this
+       * short — the difference between flat and grouped is a frame and a head, and nothing else.
+       */
+      if (!groupBy) {
+        const body = document.createElement('div');
+        body.className = 'cl-entries';
+        ordered.flatMap((g) => g.items).filter((e) => inWin.has(e)).forEach((e) => body.appendChild(e));
+        groupsEl.appendChild(body);
+        return;
+      }
+      for (const g of ordered) {
+        const items = g.items.filter((e) => inWin.has(e));
+        if (!items.length) continue;
+        const card = document.createElement('div');
+        card.className = 'grp';
+        card.dataset.cmGroup = g.key;
+        if (collapsed.has(g.key)) card.setAttribute('data-collapsed', '');
+        const body = document.createElement('div');
+        body.className = 'cl-entries grp-body';
+        items.forEach((e) => body.appendChild(e));
+        card.append(headEl(g, items), body);
+        groupsEl.appendChild(card);
+      }
+    };
+
+    const pager = createPager({
+      root, name: 'cm', sizes: [10, 20, 50], defaultSize: 20,
+      storageKey: 'data-cm-pagesize', onChange: () => apply(),
+    });
+
+    // D09 — the anchor moved INTO the picker (`anchor`), which counts back from the backup's
+    // as-of and prints that end on its own trigger. It used to be computed here off
+    // `data-synced` and never shown, so "last 7 days" was a claim the screen could not support.
+
+    const apply = () => {
+      const q = query.trim().toLowerCase();
+      const facetActive = hidden.cmbase.size || hidden.cmtable.size || hidden.cmauthor.size || hidden.cmstatus.size;
+      const active = !!(dateFrom || dateTo || q || facetActive);
+      const matched: HTMLElement[] = [];
+      entries.forEach((e) => {
+        let ok = true;
+        if (hidden.cmbase.has(e.dataset.base || '')) ok = false;
+        if (hidden.cmtable.has(e.dataset.table || '')) ok = false;
+        if (hidden.cmauthor.has(e.dataset.author || '')) ok = false;
+        if (hidden.cmstatus.has(e.dataset.status || '')) ok = false;
+        const day = (e.dataset.date || '').slice(0, 10);
+        if ((dateFrom && day < dateFrom) || (dateTo && day > dateTo)) ok = false;
+        if (q && !(searchText.get(e) || '').includes(q)) ok = false;
+        if (ok) matched.push(e);
+      });
+      // A group heading is a divider over independent comments, not a parent, so the page window is
+      // taken across the whole filtered feed. WHAT IS PAGED IS THE COMMENTS, IN GROUP ORDER — never
+      // the groups: three bases over 520 comments would make one "page" 520 rows, which is the
+      // problem the pager exists to solve, and a pager that counted groups on one axis and comments
+      // on another would be two controls wearing one label.
+      // The cost, stated rather than hidden: a group can be SPLIT across pages. Ordering by group
+      // before windowing makes that a boundary case (at most one partial group at each end) instead
+      // of the norm, and every heading is redrawn on each page it appears on carrying the whole
+      // group's count. `decision-tree-showmore-not-pager` does not apply — it bans paging a
+      // HIERARCHY, whose children lose their ancestor at a page boundary; this is one level deep
+      // and has no children to orphan.
+      const shown = matched.length;
+      const ordered = buildGroups(matched);
+      // THE ARRANGEMENT DECIDES WHETHER THE ROW PRINTS ITS DAY (D11). One attribute, read by one
+      // CSS rule (`.cm .cl-feed[data-cm-axis="date"] .cm-when-d`), instead of a per-row write on
+      // every repaint: only the Date axis puts the day on the card above the row, so only the Date
+      // axis suppresses it in the cell.
+      feed.dataset.cmAxis = groupBy;
+      paintGroups(ordered, pager.window(ordered.flatMap((g) => g.items)));
+      if (noMatch) noMatch.hidden = shown !== 0;
+      feed.style.display = shown === 0 ? 'none' : '';
+      clears.forEach((c) => (c.hidden = !active));
+      // Re-measure after the page window changes: a row that was display:none has zero widths, so
+      // it can only be judged once it is actually laid out.
+      clipTips.recheck();
+      // D07 — the one write point, at the end of the one repaint every change funnels through.
+      if (urlReady) syncUrl();
+    };
+
+    /**
+     * SORT — the shared tableSort.ts, not a fourth implementation.
+     *
+     * One adaptation, because this feed's rows do not live in a single container: they are moved
+     * into group CARDS that `paintGroups` rebuilds on every filter, page and axis change. So the
+     * container the sorter appends into is a DETACHED holder. It gives us the new order without
+     * disturbing the live cards; `entries` is then re-taken from it (the model this whole component
+     * orders from) and `apply()` repaints exactly as it does for every other change. The ordering,
+     * the `data-sort-dir` state and the caret are all still tableSort.ts's — nothing about the
+     * behaviour is re-implemented, only where it puts the rows while it works.
+     *
+     * Sort COMPOSES with grouping, as it does on Attachments: the axis decides which card a row is
+     * in, the sort decides the order inside each card.
+     */
+    const sortStage = document.createElement('div');
+    const sortHeads = Array.from(root.querySelectorAll<HTMLElement>('.cl-fhead [data-sort-col]'));
+    wireTableSort(
+      feed,
+      () => [{ headers: sortHeads, container: sortStage, items: () => entries }],
+      (item, col) => {
+        // Raw attribute, not dataset: `data-sort-0` is NOT camel-cased to `sort0`, so dataset
+        // access would silently return undefined and no-op the sort.
+        const v = item.getAttribute(`data-sort-${col}`) || '';
+        const n = Number(v);
+        return Number.isFinite(n) && v !== '' ? n : String(v);
+      },
+      () => {
+        entries.splice(0, entries.length, ...(Array.from(sortStage.children) as HTMLElement[]));
+        pager.reset();
+        apply();
+      },
+    );
+    // THE KEYBOARD BLOCK THAT WAS HERE IS GONE, and its absence is the point. It gave Enter and
+    // Space to four `role="button"` spans, and it was the ninth hand-rolled copy of that same
+    // three-line block in this app — the pattern D46 exists to end. The four heads are real
+    // controls now (see `.cm-sortbtn` in the style block), so the UA supplies both keys, and there
+    // is no copy left here to fall out of step with the eight others.
+
+
+
+    root.addEventListener('daterangechange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; from: string | null; to: string | null };
+      if (d.name !== 'cmdate') return;
+      dateFrom = d.from || '';
+      dateTo = d.to || '';
+      pager.reset();
+      apply();
+    });
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; hidden?: string[]; value?: string };
+      if (d.hidden && hidden[d.name]) { hidden[d.name] = new Set(d.hidden); pager.reset(); apply(); }
+      // Group by is the one control on this toolbar that filters nothing. It still resets the pager,
+      // because it re-orders the whole feed and page 4 of the old order means nothing in the new one.
+      else if (d.value !== undefined && d.name === 'cmgroup') { groupBy = d.value; pager.reset(); apply(); }
+    });
+    /**
+     * COLLAPSE, delegated from the root, because every card is rebuilt on every repaint and
+     * per-element wiring at start-up would leave the second page's heads dead. Same construction as
+     * Attachments' `[data-md-twist]` handler.
+     *
+     * Pure CSS state: `[data-collapsed]` on the card drives both the caret and `.grp-body`
+     * (global.css). It deliberately does NOT repaint — the fold is written into `collapsed` only so
+     * that a LATER repaint can restore it, and the pager is not touched, because the group's rows
+     * are still in this page's window.
+     */
+    root.addEventListener('click', (ev) => {
+      const twist = (ev.target as HTMLElement).closest<HTMLElement>('[data-cm-twist]');
+      if (!twist) return;
+      const card = twist.closest<HTMLElement>('.grp');
+      const key = card?.dataset.cmGroup;
+      if (!card || !key) return;
+      const wasCollapsed = collapsed.has(key);
+      if (wasCollapsed) { collapsed.delete(key); card.removeAttribute('data-collapsed'); }
+      else { collapsed.add(key); card.setAttribute('data-collapsed', ''); }
+      // Expanded IS the new state when it was collapsed a moment ago.
+      twist.setAttribute('aria-expanded', String(wasCollapsed));
+      // A row that was inside a fold has zero widths, so which cells are clipped can only be
+      // re-judged once it is laid out again.
+      clipTips.recheck();
+    });
+
+    searchInput?.addEventListener('input', () => { query = searchInput.value; pager.reset(); apply(); });
+    clears.forEach((c) =>
+      c.addEventListener('click', () => {
+        dateFrom = '';
+        dateTo = '';
+        query = '';
+        if (searchInput) searchInput.value = '';
+        Object.values(hidden).forEach((s) => s.clear());
+        facets.forEach((f) => f.dispatchEvent(new CustomEvent('facetreset')));
+        pager.reset();
+        apply();
+      }),
+    );
+
+    // Row → the record the comment is on, and then to THIS comment inside it (founder, 2026-07-30:
+    // "from the Comments listing table we could deep link to that section/comment within the
+    // record"). A record that is not in this backup lands on RecordPanel's own "This record isn't
+    // in this backup." toast rather than no-op'ing — the dangling reference stays visible.
+    const openRecord = (e: HTMLElement, beside = false) => {
+      const id = e.dataset.record;
+      if (!id) return;
+      // D07 — the address follows the open thing. It names the COMMENT, not the record: this feed
+      // finds a comment, and the record is where that comment is READ (the panel opens focused on
+      // it). Sending the record id would hand over the container and lose the sentence.
+      openCommentId = e.dataset.comment || '';
+      syncUrl();
+      document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id, focus: 'comments', commentId: e.dataset.comment, beside } }));
+    };
+    /**
+     * OPEN-BESIDE ON A COMMENT ROW (D11 / J06-F11, 2026-08-10).
+     *
+     * The row bound `click` and Enter/Space only, so every comment REPLACED the anchor panel — on
+     * the one journey that most obviously wants two things at once, the comment and the record it
+     * is on. Attachments has had ⌘/Ctrl-click and middle-click on both its rows and its tiles since
+     * it shipped, and the RECEIVING side already existed here too: `data:openRecord` reads a
+     * `beside` flag (`RecordPanel.astro:409`), put there when the ＋ picker opens a comment
+     * (`:607`). So this is a flag on an existing call, not a new path.
+     *
+     * `isBeside` and the mousedown guard are copied from `DataMedia.astro` rather than re-derived —
+     * the same gesture must be recognised the same way on both tabs, and the guard exists because
+     * the browser's middle-click autoscroll puck swallows the event before `auxclick` fires.
+     */
+    const isBeside = (ev: MouseEvent) => ev.metaKey || ev.ctrlKey || ev.button === 1;
+    // A location segment is a real <button> now: a click that landed on one is ITS activation, and
+    // the row declines it. Nothing calls stopPropagation — the row simply stands down, which is
+    // what keeps one gesture from opening two panels.
+    const segAt = (e: Event) => (e.target as HTMLElement).closest<HTMLElement>('[data-entity-open]');
+    entries.forEach((e) => {
+      e.addEventListener('click', (ev) => { if (segAt(ev)) return; openRecord(e, isBeside(ev as MouseEvent)); });
+      e.addEventListener('mousedown', (ev) => { if ((ev as MouseEvent).button === 1) ev.preventDefault(); });
+      e.addEventListener('auxclick', (ev) => { if (segAt(ev)) return; if ((ev as MouseEvent).button === 1) { ev.preventDefault(); openRecord(e, true); } });
+    });
+    /**
+     * D46 — Enter/Space from the ONE implementation, delegated from `root`.
+     *
+     * The per-row `keydown` that stood in the loop above wired only the entries present at init,
+     * and this stream re-renders on every search keystroke, facet, date window, sort and page — so
+     * the keyboard worked on the first 20 comments and on nothing after. `skip: segAt` is the same
+     * stand-down the click and auxclick paths use (a location segment is a real <button>, and Enter
+     * on it is ITS activation), and `ev` is forwarded so ⌘/Ctrl-Enter still opens BESIDE, which is
+     * the gesture parity with Attachments that D11 asked for.
+     */
+    wireRowKeys(root, {
+      rowSelector: '[data-cm-entry]',
+      skip: (ev) => !!segAt(ev),
+      onActivate: (row, ev) => openRecord(row, ev.metaKey || ev.ctrlKey),
+    });
+
+    apply();
+
+    /**
+     * D07 item 4 — the same URL contract as Attachments, from the same module.
+     *
+     * J06-F7 filed both tabs together, and D11's convergence rule applies here as much as it did to
+     * search and grouping: one controller, one spelling of every key, or the two tabs drift again.
+     * `restore()` drives the controls; each emits the event it always emits; `apply()` writes back.
+     *
+     * `?comment=` opens the comment through the existing `data:openRecord` contract — the row's own
+     * path, `focus: 'comments'` and all — so a found comment is a link, which was the half of
+     * J06-F7 that no amount of filter state answers.
+     */
+    const vs = wireViewState([
+      inputField('cmq', searchInput),
+      facetField(root, 'cmbase'), facetField(root, 'cmtable'),
+      facetField(root, 'cmauthor'), facetField(root, 'cmstatus'),
+      dateRangeField(root, 'cmdate'),
+      facetSingleField(root, 'cmgroup'),
+      { key: 'comment', get: () => openCommentId, set: (v) => { openCommentId = v; } },
+    ]);
+    vs.restore();
+    urlReady = true;
+    syncUrl = () => vs.sync();
+
+    // The open is DEFERRED past `load` (measured: `DOMContentLoaded` was NOT late enough — the
+    // Attachments host happened to be wired by then and the Comments one was not, so the same code
+    // worked on one tab and silently did nothing on the other). The panel
+    // host registers its `data:openRecord` listener in its OWN bundled module, and module scripts
+    // run as separate tasks in an order nothing here controls — dispatching during this function
+    // fired into a document that had no listener yet, so the link silently did nothing while every
+    // gate stayed green. Verified by opening the link in a FRESH tab: the panel stack persists in
+    // `sessionStorage`, so a reused tab shows a panel that the previous click left behind and reads
+    // exactly like a working deep link.
+    const afterHosts = (fn: () => void) => {
+      if (document.readyState === 'complete') setTimeout(fn, 0);
+      else window.addEventListener('load', () => setTimeout(fn, 0), { once: true });
+    };
+    const wantedRecord = openCommentId ? recordByComment.get(openCommentId) : '';
+    if (wantedRecord) {
+      const cid = openCommentId;
+      afterHosts(() =>
+        document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id: wantedRecord, focus: 'comments', commentId: cid, beside: false } })),
+      );
+    } else if (openCommentId) { openCommentId = ''; vs.sync(); }
+  }
+  wireDataComments();
+  document.addEventListener('astro:after-swap', wireDataComments);
+
+    // All five facets. Nothing here is scope — this feed is not locked to a base or a table the way
+    // Records is locked to its preset, so there is no answer to "what am I looking at" to protect.
+    {
+      const tb = document.querySelector<HTMLElement>('.sch-tb.cl-filters');
+      if (tb) mountRefineCollapse({ toolbar: tb, selectors: ['[data-facet]'], always: true });
+    }
+</script>

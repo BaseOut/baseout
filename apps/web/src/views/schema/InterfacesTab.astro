@@ -1,0 +1,63 @@
+---
+/**
+ * Interfaces tab (web-automations-interfaces-tabs) — Growth+/Schema-Docs gated
+ * listing of Interfaces + nested Pages. Lazy-fetches via SchemaInterfaces;
+ * read path merges MCP + manual rows through mergeInterfaceSources.
+ */
+import EmptyState from '../../components/ui/EmptyState.astro'
+import SchemaInterfaces from '../../components/schema/SchemaInterfaces.astro'
+import type {
+  SchemaEntityBase,
+  SchemaEntityField,
+  SchemaEntityTable,
+} from '../../lib/backup-engine'
+import type { SchemaDocsLevel } from '../../lib/capabilities/tier-capabilities'
+import type { TypeaheadItem } from '../../components/schema/typeaheadItems'
+
+interface Props {
+  hasSchema: boolean
+  level: SchemaDocsLevel
+  healthBases: { baseId: string; name: string }[]
+  schema: {
+    bases: SchemaEntityBase[]
+    tables: SchemaEntityTable[]
+    fields: SchemaEntityField[]
+  }
+}
+
+const { hasSchema, level, healthBases, schema } = Astro.props
+const canUse = level !== 'none'
+
+const baseName = new Map(schema.bases.map((b) => [b.baseId, b.name]))
+const tableName = new Map(schema.tables.map((t) => [t.tableId, t.name]))
+const tagItems: TypeaheadItem[] = [
+  ...schema.tables.map((t) => ({
+    id: t.tableId,
+    kind: 'table',
+    name: t.name,
+    path: baseName.get(t.baseId) ?? '',
+    hay: `${t.name} ${baseName.get(t.baseId) ?? ''}`.toLowerCase(),
+    scopeKey: t.baseId,
+    icon: '<span class="iconify lucide--grid-2 size-3.5"></span>',
+  })),
+  ...schema.fields.map((f) => ({
+    id: f.fieldId,
+    kind: 'field',
+    name: f.name,
+    path: `${tableName.get(f.tableId) ?? ''} · ${baseName.get(f.baseId) ?? ''}`,
+    hay: `${f.name} ${tableName.get(f.tableId) ?? ''}`.toLowerCase(),
+    scopeKey: f.baseId,
+    icon: '<span class="iconify lucide--circle-dot size-3.5"></span>',
+  })),
+]
+---
+
+{!hasSchema ? (
+  <EmptyState
+    icon="lucide--layout-panel-left"
+    title="No schema to document"
+    description="Interfaces appear once a backup has captured this Space’s schema."
+  />
+) : (
+  <SchemaInterfaces bases={healthBases} tagItems={tagItems} canUse={canUse} />
+)}

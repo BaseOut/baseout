@@ -3,9 +3,53 @@
     "classification": "daisyui-direct-styleguide",
     "rationale": "Backup-cadence control (web-instant-webhook) composed from daisyUI radio rows (the wizard's schedule pattern) plus the Select and Button primitives; the Instant tier/dynamic-DB gating and save-error mapping live in lib/backups/frequency-picker.ts."
   },
+  "backups/LiveRefresh.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Freshness stamp + soft-primary Refresh button (ui-only@5572f8f promotion) shown in the Backups/Restore log toolbars while a run is in flight; a thin daisyUI Button composition (btn btn-sm btn-soft btn-primary) with a live 'updated Ns ago' stamp, not a standalone Storybook pattern. Styles live in global.css per catalog governance."
+  },
   "backups/RunBackupNowModal.astro": {
     "classification": "daisyui-direct-styleguide",
     "rationale": "Thin product configuration of the ConfirmModal primitive \u2014 the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."
+  },
+  "data/DataBrowse.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Data \u25b8 Records grid (Slice A Task 4, ui-only@9cf5b1ef): the record-browsing counterpart to Schema Browse. daisyUI-direct markup (table/input/badge/tabs) over an embedded SSR snapshot; the views/presets/filter-builder controller lives in its client <script>. Composes FacetFilter, TablePager, and patterns/ExportControl. Styles in <style is:global>."
+  },
+  "data/DataChangelog.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Data \u25b8 Changelog (Slice A Task 4, ui-only@9cf5b1ef): run-over-run record changes on the shared changelog row grid. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; run-detail drill-in registers a panel kind in the shared PanelHost. Styles in <style is:global>."
+  },
+  "data/DataComments.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Data \u25b8 Comments feed (Slice A Task 9, ui-only@9cf5b1ef; fed by server-comments-read): captured record comments on the shared changelog row grid, newest-first, grouped by date/base/table. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; each row opens the record panel via PanelHost. Styles in <style is:global>, every selector qualified by the .cm feed-root class so the shared .cl-* grid overrides never reach the sibling feeds."
+  },
+  "data/DataMedia.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Data \u25b8 Attachments listing (Slice A Task 4, ui-only@9cf5b1ef): captured files as a table/grid with class/base/table/date facets. daisyUI-direct markup composing MediaThumb, FacetFilter, DateRangePicker, TablePager and patterns/ExportControl. Styles in <style is:global>."
+  },
+  "data/LockedTab.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "In-place locked-capability state (Slice A Task 4, ui-only@9cf5b1ef) for dynamic-only Data tabs on a static-only Space. Thin wrapper over the catalog EmptyState primitive (apps/web API)."
+  },
+  "data/MediaPanel.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Data \u25b8 Attachment detail sheet (Slice A Task 4, ui-only@9cf5b1ef): the asset: kind registered into the shared PanelHost stack. daisyUI-direct markup; opened from an Attachments row/tile. Styles in <style is:global>."
+  },
+  "data/MediaThumb.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "A captured file's thumbnail-or-glyph cell (Slice A Task 4, ui-only@9cf5b1ef), sized sm/md; renders the stored thumb when present, else the type glyph. daisyUI-direct markup used by DataMedia and MediaPanel. Styles in <style is:global>."
+  },
+  "data/RecordPanel.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Data \u25b8 record detail sheet (Slice A Task 4, ui-only@9cf5b1ef): the record: kind registered into the shared PanelHost stack, opened from a Browse row / changelog record. daisyUI-direct markup rendering the shared record body (recordReadBody.ts). Styles in <style is:global>."
+  },
+  "data/StaticImport.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Static-Space Browse fallback (Slice A Task 4, ui-only@9cf5b1ef): a simple CSV import/review table for Spaces that store files rather than a queryable store. daisyUI-direct markup; not mounted on the managed_pg dynamic path. Styles in <style is:global>."
+  },
+  "integrations/AccessScopeNote.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "The read-only access-scope note (web-sources / Phase 7.2) shown on the Source connect form: a daisyUI rounded-box note (full variant) + a marked 'Read-only' subhead fragment (mark variant) carrying the monochrome Airtable glyph. daisyUI-direct markup documented via the design harness `pattern-access-scope` entry; .asn styles live in global.css per catalog governance."
   },
   "integrations/BasePickerRow.astro": {
     "classification": "storybook-pattern",
@@ -121,16 +165,68 @@
     "designHarnessPath": "pages/welcome.astro",
     "rationale": "Setup flow stepper chrome for gated wizard surfaces."
   },
+  "reports/RecipientInput.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Report schedule recipient chips (web-reports-page / Phase 8, ui-only tip): daisyUI-direct chip input with member autocomplete + external email commit. Catalog pattern-recipient-input; styles in is:global .rcp-*.",
+    "styleguideId": "pattern-recipient-input"
+  },
+  "reports/ReportBodyKpi.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Report document body (web-reports-page / Phase 8, ui-only tip): KPI strip + section cards composed from ui Table/Badge/TrendChart and schema FacetFilter. Catalog pattern-report; not a single Storybook vessel.",
+    "styleguideId": "pattern-report"
+  },
+  "schema/EntityPanel.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Schema EntityPanel (ui-only@7502f810 lineage): PanelHost entity: kind, Airtable descriptions read-only, Internal notes + Documentation via real docs APIs. daisyUI drawer/sheet composition; no custom vessel."
+  },
   "schema/EntitySearch.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-entity-typeahead",
     "designHarnessPath": "pages/schema.astro",
     "rationale": "Shared entity typeahead (ui-only@9a8b448) \u2014 one search field that filters in place and offers a grouped dropdown; reused by the base picker and Schema Browse; styles in global.css."
   },
+  "schema/FacetFilter.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Faceted single/multi-select filter trigger + menu (promoted with Data surface, ui-only@9cf5b1ef): daisyUI dropdown/checkbox/radio markup driving the Data toolbar's Base/Table/type/date facets. Client filtering + emitted events live in its <script>. Styles via shared facet-filter.css."
+  },
+  "schema/QuickAskDock.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Slice 5 QuickAskDock (ui-only tip): chat:quick PanelHost kind. Expand \u2192 live ChatTab. Threads empty until chat list SSR; no fixture composer. A&I CRUD untouched."
+  },
+  "schema/RelationshipPanel.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 shared relationship detail overlay + declare-synced Drawer (ui-only tip). Opened via schema:openRelationship; Confirm/Dismiss wired to live mutate API."
+  },
+  "schema/SchemaAutomations.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "styleguideId": "pattern-schema-automations-interfaces",
+    "rationale": "Schema Automations tab body (web-automations-interfaces-tabs): Base-grouped daisyUI collapse/table, catalog Drawer create/edit, EntitySearch tag-picker, Growth+ EmptyState upsell. Lazy-fetches space automations proxy; no scoped style. Fixture-free Storybook (upsell story only)."
+  },
+  "schema/SchemaBrowse.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Schema Browse (ui-only tip): Tree/Flat explorer with FacetFilter, EntitySearch, patterns/ExportControl, ui/Table + Badge. Rows use data-entity-open \u2192 EntityPanel. Scoped .br-* styles; real schema SSR index."
+  },
+  "schema/SchemaChangelog.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Changelog (ui-only tip): day-grouped feed + FacetFilter + DateRangePicker. Entries from adaptChangelogEntries over live getSchemaChangelog; no fixtures."
+  },
+  "schema/SchemaHealth.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Health (ui-only tip): hybrid tabs/console + grade report. BaseHealth from adaptHealthOverview over live getHealthOverview; insights empty; Pro+ space prompt/rerun hit health-prompt/health-rerun."
+  },
+  "schema/SchemaInterfaces.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "styleguideId": "pattern-schema-automations-interfaces",
+    "rationale": "Schema Interfaces tab body (web-automations-interfaces-tabs): Interface\u25b8Page nesting, mergeInterfaceSources + provenanceBadges, catalog Drawer (page requires parent), Growth+ upsell. Lazy-fetches space interfaces proxy; no scoped style. Fixture-free Storybook (upsell story only)."
+  },
+  "schema/SchemaRelationships.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Relationships tab (ui-only tip): Tree/Flat + FacetFilter + patterns/ExportControl + ui/Table. Rows open RelationshipPanel / EntityPanel. Real engine SSR via adaptEngineRelationships; Confirm/Dismiss/Declare hit relationship-mutate proxies."
+  },
   "ui/Alert.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "alert",
-    "rationale": "Reusable inline notice primitive backed by daisyUI soft alert classes."
+    "rationale": "D42 one-alert vessel: alert-soft + fixed glyph/role by severity+trigger; showAlert() owns write/reveal order (apps/web/src/components/ui/alert.ts)."
   },
   "ui/Avatar.astro": {
     "classification": "ui-primitive-storybook",
@@ -167,6 +263,11 @@
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean input primitive backed by daisyUI checkbox styling."
   },
+  "ui/CodeInput.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "code-input",
+    "rationale": "Short numeric-code primitive (2FA challenge, code-gated disable). One real input painted as N aria-hidden cells (styles/components/code-input.css) so paste/backspace/auto-advance stay native and AT hears one labelled field. Promoted from ui-only as a Settings SecurityPanel dependency (web-settings); full AuthChallengeView promotion is a later phase."
+  },
   "ui/ConfirmModal.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "confirm-modal",
@@ -178,10 +279,18 @@
     "designHarnessPath": "pages/index.astro",
     "rationale": "Behavior-bearing modal composed from daisyUI dialog, Button, and TextInput; Storybook documents structure and apps/design validates behavior."
   },
+  "ui/DateRangePicker.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Snapshot-anchored day-window / event-window filter (promoted with Data surface, ui-only@9cf5b1ef): daisyUI dropdown of presets + custom range, emitting a from/to window anchored to the backup as-of. Styles in <style is:global>."
+  },
   "ui/Divider.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "divider",
     "rationale": "Reusable separator primitive backed by daisyUI divider classes."
+  },
+  "ui/Drawer.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "daisyUI drawer slide-over primitive (see /styleguide -> Drawer). Renders drawer/drawer-toggle/drawer-side/drawer-overlay with theme-token panel surface + slots; Esc-to-close wired once. Promoted from ui-only for the backup run-detail / base-detail failed-attachment slide-overs (web-backups-redesign). The fork's scoped .sb-drawer* rules were moved to styles/global.css per component-classification governance (tracked components carry no scoped style)."
   },
   "ui/EmptyState.astro": {
     "classification": "ui-primitive-storybook",
@@ -198,6 +307,10 @@
     "styleguideId": "page-header",
     "rationale": "Reusable page title, metadata, and action cluster primitive."
   },
+  "ui/PanelHost.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "The single shared multi-panel drawer stack (Oleh's law, promoted with Data surface, ui-only@9cf5b1ef): mounts one createPanelStack whose hooks dispatch through the kind registry (record: / asset: / run:). daisyUI-direct chrome; contributing kinds register from their own components. Styles in <style is:global>."
+  },
   "ui/ProgressBar.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "progress",
@@ -213,6 +326,15 @@
     "styleguideId": "select",
     "rationale": "Reusable select primitive backed by daisyUI select classes."
   },
+  "ui/Table.astro": {
+    "classification": "ui-primitive-storybook",
+    "rationale": "The one table vessel (catalog table / pattern-audit-table). Promoted with Reports (Phase 8) from ui-only; owns header/sort/keyboard/pager/narrow contract.",
+    "styleguideId": "table"
+  },
+  "ui/TablePager.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "The one list pager (pattern-table-toolbar, ui-only@9cf5b1ef): a daisyUI Select (rows-per-page) + '1\u2013N of M' range + prev/next btn-square-ghost buttons. Inert markup paired with createPager (./tablePager) for behaviour; a shared daisyUI composition rather than a bespoke Storybook primitive. Global .tpg styles (is:global) so runtime-innerHTML pagers reach them."
+  },
   "ui/Tabs.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "tabs",
@@ -227,5 +349,15 @@
     "classification": "ui-primitive-storybook",
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean switch primitive backed by daisyUI toggle styling."
+  },
+  "ui/TrendChart.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "The one time-series chart (catalog pattern-trend-chart). ApexCharts island reading --color-* tokens; compact sparkline + full chart. First consumer: Reports Trends/Data health. Catalogued as a Pattern (not a Primitives Storybook vessel).",
+    "styleguideId": "pattern-trend-chart"
+  },
+  "ui/UndoToast.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Page-level undo toast mount (catalog pattern-undo-toast). daisyUI toast positioner + showUndoToast helper; promoted with Reports destructive flows. Catalogued as a Pattern.",
+    "styleguideId": "pattern-undo-toast"
   }
 }

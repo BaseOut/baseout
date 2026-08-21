@@ -1,0 +1,1294 @@
+---
+/**
+ * SchemaHealth — the Schema page's Health tab (overview/schema/03-health-tab.md).
+ *
+ * Per-Base composite grade (0–100 + Green/Yellow/Red band — the engine's model,
+ * NOT A–F), the category breakdown behind it, and an issue punch-list with an
+ * "Open in Airtable" affordance. Read-only; advisory tone. Rule config is Pro+.
+ *
+ * Base navigation is HYBRID by base count:
+ *  - ≤ 6 bases → underline TABS (compact cards; switch on top, panel changes below).
+ *  - > 6 bases → a two-pane CONSOLE: a compact base list on the left (sorted
+ *    worst-first, searchable, sticky) and the selected base's full report on the
+ *    right, always in view. Clicking a base updates the right pane in place — no
+ *    scroll jump, clear cause/effect, scales to many bases.
+ * The selected base's report is shared by both navs.
+ */
+import { fmtDateTime } from '../../lib/time';
+import Drawer from '../ui/Drawer.astro';
+import ExportControl from '../patterns/ExportControl.astro';
+import { entityChip } from './entityChip';
+import { airtableIconKey, AIRTABLE_FIELD_ICONS } from './airtableFieldIcons';
+import { entityIconClass } from './entityIcon';
+import Badge from '../ui/Badge.astro';
+export type HealthTier = 'Base' | 'Table' | 'Field';
+export interface HealthFinding {
+  text: string;
+  severity?: 'high' | 'med' | 'low';
+  airtableUrl?: string;
+}
+export interface HealthMetric {
+  name: string;
+  /** Which schema tiers this metric evaluates (Base / Table / Field). */
+  tiers: HealthTier[];
+  /** 0–100 sub-score. */
+  score: number;
+  /** Contribution to the base grade, as a percent (weights sum to ~100). */
+  weight: number;
+  /** Whether this metric is counted toward the base grade for this base. Default true. */
+  enabled?: boolean;
+  /** Engine rule id — wires Pro+ prompt/rerun proxies. */
+  ruleId?: string;
+  /** H3 — the metric's system-default scoring prompt (always present in the catalog). */
+  systemPrompt?: string;
+  /** A space-level customization of the prompt; when set, it is the effective prompt. */
+  spacePrompt?: string;
+  /** When this metric's current sub-scores were generated. */
+  lastGenerated?: string;
+  /** Effective prompt changed since lastGenerated → the score is stale; offer Re-run. */
+  promptStale?: boolean;
+  /** Per-metric findings, revealed when the metric row is expanded. */
+  findings?: HealthFinding[];
+}
+export interface HealthIssue {
+  severity: 'high' | 'med' | 'low';
+  text: string;
+  count?: string;
+  airtableUrl?: string;
+}
+/** An entity an insight references — rendered as a clickable chip (opens the shared sidebar). */
+export interface InsightTag {
+  id: string;
+  name: string;
+  kind: 'base' | 'table' | 'field' | 'view';
+  fieldType?: string;
+}
+/** One AI-generated schema observation for a base (schema-insights-ui). */
+export interface SchemaInsight {
+  id: string;
+  /** The advisory observation sentence. */
+  text: string;
+  /** Entity references — clickable chips that open the shared detail sidebar. */
+  tags?: InsightTag[];
+  /** When the engine generated this insight. */
+  generatedAt: string;
+  /** Archived insights are retired/stale — hidden by default, revealed by the toggle. */
+  archived?: boolean;
+  /** Optional typed category (e.g. "Circular reference") — drives the row icon + scanning. */
+  category?: string;
+  /** Optional supporting fact behind the observation (claim + evidence). */
+  evidence?: string;
+}
+/** Per-base insight prompt config + freshness (space-level + per-base override). */
+export interface InsightConfig {
+  /** System-default insight prompt (always present in the catalog). */
+  systemPrompt: string;
+  /** Space-level customization; effective when no base override is set. */
+  spacePrompt?: string;
+  /** Per-base override; when set, it is the effective prompt for this base. */
+  basePrompt?: string;
+  /** When insights for this base were last generated. */
+  lastGenerated?: string;
+  /** Effective prompt changed since lastGenerated → insights are stale; offer Re-run. */
+  promptStale?: boolean;
+}
+export interface BaseHealth {
+  baseId: string;
+  baseName: string;
+  score: number;
+  band: 'green' | 'amber' | 'red';
+  /** True when there is no real grade — show an honest empty/clean state, not a red 0. */
+  unscored?: boolean;
+  metrics: HealthMetric[];
+  issues: HealthIssue[];
+  /** Recent grades (oldest → newest; last = current) — drives the score trend sparkline. */
+  trend?: number[];
+  /** When the engine computed this grade (after a backup run). Drives the freshness stamp. */
+  assessedAt?: string;
+  /** AI-generated schema observations for this base (schema-insights-ui). */
+  insights?: SchemaInsight[];
+  /** Per-base insight prompt config + freshness. */
+  insightConfig?: InsightConfig;
+}
+interface Props {
+  health: BaseHealth[];
+  /** AI capability for prompt editing (Pro+). `ready` → editable; otherwise read-only + upgrade. */
+  aiState?: 'ready' | 'locked' | 'no-credits';
+  /** Entities a per-entity prompt override can target (the searchable "Edit at" picker). */
+  overrideTargets?: { id: string; label: string; kind: string }[];
+}
+const { health, aiState = 'ready', overrideTargets = [] } = Astro.props;
+const canEditPrompts = aiState === 'ready';
+
+/*
+ * Batch T — `scoreBadge` was a raw class string interpolated into the score pill; it is now
+ * `scoreVariant`, a catalog `<Badge>` variant, so `Badge.astro` owns the classes. `badge` (the
+ * SOLID semantic used by the band dot/legend chips) stays a class string: it has no soft catalog
+ * twin and is not a status pill.
+ */
+type BandVariant = 'default' | 'success' | 'warning' | 'error';
+const BAND: Record<string, { label: string; badge: string; scoreVariant: BandVariant | 'default'; text: string; dot: string; means: string }> = {
+  green: { label: 'Green', badge: 'badge-success', scoreVariant: 'success', text: 'text-success', dot: 'var(--color-success)', means: 'In good shape. Minor polish at most.' },
+  amber: { label: 'Yellow', badge: 'badge-warning', scoreVariant: 'warning', text: 'text-warning', dot: 'var(--color-warning)', means: 'A few things could be tidier. Your records are safe.' },
+  red: { label: 'Red', badge: 'badge-error', scoreVariant: 'error', text: 'text-error', dot: 'var(--color-error)', means: 'Several things are worth a look. Nothing is broken by us.' },
+  unscored: { label: 'Unscored', badge: 'badge-ghost', scoreVariant: 'default', text: 'text-base-content/65', dot: 'oklch(from var(--color-base-content) l c h / .25)', means: 'No issues on file. This base has not been graded yet.' },
+};
+const SEV = {
+  high: { label: 'High', badge: 'badge-soft badge-error', dot: 'var(--color-error)' },
+  med: { label: 'Medium', badge: 'badge-soft badge-warning', dot: 'var(--color-warning)' },
+  low: { label: 'Low', badge: 'badge-neutral', dot: 'oklch(from var(--color-base-content) l c h / .45)' },
+};
+const barBand = (s: number) => (s >= 90 ? 'var(--color-success)' : s >= 60 ? 'var(--color-warning)' : 'var(--color-error)');
+const counts = (issues: HealthIssue[]) => ({
+  high: issues.filter((i) => i.severity === 'high').length,
+  med: issues.filter((i) => i.severity === 'med').length,
+  low: issues.filter((i) => i.severity === 'low').length,
+});
+// Issues grouped by severity under advisory headers.
+const GROUPS: { sev: 'high' | 'med' | 'low'; label: string; sub: string; icon: string }[] = [
+  { sev: 'high', label: 'Needs attention', sub: 'Worth fixing soon', icon: 'lucide--triangle-alert' },
+  { sev: 'med', label: 'Worth a look', sub: 'Tidy when you can', icon: 'lucide--circle-alert' },
+  { sev: 'low', label: 'Minor', sub: 'Polish, no rush', icon: 'lucide--sparkles' },
+];
+const bySev = (issues: HealthIssue[], sev: 'high' | 'med' | 'low') => issues.filter((i) => i.severity === sev);
+const RING_C = 2 * Math.PI * 34; // big ring geometry (r=34)
+const SORTS: { v: string; l: string }[] = [
+  { v: 'worst', l: 'Worst first' },
+  { v: 'best', l: 'Best first' },
+  { v: 'name', l: 'Name A–Z' },
+];
+
+// Hybrid nav: tabs for a handful of bases, a two-pane console beyond. The console
+// sorts worst-first so the rot surfaces at the top; tabs keep the authored order.
+// Health always uses the two-pane console: a left base list (worst-first, searchable,
+// sortable, scrolls) + the selected base's report on the right. (Single layout — the
+// small-count tab-card variant was removed 2026-06-24.)
+const ordered = [...health].sort((a, b) => Number(a.unscored) - Number(b.unscored) || a.score - b.score);
+const defaultId = ordered[0]?.baseId;
+const bandKey = (b: BaseHealth) => (b.unscored ? 'unscored' : b.band);
+
+// Insights — a typed category maps to a quiet lucide glyph (scanning aid; optional per insight).
+const INSIGHT_CAT_ICON: Record<string, string> = {
+  'Circular reference': 'lucide--repeat',
+  'Naming inconsistency': 'lucide--case-sensitive',
+  'Unused field': 'lucide--unplug',
+  'High cardinality': 'lucide--git-branch',
+  'Missing descriptions': 'lucide--file-question',
+  'Orphaned table': 'lucide--unlink',
+  'Duplicate fields': 'lucide--copy',
+  'Empty table': 'lucide--table',
+};
+const insightCatIcon = (c?: string) => (c && INSIGHT_CAT_ICON[c]) || 'lucide--lightbulb';
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+// Field-type SVG for an insight tag chip (sized via inline attrs so it survives set:html).
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const tagChipIcon = (t: InsightTag) =>
+  t.kind === 'field' ? `<span class="concept-ic-field">${fieldIconSvg(t.fieldType) || '<span class="iconify lucide--circle"></span>'}</span>`
+  : t.kind === 'table' ? '<span class="iconify lucide--table-2 concept-ic-table"></span>'
+  : t.kind === 'view' ? '<span class="iconify lucide--eye concept-ic-view"></span>'
+  : '<span class="iconify lucide--database concept-ic-base"></span>';
+const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
+---
+
+<div class:list={['hl', 'hl-ov-mode']} data-health>
+  {/* Health-level header: scoring methodology + rule config are Space/Org-wide, NOT per-base */}
+  <div class="hl-header">
+    <h3 class="hl-header-title">Bases <span class="badge badge-sm badge-neutral">{health.length}</span></h3>
+    <div class="hl-header-actions">
+      <div class="tooltip tooltip-bottom hl-method-tt">
+        <div class="tooltip-content">
+          <p class="hl-method-lead">Each base is graded 0–100 after every backup, from a catalog of weighted metrics (each shown with its sub-score), grouped into:</p>
+          <ul class="hl-method-list">
+            <li><b>Schema cleanliness</b> — naming, unnamed or duplicate fields, empty tables.</li>
+            <li><b>Data quality</b> — empty primary fields, broken links, formula errors.</li>
+            <li><b>Configuration</b> — missing descriptions &amp; settings.</li>
+          </ul>
+          <div class="hl-method-bands"><span><i style="background:var(--color-error)"></i>Red &lt; 60</span><span><i style="background:var(--color-warning)"></i>Yellow 60–89</span><span><i style="background:var(--color-success)"></i>Green ≥ 90</span></div>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5 hl-method-trigger"><span class="iconify lucide--info size-4" aria-hidden="true"></span>How this is scored</button>
+      </div>
+      {/* D44 item 4 — the three `Pro+` chips on this page were `badge-soft badge-primary`. Primary
+          is a reserved colour: since Oleh's ruling 5 (2026-08-14) it means in-progress/`Running`,
+          and a tier gate is not a state of the user's schema at all. Amber was the other candidate
+          and is worse — it already carries paused, degraded, stale and removed, and the reason
+          `Running` was taken off amber is that "not green" is not a meaning. A gate makes no claim
+          about health, so it takes the neutral that works (`badge-ghost`, 17.4:1 / 16.3:1).
+          NOT addressed here: D14's recipe consolidation (one lock glyph, one capability sentence,
+          no placeholder destination) — that is an IA change blocked on Dan's answer, and this is
+          only the colour reservation coming off. */}
+      <a href="/settings/billing" class="btn btn-sm btn-soft btn-primary gap-1.5"><span class="iconify lucide--sliders-horizontal size-4" aria-hidden="true"></span>Configure rules <Badge size="sm">Pro+</Badge></a>
+      {/* PDF only — the client's answer. The CSV item that used to sit here contradicted it. */}
+      <ExportControl tab="health" format="pdf" noun="bases" total={health.length} rowSelector="[data-hl-card]" />
+    </div>
+  </div>
+
+  <div class="hl-nav">
+    <div class="hl-tools">
+      <label class="input input-sm hl-search-input">
+        <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+        <input type="text" placeholder="Search bases" data-hl-search aria-label="Search bases" />
+      </label>
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-sm btn-square btn-ghost hl-sortbtn tooltip tooltip-left" aria-label="Sort bases" data-tip="Sort bases">
+          <span class="iconify lucide--arrow-up-down size-4" aria-hidden="true"></span>
+        </div>
+        <ul tabindex="0" class="dropdown-content menu hl-sortmenu">
+          <li class="menu-title">Sort by</li>
+          {SORTS.map((s) => (
+            <li><button type="button" class:list={['hl-sortopt', { 'is-active': s.v === 'worst' }]} data-hl-sort={s.v}><span class="iconify lucide--check size-3.5 hl-sort-check" aria-hidden="true"></span>{s.l}</button></li>
+          ))}
+        </ul>
+      </div>
+    </div>
+    <div class="hl-master" role="tablist" aria-label="Base health">
+      {ordered.map((b, i) => {
+        const cc = counts(b.issues);
+        const tot = b.issues.length;
+        return (
+          <button type="button" class:list={['hl-mrow', { 'is-active': i === 0 }]} role="tab" aria-selected={i === 0} data-hl-card={b.baseId} data-name={b.baseName.toLowerCase()} data-score={b.unscored ? 101 : b.score}>
+            <Badge size="lg" variant={BAND[bandKey(b)].scoreVariant} class="hl-mrow-score">{b.unscored ? '—' : b.score}<span class="sr-only">{b.unscored ? 'unscored' : ` out of 100, ${BAND[bandKey(b)].label} band`}</span></Badge>
+            <span class="hl-mrow-name">{b.baseName}</span>
+            <span class="row-go hl-mrow-chev" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+            <span class="hl-mrow-sub">
+              {tot === 0 ? (
+                <Badge variant="success" size="sm">No issues</Badge>
+              ) : (
+                <>
+                  {cc.high > 0 && <span class={`badge badge-sm ${SEV.high.badge}`}>{cc.high} high</span>}
+                  {cc.med > 0 && <span class={`badge badge-sm ${SEV.med.badge}`}>{cc.med} med</span>}
+                  {cc.low > 0 && <span class={`badge badge-sm ${SEV.low.badge}`}>{cc.low} low</span>}
+                </>
+              )}
+            </span>
+          </button>
+        );
+      })}
+      <p class="hl-master-empty" data-hl-search-empty hidden>No bases match.</p>
+    </div>
+  </div>
+
+  <div class="hl-details">
+    {health.map((b) => {
+      const bk = bandKey(b);
+      const off = b.unscored ? RING_C : RING_C * (1 - b.score / 100);
+      const c = counts(b.issues);
+      const tr = b.trend ?? [];
+      const tPrev = tr.length > 1 ? tr[tr.length - 2] : null;
+      const tDelta = b.unscored || tPrev == null ? null : b.score - tPrev;
+      const tDir = tDelta == null ? 'flat' : tDelta > 0 ? 'up' : tDelta < 0 ? 'down' : 'flat';
+      const insAll = b.insights ?? [];
+      const insActive = insAll.filter((i) => !i.archived);
+      const insArchived = insAll.filter((i) => i.archived);
+      const icfg = b.insightConfig;
+      const hasInsights = insAll.length > 0 || !!icfg;
+      return (
+        <section class="hl-detail hl-detailf" role="tabpanel" aria-label={`${b.baseName} health`} data-detail={b.baseId} hidden={b.baseId !== defaultId}>
+          {/* one block: overall ring (left) · recommendation, bars, freshness + methodology (right) */}
+          <div class="hl-fblock">
+            <div class="hl-ringwrap">
+              <div class="hl-ring" role="img" aria-label={b.unscored ? `${b.baseName} unscored` : `Health score ${b.score} of 100, ${BAND[bk].label} band`}>
+                <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+                  <circle cx="46" cy="46" r="34" fill="none" stroke="oklch(from var(--color-base-content) l c h / .08)" stroke-width="7" />
+                  <circle cx="46" cy="46" r="34" fill="none" stroke={BAND[bk].dot} stroke-width="7" stroke-linecap="round" stroke-dasharray={RING_C} stroke-dashoffset={off} transform="rotate(-90 46 46)" />
+                </svg>
+                <span class={`hl-ring-num ${BAND[bk].text}`}>{b.unscored ? '—' : b.score}</span>
+              </div>
+              {tDelta != null && (
+                <span class={`hl-ring-trend hl-trend-${tDir}`}>
+                  <span class="hl-ring-trend-val"><span class={`iconify size-3.5 ${tDir === 'up' ? 'lucide--trending-up' : tDir === 'down' ? 'lucide--trending-down' : 'lucide--minus'}`} aria-hidden="true"></span>{tDelta > 0 ? `+${tDelta}` : `${tDelta}`}</span>
+                  <span class="hl-ring-trend-cap">since last backup</span>
+                </span>
+              )}
+            </div>
+            <div class="hl-fblock-meta">
+              <h2 class="hl-fblock-name">{b.baseName}</h2>
+              <p class="hl-means">{BAND[bk].means}</p>
+              {b.metrics.length > 0 ? (
+              <>
+              <div class="hl-bd-head">
+                <span class="hl-bd-title">Score breakdown</span>
+                <span class="hl-bd-hint">Each area is scored 0–100 — lower scores are where to look. Expand a row to see what was found.</span>
+              </div>
+              {/* The measuring container for the metric grid. The compact layout used to key off a
+                  VIEWPORT media query, but the pressure here is the CONTAINER: turning on split view
+                  halves `.sch` while the viewport stays 1440, so the full track list stayed selected
+                  at ~397px of room and the name track collapsed to 0. A container query asks the
+                  question the layout actually cares about. */}
+              <div class="hl-metrics-wrap">
+              <div class="hl-metrics-head tbl-colhead" aria-hidden="true">
+                <span></span><span>Area</span><span>Applies to</span><span></span><span class="hl-mh-r">Weight</span><span class="hl-mh-r">Score</span><span class="hl-mh-r">Counted</span>
+              </div>
+              <div class="hl-metrics">
+                {b.metrics.map((m) => (
+                  <div class:list={['hl-metric', { 'hl-metric-off': m.enabled === false }]} data-hl-metric>
+                    <div class="hl-metric-row" data-hl-metric-row role="button" tabindex="0" aria-expanded="false">
+                      <span class="hl-metric-caret" aria-hidden="true"><span class="iconify lucide--chevron-right size-3.5"></span></span>
+                      <span class="hl-metric-namewrap"><span class="hl-metric-name">{m.name}</span><Badge size="sm" class="hl-offtag">Not counted</Badge></span>
+                      <span class="hl-metric-tiers">{m.tiers.map((t) => <Badge size="sm" class="hl-metric-tier">{t}</Badge>)}</span>
+                      <span class="hl-bar hl-metric-bar"><span class="hl-bar-fill" style={`width:${m.score}%;background:${barBand(m.score)}`}></span></span>
+                      <span class="hl-metric-weight tabular-nums tooltip tooltip-top" data-tip="Contribution to the grade">{m.weight}%</span>
+                      <span class={`hl-metric-score tabular-nums ${m.score >= 90 ? 'text-success' : m.score >= 60 ? 'text-warning' : 'text-error'}`}>{m.score}</span>
+                      <label class="hl-metric-en tooltip tooltip-top" data-hl-metric-en data-tip="Count this metric for this base" aria-label={`Count ${m.name} for this base`}><input type="checkbox" class="toggle toggle-sm" checked={m.enabled !== false} /></label>
+                    </div>
+                    {m.findings && m.findings.length > 0 ? (
+                      <ul class="hl-metric-findings">
+                        {m.findings.map((f) => (
+                          <li class="hl-finding">
+                            {f.severity && <i class="hl-finding-dot" style={`background:${SEV[f.severity].dot}`}></i>}
+                            <span class="hl-finding-text">{f.text}</span>
+                            {f.airtableUrl && <a href={f.airtableUrl} target="_blank" rel="noreferrer" class="hl-finding-link">Open in Airtable<span class="iconify lucide--external-link size-3" aria-hidden="true"></span></a>}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p class="hl-metric-clean"><span class="iconify lucide--circle-check size-3.5" aria-hidden="true"></span>No issues from this metric.</p>
+                    )}
+                    <div class="hl-metric-cfg">
+                      <button type="button" class="btn btn-sm btn-ghost gap-1.5 text-primary hl-prompt-open" data-hl-prompt-open data-metric={m.name} data-rule-id={m.ruleId ?? ''} data-tiers={m.tiers.join(', ')} data-system={m.systemPrompt ?? ''} data-space={m.spacePrompt ?? ''} data-lastgen={m.lastGenerated ?? ''} data-stale={m.promptStale ? '1' : '0'}>
+                        <span class="iconify lucide--sliders-horizontal size-4" aria-hidden="true"></span>Scoring prompt<Badge size="sm">Pro+</Badge>
+                      </button>
+                      {m.lastGenerated && <span class="hl-metric-lastgen"><span class="iconify lucide--clock size-3.5" aria-hidden="true"></span>Last scored {fmtDateTime(m.lastGenerated)}{m.promptStale ? ' · prompt changed since' : ''}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              </div>
+              </>
+              ) : (
+                <p class="hl-bd-empty">No score breakdown yet. Areas appear once this base has been graded.</p>
+              )}
+              {b.assessedAt && (
+                <div class="hl-fmeta">
+                  <span class="hl-fmeta-time"><span class="iconify lucide--clock size-3.5" aria-hidden="true"></span>Assessed {fmtDateTime(b.assessedAt)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Issues / Insights sub-switcher + the base's severity legend, aligned on ONE row. */}
+          {(hasInsights || b.issues.length > 0) && (
+            <div class="hl-subhead">
+              {hasInsights && (
+                <div class="hl-subnav sb-segtrack" role="tablist" aria-label="Issues and insights">
+                  <button type="button" class="hl-subtab sb-seg is-active" role="tab" aria-selected="true" data-subtab="issues">
+                    <span class="iconify lucide--list-checks size-3.5" aria-hidden="true"></span>Issues <span class="badge badge-sm badge-neutral">{b.issues.length}</span>
+                  </button>
+                  <button type="button" class="hl-subtab sb-seg" role="tab" aria-selected="false" data-subtab="insights">
+                    <span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span>Insights <span class="badge badge-sm badge-neutral" data-ins-count>{insActive.length}</span>
+                  </button>
+                </div>
+              )}
+              {b.issues.length > 0 && (
+                <div class="hl-sevsum" data-sevsum>
+                  {c.high > 0 && <span class="hl-sevpill"><i style={`background:${SEV.high.dot}`}></i>{c.high} High</span>}
+                  {c.med > 0 && <span class="hl-sevpill"><i style={`background:${SEV.med.dot}`}></i>{c.med} Medium</span>}
+                  {c.low > 0 && <span class="hl-sevpill"><i style={`background:${SEV.low.dot}`}></i>{c.low} Low</span>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* issues panel — grouped by severity, daisyUI table + standard buttons */}
+          <div class="hl-subpanel" data-subpanel="issues">
+
+          {b.issues.length > 0 ? (
+            <div class="hl-groups">
+              {GROUPS.map((g) => {
+                const items = bySev(b.issues, g.sev);
+                return items.length === 0 ? null : (
+                  <div class="hl-group" data-sev={g.sev}>
+                    <div class="hl-group-head">
+                      <span class="hl-group-ic"><span class={`iconify ${g.icon} size-4`} aria-hidden="true"></span></span>
+                      <span class="hl-group-label">{g.label}</span>
+                      <span class="hl-group-sub">{g.sub}</span>
+                      <Badge size="sm" class="ml-auto">{items.length}</Badge>
+                    </div>
+                    <div class="hl-tablewrap">
+                      <table class="table table-sm hl-ftable">
+                        <tbody>
+                          {items.map((it) => (
+                            <tr>
+                              <td class="hl-ft-text">{it.text}</td>
+                              <td class="hl-ft-count">{it.count && <span class="mono-data">{it.count}</span>}</td>
+                              <td class="hl-ft-act">{it.airtableUrl && (
+                                <a href={it.airtableUrl} target="_blank" rel="noreferrer" class="btn btn-sm btn-ghost text-primary gap-1.5">Open in Airtable<span class="iconify lucide--external-link size-3.5" aria-hidden="true"></span></a>
+                              )}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div class="hl-clean"><span class="iconify lucide--circle-check size-5 text-success" aria-hidden="true"></span>No issues. This base is clean.</div>
+          )}
+          </div>
+
+          {/* Insights panel — AI observations about this base (schema-insights-ui). Read-only; advisory. */}
+          {hasInsights && (
+            <div class="hl-insights hl-subpanel" data-insights data-subpanel="insights" hidden>
+              <div class="hl-ins-head">
+                <span class="hl-ins-gen">
+                  <span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span>
+                  AI{icfg?.lastGenerated ? ` · generated ${fmtDateTime(icfg.lastGenerated)}` : ''}
+                </span>
+                <div class="hl-ins-actions">
+                  {icfg?.promptStale && canEditPrompts && (
+                    <button type="button" class="btn btn-sm btn-ghost gap-1.5 text-primary" data-ins-rerun-base={b.baseId}>
+                      <span class="iconify lucide--refresh-cw size-3.5" aria-hidden="true"></span>Re-run
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-ghost gap-1.5"
+                    data-ins-prompt-open
+                    data-base-name={b.baseName}
+                    data-system={icfg?.systemPrompt ?? ''}
+                    data-space={icfg?.spacePrompt ?? ''}
+                    data-baseprompt={icfg?.basePrompt ?? ''}
+                    data-stale={icfg?.promptStale ? '1' : '0'}
+                  >
+                    <span class="iconify lucide--sliders-horizontal size-4" aria-hidden="true"></span>Configure<Badge size="sm">Pro+</Badge>
+                  </button>
+                  <label class="hl-ins-arctoggle" hidden={insArchived.length === 0}>
+                    <input type="checkbox" class="toggle toggle-sm" data-ins-show-archived />
+                    <span>Show archived <span class="badge badge-sm badge-neutral hl-ins-arc-n">{insArchived.length}</span></span>
+                  </label>
+                </div>
+              </div>
+
+              {icfg?.promptStale && (
+                <div class="alert alert-soft alert-warning hl-ins-stale" role="alert" data-ins-stale>
+                  <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+                  <span>The insight prompt changed since these were generated{canEditPrompts ? ' — re-run to refresh.' : '.'}</span>
+                </div>
+              )}
+
+              {insAll.length === 0 ? (
+                <div class="hl-ins-empty"><span class="iconify lucide--lightbulb size-4 opacity-60" aria-hidden="true"></span>No insights for this base yet.</div>
+              ) : (
+                <ul class="hl-ins-list">
+                  {[...insActive, ...insArchived].map((ins, idx) => {
+                    const isArc = !!ins.archived;
+                    const extra = !isArc && idx >= INSIGHTS_SHOWN;
+                    return (
+                      <li class:list={['hl-ins-card', { 'hl-ins-arc': isArc }]} data-insight data-archived={isArc ? '1' : '0'} hidden={isArc || extra}>
+                        <div class="hl-ins-top">
+                          <span class="hl-ins-cat">
+                            <span class={`iconify ${insightCatIcon(ins.category)} size-3.5`} aria-hidden="true"></span>
+                            {ins.category ?? 'Insight'}
+                          </span>
+                          {isArc && <Badge size="sm" class="hl-arctag">Archived</Badge>}
+                          <span class="hl-ins-date">{fmtDateTime(ins.generatedAt)}</span>
+                        </div>
+                        <p class="hl-ins-text">{ins.text}</p>
+                        {ins.evidence && <p class="hl-ins-ev">{ins.evidence}</p>}
+                        {ins.tags && ins.tags.length > 0 && (
+                          <div class="hl-ins-tags">
+                            {ins.tags.map((tg) => (
+                              <Fragment set:html={entityChip({ name: tg.name, icon: tagChipIcon(tg), clickable: true, attrs: `data-entity-open="${esc(tg.id)}" data-kind="${esc(tg.kind)}"` })} />
+                            ))}
+                          </div>
+                        )}
+                        <div class="hl-ins-foot">
+                          {isArc ? (
+                            <button type="button" class="btn btn-sm btn-ghost gap-1 hl-ins-act" data-ins-restore><span class="iconify lucide--rotate-ccw size-3.5" aria-hidden="true"></span>Restore</button>
+                          ) : (
+                            <button type="button" class="btn btn-sm btn-ghost gap-1 hl-ins-act" data-ins-archive><span class="iconify lucide--archive size-3.5" aria-hidden="true"></span>Archive</button>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {insActive.length > INSIGHTS_SHOWN && (
+                <button type="button" class="hl-ins-more" data-ins-more>
+                  <span class="iconify lucide--chevron-down size-4" aria-hidden="true"></span>
+                  Show <span data-ins-more-n>{insActive.length - INSIGHTS_SHOWN}</span> more
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      );
+    })}
+  </div>
+
+  {/* H3 — prompt-editor drawer (one instance, populated per metric on open). */}
+  <Drawer id="hl-prompt" title="Scoring prompt" subtitle="How AI evaluates this metric" side="end" width="w-[min(94vw,34rem)]">
+    <div class="pe">
+      <div class="pe-metric"><span class="iconify lucide--ruler size-4" aria-hidden="true"></span><span data-pe-metric>Metric</span></div>
+
+      {!canEditPrompts && (
+        <div class="pe-upgrade">
+          <span class="iconify lucide--lock size-4" aria-hidden="true"></span>
+          <div><b>Editing prompts is a Pro+ feature.</b> You can read the current prompt; upgrade to customize how this metric is scored. <a href="/settings/billing" class="link link-primary">Upgrade</a></div>
+        </div>
+      )}
+
+      <div class="pe-res">
+        <span class="pe-res-label">Effective prompt — resolved from</span>
+        <div class="pe-res-chips">
+          <span class="pe-chip" data-pe-chip="default">System default</span>
+          <span class="pe-chip-arrow" aria-hidden="true">▸</span>
+          <span class="pe-chip" data-pe-chip="space">Space</span>
+          <span class="pe-chip-arrow" aria-hidden="true">▸</span>
+          <span class="pe-chip" data-pe-chip="override">Override</span>
+        </div>
+      </div>
+
+      {canEditPrompts && (
+        <div class="pe-field">
+          <span class="pe-field-label">Edit at</span>
+          <div class="dropdown pe-scope">
+            <div tabindex="0" role="button" class="btn btn-sm pe-scope-trigger" data-pe-scope-trigger>
+              <span class="pe-scope-cur" data-pe-scope-cur>Whole Space — applies to all bases</span>
+              <span class="iconify lucide--chevron-down size-3.5 opacity-60" aria-hidden="true"></span>
+            </div>
+            <div tabindex="0" class="dropdown-content pe-scope-menu">
+              <label class="input input-sm pe-scope-search">
+                <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+                <input type="text" placeholder="Search bases, tables, fields, views…" data-pe-scope-search aria-label="Search entities" autocomplete="off" />
+              </label>
+              <div class="pe-scope-list" data-pe-scope-list>
+                <button type="button" class="pe-scope-opt" data-pe-scope-opt data-value="space" data-label="Whole Space — applies to all bases" data-search="whole space all bases">
+                  <span class="iconify lucide--globe size-4 opacity-60" aria-hidden="true"></span><span class="pe-scope-opt-lbl">Whole Space — applies to all bases</span>
+                </button>
+                <div class="pe-scope-group">Override for one entity</div>
+                {overrideTargets.map((o) => (
+                  <button type="button" class="pe-scope-opt" data-pe-scope-opt data-value={`ent:${o.id}`} data-label={o.label} data-search={o.label.toLowerCase()}>
+                    <span class={`iconify size-4 opacity-60 ${entityIconClass(o.kind)}`} aria-hidden="true"></span><span class="pe-scope-opt-lbl">{o.label}</span>
+                  </button>
+                ))}
+                <div class="pe-scope-empty" data-pe-scope-empty hidden>No entities match.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <label class="pe-field">
+        <span class="pe-field-label">Prompt</span>
+        <textarea class="textarea textarea-bordered textarea-sm pe-ta" data-pe-ta rows="9" readonly={!canEditPrompts} placeholder="Scoring prompt…"></textarea>
+      </label>
+
+      <div class="alert alert-soft alert-warning pe-stale" role="alert" data-pe-stale hidden>
+        <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+        <span class="pe-stale-txt">Scored before the prompt changed — the score may be out of date.</span>
+        {canEditPrompts && <button type="button" class="btn btn-sm btn-primary gap-1.5" data-pe-rerun><span class="iconify lucide--refresh-cw size-3.5" aria-hidden="true"></span>Re-run<span class="badge badge-sm">10 credits</span></button>}
+      </div>
+    </div>
+    <Fragment slot="footer">
+      {canEditPrompts ? (
+        <div class="pe-actions">
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-pe-save><span class="iconify lucide--check size-3.5" aria-hidden="true"></span><span data-pe-save-label>Save prompt</span></button>
+          <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-pe-reset hidden><span class="iconify lucide--rotate-ccw size-3.5" aria-hidden="true"></span><span data-pe-reset-label>Reset to default</span></button>
+          <label for="hl-prompt" class="btn btn-sm btn-ghost ml-auto">Cancel</label>
+        </div>
+      ) : (
+        <label for="hl-prompt" class="btn btn-sm btn-ghost ml-auto">Close</label>
+      )}
+    </Fragment>
+  </Drawer>
+
+  {/* Insight prompt editor (one instance, populated per base on open). Scope = Space vs this-base override. */}
+  <Drawer id="hl-insight-prompt" title="Insight prompt" subtitle="How AI writes insights for your schema" side="end" width="w-[min(94vw,34rem)]">
+    <div class="pe">
+      <div class="pe-metric"><span class="iconify lucide--sparkles size-4" aria-hidden="true"></span><span data-ipe-base>Base</span></div>
+
+      {!canEditPrompts && (
+        <div class="pe-upgrade">
+          <span class="iconify lucide--lock size-4" aria-hidden="true"></span>
+          <div><b>Editing prompts is a Pro+ feature.</b> You can read the current prompt; upgrade to tune how insights are written. <a href="/settings/billing" class="link link-primary">Upgrade</a></div>
+        </div>
+      )}
+
+      <div class="pe-res">
+        <span class="pe-res-label">Effective prompt — resolved from</span>
+        <div class="pe-res-chips">
+          <span class="pe-chip" data-ipe-chip="default">System default</span>
+          <span class="pe-chip-arrow" aria-hidden="true">▸</span>
+          <span class="pe-chip" data-ipe-chip="space">Space</span>
+          <span class="pe-chip-arrow" aria-hidden="true">▸</span>
+          <span class="pe-chip" data-ipe-chip="override">This base</span>
+        </div>
+      </div>
+
+      {canEditPrompts && (
+        <div class="pe-field">
+          <span class="pe-field-label">Edit at</span>
+          <div class="pe-segmented" role="group" aria-label="Prompt scope">
+            <button type="button" class="pe-seg is-active" data-ipe-scope="space"><span class="iconify lucide--globe size-3.5" aria-hidden="true"></span>Whole Space</button>
+            <button type="button" class="pe-seg" data-ipe-scope="base"><span class="iconify lucide--database size-3.5" aria-hidden="true"></span><span data-ipe-scope-base>This base</span> only</button>
+          </div>
+          <span class="pe-field-hint" data-ipe-hint>Applies to insight generation across every base in this Space.</span>
+        </div>
+      )}
+
+      <label class="pe-field">
+        <span class="pe-field-label">Prompt</span>
+        <textarea class="textarea textarea-bordered textarea-sm pe-ta" data-ipe-ta rows="9" readonly={!canEditPrompts} placeholder="Insight prompt…"></textarea>
+      </label>
+
+      <div class="alert alert-soft alert-warning pe-stale" role="alert" data-ipe-stale hidden>
+        <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+        <span class="pe-stale-txt">Insights were generated before the prompt changed — they may be out of date.</span>
+        {canEditPrompts && <button type="button" class="btn btn-sm btn-primary gap-1.5" data-ipe-rerun><span class="iconify lucide--refresh-cw size-3.5" aria-hidden="true"></span>Re-run<span class="badge badge-sm">10 credits</span></button>}
+      </div>
+    </div>
+    <Fragment slot="footer">
+      {canEditPrompts ? (
+        <div class="pe-actions">
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-ipe-save><span class="iconify lucide--check size-3.5" aria-hidden="true"></span><span data-ipe-save-label>Save prompt</span></button>
+          <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-ipe-reset hidden><span class="iconify lucide--rotate-ccw size-3.5" aria-hidden="true"></span><span data-ipe-reset-label>Reset to default</span></button>
+          <label for="hl-insight-prompt" class="btn btn-sm btn-ghost ml-auto">Cancel</label>
+        </div>
+      ) : (
+        <label for="hl-insight-prompt" class="btn btn-sm btn-ghost ml-auto">Close</label>
+      )}
+    </Fragment>
+  </Drawer>
+
+</div>
+
+<style is:global>
+  .hl { display: flex; flex-direction: column; gap: 16px; }
+
+  /* section titles (Bases / Issues) */
+  .hl-issues-head { margin-bottom: 8px; }
+  .hl-issues-head-b { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .hl-issues-head h3 { font-size: var(--t-14); font-weight: 650; display: inline-flex; align-items: center; gap: 8px; }
+
+  /* Health-level header (methodology + rule config — Space/Org-wide, once at the top) */
+  .hl-header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .hl-header-title { font-size: var(--t-14); font-weight: 650; display: inline-flex; align-items: center; gap: 8px; }
+  .hl-header-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  /* ===================== base nav: TABS (≤ 6 bases) ===================== */
+  .hl-cards { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hl-card { display: flex; flex-direction: column; gap: 4px; min-width: 8.5rem; padding: 12px 16px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); text-align: left; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
+  .hl-card:hover { background: oklch(from var(--color-base-200) l c h / .45); }
+  .hl-card.is-active { border-color: oklch(from var(--color-primary) l c h / .65); background: oklch(from var(--color-primary) l c h / .08); }
+  .hl-card-base { font-size: var(--t-13); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-card-score { font-size: var(--t-32); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .hl-card-issues { display: inline-flex; align-items: center; gap: .25rem; margin-top: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-card-hi { color: var(--color-error); font-weight: 600; }
+  :global([data-theme="baseout-light"]) .hl-card-hi { color: oklch(from var(--color-error) calc(l - 0.06) c h); }
+  .hl-card-clean { color: oklch(from var(--color-success) l c h / .85); }
+  :global([data-theme="baseout-light"]) .hl-card-clean { color: oklch(from var(--color-success) calc(l - 0.12) c h); }
+  /* the tab row reads as a UI tab strip: a baseline under the cards + a primary underline under the active base */
+  .hl-cards-f { position: relative; padding-bottom: 16px; }
+  .hl-cards-f::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--color-base-300); }
+  .hl-cards-f .hl-card { position: relative; }
+  .hl-cards-f .hl-card.is-active::after { content: ""; position: absolute; left: 0; right: 0; bottom: calc(-.9rem - 1px); height: 2px; border-radius: var(--r-4) var(--r-4) 0 0; background: var(--color-primary); z-index: 1; }
+
+  /* ===================== base nav: two-pane CONSOLE (> 6 bases) ===================== */
+  /* --rail-m, not --rail-l: at 360px the base list crowded the detail it exists to open (Oleh). */
+  .hl-ov-mode { display: grid; grid-template-columns: var(--rail-m) 1fr; grid-template-areas: "header header" "nav main"; column-gap: 16px; row-gap: 12px; align-items: start; }
+  .hl-ov-mode > .hl-header { grid-area: header; }
+  /* The panel pads the TOOLS row only. `.hl-master` then reclaims the horizontal padding with a
+   negative margin so its score rows stay edge-to-edge: they are a row list with full-width hover
+   and border-top separators, not inset cards like Docs. Measured reason, not preference — with the
+   padding applied to the rows, 280px minus 24px could no longer fit "2 high · 2 med · 1 low" on one
+   line and every row grew a third. */
+  .hl-ov-mode > .hl-nav { grid-area: nav; position: sticky; top: 1rem; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: var(--r-12); padding: 12px 12px 0; overflow: hidden; }
+  .hl-ov-mode > .hl-details { grid-area: main; min-width: 0; }
+
+  .hl-tools { display: flex; align-items: center; gap: .5rem; margin-bottom: 12px; }
+  .hl-search-input { flex: 1; min-width: 0; }
+  .hl-sortbtn { flex: none; border: 1px solid var(--color-base-300); }
+  .hl-sortmenu { z-index: 30; width: 11rem; margin-top: 4px; padding: 4px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: var(--r-8); box-shadow: 0 8px 24px oklch(0 0 0 / .16); }
+  .hl-sortopt { display: flex; align-items: center; gap: 4px; }
+  .hl-sort-check { flex: none; opacity: 0; color: var(--color-primary); }
+  .hl-sortopt.is-active { font-weight: 600; }
+  .hl-sortopt.is-active .hl-sort-check { opacity: 1; }
+
+    /* IN-PAGE LIST PANEL — one recipe, and it is the app's OWN: `DataBrowse.astro`'s preset rail
+     already becomes exactly this when it floats at narrow width (`.dg.is-list-overlay .dv-rail`:
+     base-100 + 1px base-300 + 12px radius + 12px padding, plus a shadow only because it floats).
+     Four of these panels existed with four treatments — Chat filled at 13.6px radius, Health
+     OUTLINED BUT TRANSPARENT at 12.8px, Docs and the preset rail with no container at all — which
+     is why Oleh read Chat as fine and the rest as losing contrast. 12px is also the grid-aligned
+     radius; 12.8px and 13.6px are .8rem and .85rem, on no grid.
+     Measured: a filled panel sits at 1.071 against the page floor in light and 1.048 in dark —
+     IDENTICAL to an existing card in each theme, so dark needs no special case. */
+.hl-master { display: flex; flex-direction: column; margin: 0 -12px; border-top: 1px solid var(--color-base-300); overflow: hidden auto; max-height: calc(100dvh - 13rem); }
+  /* one aligned grid per row: [icon tile] [score, right] [name + badges, shared left edge] [chevron, centered] */
+  .hl-mrow { display: grid; grid-template-columns: 3.4rem 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: .5rem; row-gap: 8px; width: 100%; padding: 12px 16px; text-align: left; background: transparent; border: 0; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); cursor: pointer; transition: background .12s ease; }
+  .hl-mrow:first-child { border-top: 0; }
+  /* .hl-mrow hover from shared .row-clickable */
+  .hl-mrow.is-active { background: oklch(from var(--color-primary) l c h / .08); }
+  .hl-mrow-score { grid-column: 1; grid-row: 1 / 3; align-self: center; justify-self: center; min-width: 2.5rem; font-size: var(--t-16); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .hl-mrow-name { grid-column: 2; grid-row: 1; font-size: var(--t-14); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hl-mrow-chev { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+  .hl-mrow.is-active .row-go { color: var(--color-primary); }
+  .hl-mrow-sub { grid-column: 2; grid-row: 2; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .hl-master-empty { padding: 16px 12px; font-size: var(--t-13); text-align: center; color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-mrow-sub .badge { font-weight: 550; }
+
+  /* ===================== selected-base report (shared by both navs) ===================== */
+  .hl-detail { padding-top: 20px; }
+  .hl-detailf { padding-top: 0; }
+  .hl-fblock { display: flex; align-items: flex-start; gap: 1.5rem; padding: 20px 24px; margin-bottom: 24px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); }
+  .hl-ringwrap { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
+  .hl-ring { position: relative; width: 92px; height: 92px; flex: none; display: grid; place-items: center; }
+  .hl-ring svg { position: absolute; inset: 0; }
+  .hl-ring-num { font-size: var(--t-24); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .hl-ring-cap { font-size: var(--t-11); color: oklch(from var(--color-base-content) l c h / .65); font-variant-numeric: tabular-nums; }
+  .hl-fblock-meta { flex: 1; min-width: 0; }
+  .hl-fblock-name { font-size: var(--t-18); font-weight: 680; }
+  .hl-means { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); white-space: normal; overflow: visible; text-overflow: unset; }
+  .hl-fblock-meta .hl-means { margin-top: 4px; margin-bottom: 0; }
+
+  /* category composition */
+  .hl-comp { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .hl-comp-f { margin-top: 16px; max-width: 680px; }
+  .hl-comp-cell { display: flex; flex-direction: column; gap: 8px; }
+  .hl-comp-top { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+  .hl-comp-name { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-comp-score { font-size: var(--t-16); font-weight: 680; }
+  .hl-bar { height: .5rem; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .08); overflow: hidden; }
+  .hl-bar-fill { display: block; height: 100%; border-radius: 999px; }
+
+  /* H1 — per-metric breakdown: expandable rows (tier badges · bar · weight · score → findings) */
+  .hl-bd-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 20px; }
+  .hl-bd-title { font-size: var(--t-14); font-weight: 650; }
+  .hl-bd-hint { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: normal; overflow: visible; text-overflow: unset; max-width: 62ch; }
+  .hl-bd-empty { margin-top: 16px; font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); }
+  /* The metric grid measures its OWN width, not the viewport's — see the markup comment.
+     `hl-metrics-wrap` is the query container; both the head band and the rows read it. */
+  .hl-metrics-wrap { container-type: inline-size; container-name: hlmetrics; }
+  /* THE ONE RULE (catalog `table`): a flexible track that sits beside fixed ones carries a real
+     `minmax()` floor. `minmax(0,1fr)` promised "take what is left", and at split width there was
+     nothing left — the name track resolved to 0px and five metrics rendered nameless while the
+     score painted outside the card. The floor holds the name; the chip track is the one that
+     gives (`minmax(0,auto)` + wrap), because a truncated chip still reads and a missing name
+     does not. */
+  .hl-metrics-head { display: grid; grid-template-columns: 16px minmax(6.5rem, 1fr) minmax(0, auto) 76px 52px 44px 56px; align-items: center; gap: 8px; padding: 8px 8px 4px; }
+  .hl-metrics-head .hl-mh-r { text-align: right; }
+  .hl-metrics { margin-top: .1rem; display: flex; flex-direction: column; gap: 1px; }
+  .hl-metric-row { cursor: pointer; display: grid; grid-template-columns: 16px minmax(6.5rem, 1fr) minmax(0, auto) 76px 52px 44px 56px; align-items: center; gap: 8px; padding: 8px; border-radius: var(--r-8); }
+  .hl-metric-row:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .hl-metric-row:focus-visible { outline: 2px solid oklch(from var(--color-primary) l c h / .55); outline-offset: -2px; }
+  .hl-metric-caret { display: grid; place-items: center; color: oklch(from var(--color-base-content) l c h / .65); transition: transform .12s ease; }
+  .hl-metric.is-open .hl-metric-caret { transform: rotate(90deg); }
+  .hl-metric-name { font-size: var(--t-14); font-weight: 560; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The give: min-width 0 (its track is minmax(0,auto)) plus wrap, so the chips take the squeeze
+     instead of pushing the name track to zero. */
+  .hl-metric-tiers { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+  .hl-metric-tier { font-weight: 550; }
+  .hl-metric-bar { width: 88px; }
+  .hl-metric-weight { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); text-align: right; }
+  .hl-metric-score { font-size: var(--t-14); font-weight: 680; text-align: right; }
+  .hl-metric-findings { list-style: none; margin: 0 0 8px; padding: .1rem 8px 8px 32px; display: none; flex-direction: column; gap: 8px; }
+  .hl-metric.is-open .hl-metric-findings { display: flex; }
+  .hl-metric.is-open .hl-metric-clean { display: flex; }
+  .hl-finding { display: flex; align-items: center; gap: .5rem; font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .85); }
+  .hl-finding-dot { width: 7px; height: 7px; border-radius: 999px; flex: none; }
+  .hl-finding-text { min-width: 0; }
+  .hl-finding-link { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: var(--color-primary); white-space: nowrap; }
+  .hl-finding-link:hover { text-decoration: underline; }
+  .hl-metric-clean { margin: 0 0 8px; padding: .1rem 8px 8px 32px; font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); display: none; align-items: center; gap: 8px; }
+  .hl-metric-clean .iconify { color: var(--color-success); }
+  /* Was `@media (max-width: 640px)`. A viewport query cannot see split view: the viewport stays
+     1440 while this container halves to ~397px, so the full 7-track list stayed selected and the
+     row overflowed its card. Same breakpoint, asked of the container — which also still fires on a
+     640px phone, so nothing is lost. `display:none` removes those items from the grid entirely,
+     which is why the compact list has five tracks: caret · name · chips · score · toggle. */
+  @container hlmetrics (max-width: 640px) {
+    .hl-metric-row, .hl-metrics-head { grid-template-columns: 16px minmax(6.5rem, 1fr) minmax(0, auto) 30px 38px; }
+    .hl-metric-bar, .hl-metric-weight, .hl-metrics-head span:nth-child(4), .hl-metrics-head span:nth-child(5) { display: none; }
+  }
+  /* H2 — enable/disable per base + score trend */
+  .hl-metric-namewrap { min-width: 0; display: flex; align-items: center; gap: 8px; }
+  .hl-offtag { display: none; flex: none; }
+  .hl-metric-off .hl-offtag { display: inline-flex; }
+  .hl-metric-off .hl-metric-row :is(.hl-metric-name, .hl-metric-tiers, .hl-bar, .hl-metric-weight, .hl-metric-score) { opacity: .45; }
+  .hl-metric-off .hl-metric-row .hl-bar-fill { filter: grayscale(1); }
+  .hl-metric-en { display: inline-flex; align-items: center; justify-self: end; cursor: pointer; }
+  .hl-ring-trend { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; margin-top: .1rem; }
+  .hl-ring-trend-val { display: inline-flex; align-items: center; gap: 2px; font-size: var(--t-13); font-weight: 650; }
+  .hl-ring-trend-cap { font-size: var(--t-11); font-weight: 500; color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-trend-up { color: var(--color-success); }
+  .hl-trend-down { color: var(--color-error); }
+  .hl-trend-flat { color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* H3 — per-metric "Scoring prompt" entry (shown in the expanded metric area) */
+  .hl-metric-cfg { display: none; align-items: center; gap: 12px; flex-wrap: wrap; padding: .1rem 8px 8px 32px; }
+  .hl-metric.is-open .hl-metric-cfg { display: flex; }
+  .hl-metric-lastgen { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-metric-lastgen .iconify { opacity: .7; }
+
+  /* H3 — prompt editor (drawer body) */
+  .pe { display: flex; flex-direction: column; gap: 1rem; }
+  .pe-metric { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-16); font-weight: 650; }
+  .pe-upgrade { display: flex; gap: 8px; padding: 12px 12px; border: 1px solid color-mix(in oklch, var(--color-warning) 35%, var(--color-base-300)); background: color-mix(in oklch, var(--color-warning) 8%, var(--color-base-100)); border-radius: var(--r-12); font-size: var(--t-13); line-height: 1.45; }
+  .pe-upgrade .iconify { color: var(--color-warning); flex: none; margin-top: 1px; }
+  .pe-res-label { font-size: var(--t-12); text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .65); }
+  .pe-res-chips { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .pe-chip { font-size: var(--t-12); font-weight: 550; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .65); }
+  .pe-chip.is-active { border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-base-300)); background: color-mix(in oklch, var(--color-primary) 12%, transparent); color: var(--color-primary); font-weight: 650; }
+  .pe-chip-arrow { color: oklch(from var(--color-base-content) l c h / .35); font-size: var(--t-11); }
+  .pe-field { display: flex; flex-direction: column; gap: 4px; }
+  .pe-field-label { font-size: var(--t-12); font-weight: 600; }
+  .pe-field-hint { font-weight: 400; color: oklch(from var(--color-base-content) l c h / .65); }
+  .pe-ta { width: 100%; line-height: 1.5; resize: vertical; font-size: var(--t-13); }
+  /* Stale-score notice = catalog Alert (alert alert-soft alert-warning); compact size + the
+     [hidden] toggle must beat daisyUI's .alert display, and the text flexes to push Re-run right. */
+  .pe-stale { font-size: var(--t-13); }
+  .pe-stale[hidden] { display: none; }
+  .pe-stale-txt { flex: 1; min-width: 0; }
+  .pe-actions { display: flex; align-items: center; gap: .5rem; width: 100%; }
+
+  /* H3b — searchable "Edit at" scope picker (full width) */
+  .pe-scope { width: 100%; }
+  .pe-scope-trigger { width: 100%; justify-content: space-between; font-weight: 400; background: var(--color-base-100); border-color: var(--color-base-300); box-shadow: none; }
+  .pe-scope-cur { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pe-scope-menu { width: 100%; margin-top: 4px; padding: 8px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: var(--r-12); box-shadow: 0 8px 24px oklch(0 0 0 / .18); }
+  .pe-scope-search { width: 100%; margin-bottom: 8px; }
+  .pe-scope-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .pe-scope-group { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; padding: 8px 8px 2px; }
+  .pe-scope-opt { display: flex; align-items: center; gap: .5rem; padding: 8px 8px; border: 0; background: none; cursor: pointer; border-radius: var(--r-8); font: inherit; font-size: var(--t-13); text-align: left; color: var(--color-base-content); width: 100%; }
+  .pe-scope-opt:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .pe-scope-opt[hidden] { display: none; }
+  .pe-scope-opt-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pe-scope-empty { padding: .5rem; font-size: var(--t-13); opacity: .5; }
+  .pe-scope-empty[hidden] { display: none; }
+
+  /* freshness + methodology footer */
+  .hl-fmeta { margin-top: 20px; padding-top: 12px; border-top: 1px solid oklch(from var(--color-base-300) l c h / .85); }
+  .hl-fmeta-time { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-fmeta-time .iconify { opacity: .7; }
+  /* content inside the catalog Modal (How this is scored) */
+  /* "How this is scored" — a rich hover tooltip (was a modal). A narrow base-100 card with the
+     methodology stacked vertically; the bands list one-per-line so it reads cleanly, not wide. */
+  .hl-method-trigger { cursor: help; }
+  /* keyboard/touch users reach the methodology: reveal the rich tooltip on focus, not hover-only */
+  .hl-method-tt:focus-within .tooltip-content { opacity: 1; visibility: visible; transform: none; }
+  .hl-method-tt { --tt-bg: var(--color-base-100); display: inline-block; }
+  .hl-method-tt .tooltip-content { width: 250px; max-width: 250px; text-align: left; white-space: normal; padding: 12px 12px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); box-shadow: 0 12px 32px oklch(0 0 0 / .24); color: var(--color-base-content); z-index: 80; }
+  .hl-method-lead { font-size: var(--t-13); line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .85); margin: 0; }
+  .hl-method-list { margin: 8px 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .hl-method-list li { font-size: var(--t-12); line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .85); }
+  .hl-method-list b { color: var(--color-base-content); font-weight: 600; }
+  .hl-method-bands { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-base-300); font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-method-bands span { display: inline-flex; align-items: center; gap: 8px; }
+  .hl-method-bands i { width: .55rem; height: .55rem; border-radius: 999px; flex: none; }
+
+  /* issues */
+  .hl-sevsum { display: inline-flex; gap: 12px; }
+  .hl-sevpill { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
+  .hl-sevpill i { width: .5rem; height: .5rem; border-radius: 999px; }
+  .hl-groups { display: flex; flex-direction: column; gap: 1rem; }
+  .hl-group { border: 1px solid var(--color-base-300); border-radius: var(--r-12); overflow: hidden; background: var(--color-base-100); }
+  .hl-group-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: oklch(from var(--color-base-200) l c h / .55); border-bottom: 1px solid var(--color-base-300); }
+  .hl-group-ic { display: grid; place-items: center; width: 1.65rem; height: 1.65rem; border-radius: var(--r-8); flex: none; }
+  .hl-group[data-sev="high"] .hl-group-ic { background: oklch(from var(--color-error) l c h / .16); color: var(--color-error); }
+  .hl-group[data-sev="med"] .hl-group-ic { background: oklch(from var(--color-warning) l c h / .16); color: var(--color-warning); }
+  .hl-group[data-sev="low"] .hl-group-ic { background: oklch(from var(--color-base-content) l c h / .08); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-group-label { font-size: var(--t-14); font-weight: 660; }
+  .hl-group-sub { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .hl-tablewrap { overflow-x: auto; }
+  .hl-ftable { margin: 0; }
+  .hl-ftable td { vertical-align: middle; }
+  .hl-ftable td.hl-ft-text { width: 100%; font-size: var(--t-14); padding-left: 16px; }
+  .hl-ftable td.hl-ft-count { white-space: nowrap; text-align: right; font-size: var(--t-13); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .85); }
+  .hl-ftable td.hl-ft-act { white-space: nowrap; text-align: right; padding-right: .5rem; }
+  .hl-ftable tbody tr:last-child td { border-bottom: 0; }
+  .hl-group[data-sev="high"] .hl-ftable tbody tr { background: oklch(from var(--color-error) l c h / .08); }
+
+  .hl-clean { display: flex; align-items: center; gap: 8px; font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); padding: 1rem 0; }
+
+  /* Issues / Insights sub-switcher + the base's severity legend, aligned on one row */
+  .hl-subhead { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 20px; }
+  .hl-subhead .hl-sevsum[hidden] { display: none; }
+  /* Chrome + selected paint = the shared `.sb-segtrack` / `.sb-seg` (global.css, catalog
+     `pattern-segmented-control`). This one is `inline-flex`: it sits beside the severity legend
+     on `.hl-subhead`, so it must size to its two labels rather than eat the row.
+     Both selectors carry a deliberate (0,2,0) so they beat the global `.sb-segtrack` (0,1,0)
+     by SPECIFICITY rather than by stylesheet injection order, which is not ours to decide. */
+  .hl-subhead .hl-subnav { display: inline-flex; border: 1px solid var(--color-base-300); }
+  .hl-subhead .hl-subnav > * { flex: 0 0 auto; }
+  .hl-subtab .iconify { opacity: .7; }
+  .hl-subtab .badge { flex: none; }
+  .hl-subpanel[hidden] { display: none; }
+
+  /* ===================== Insights (schema-insights-ui) ===================== */
+  .hl-insights { margin-top: 0; }
+  .hl-ins-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .hl-ins-head h3 { font-size: var(--t-14); font-weight: 650; display: inline-flex; align-items: center; gap: 8px; }
+  .hl-ins-gen { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-ins-gen .iconify { opacity: .7; }
+  .hl-ins-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .hl-ins-arctoggle { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); cursor: pointer; padding-left: 4px; }
+  .hl-ins-arctoggle[hidden] { display: none; }
+  .hl-ins-arc-n { flex: none; }
+
+  /* Stale-insight notice = catalog Alert; compact + margin + the [hidden] toggle beats .alert. */
+  .hl-ins-stale { margin-bottom: 12px; font-size: var(--t-13); }
+  .hl-ins-stale[hidden] { display: none; }
+
+  .hl-ins-empty { display: flex; align-items: center; gap: .5rem; padding: 1rem 0; font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .hl-ins-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .hl-ins-card { border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); padding: 12px 16px; transition: border-color .12s ease; }
+  .hl-ins-card[hidden] { display: none; }
+  .hl-ins-card:hover { border-color: oklch(from var(--color-base-content) l c h / .16); }
+  .hl-ins-card:hover .hl-ins-act { opacity: 1; }
+
+  .hl-ins-top { display: flex; align-items: center; gap: .5rem; margin-bottom: 8px; }
+  .hl-ins-cat { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); font-weight: 600; letter-spacing: .01em; color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-ins-cat .iconify { color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-arctag { flex: none; }
+  .hl-ins-date { margin-left: auto; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+
+  .hl-ins-text { font-size: var(--t-14); line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .85); }
+  .hl-ins-ev { margin-top: 4px; font-size: var(--t-12); line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .hl-ins-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+
+  .hl-ins-foot { display: flex; justify-content: flex-end; margin-top: .5rem; }
+  .hl-ins-act { opacity: 0; transition: opacity .12s ease; color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-ins-act:focus-visible { opacity: 1; }
+
+  .hl-ins-arc { opacity: .62; }
+  .hl-ins-arc:hover { opacity: .85; }
+
+  .hl-ins-more { display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; padding: 4px 4px; font-size: var(--t-13); font-weight: 550; color: var(--color-primary); background: none; border: 0; cursor: pointer; }
+  .hl-ins-more[hidden] { display: none; }
+  .hl-ins-more:hover { text-decoration: underline; }
+
+  /* insight prompt scope — 2-option segmented control (Space vs this base) */
+  .pe-segmented { display: inline-flex; padding: 4px; gap: 4px; background: var(--color-base-200); border: 1px solid var(--color-base-300); border-radius: var(--r-8); }
+  .pe-seg { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: 0; border-radius: var(--r-6); background: none; cursor: pointer; font: inherit; font-size: var(--t-13); font-weight: 500; color: oklch(from var(--color-base-content) l c h / .65); }
+  .pe-seg .iconify { opacity: .7; }
+  .pe-seg.is-active { background: var(--color-base-100); color: var(--color-primary); font-weight: 600; box-shadow: 0 1px 2px oklch(0 0 0 / .08); }
+
+  @media (max-width: 860px) {
+    .hl-ov-mode { grid-template-columns: 1fr; grid-template-areas: "header" "nav" "main"; }
+    .hl-ov-mode > .hl-nav { position: static; }
+    .hl-master { max-height: none; }
+  }
+  @media (max-width: 720px) { .hl-fblock { flex-direction: column; align-items: flex-start; gap: 16px; } }
+  @media (max-width: 640px) { .hl-comp { grid-template-columns: 1fr; gap: 12px; } }
+</style>
+
+<script>
+  function wireHealth() {
+    // Scope to the Health root specifically — Browse rows also carry `data-health`, so a bare
+    // [data-health] selector would grab a Browse row (it renders first) and break all wiring.
+    const root = document.querySelector<HTMLElement>('.hl[data-health]');
+    if (!root || root.dataset.hlWired) return;
+    root.dataset.hlWired = '1';
+    const cards = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-hl-card]'));
+    const details = Array.from(root.querySelectorAll<HTMLElement>('[data-detail]'));
+    const selectBase = (id: string | undefined) => {
+      cards.forEach((c) => {
+        const on = c.dataset.hlCard === id;
+        c.classList.toggle('is-active', on);
+        if (c.getAttribute('role') === 'tab') c.setAttribute('aria-selected', String(on));
+      });
+      details.forEach((d) => (d.hidden = d.dataset.detail !== id));
+    };
+    cards.forEach((c) => c.addEventListener('click', () => selectBase(c.dataset.hlCard)));
+
+    // Expand/collapse a metric row (JS-driven; we avoid native <details> so the enable toggle
+    // behaves like a normal checkbox). A click on the toggle does NOT expand the row.
+    const toggleRow = (row: HTMLElement) => {
+      const open = row.closest('.hl-metric')?.classList.toggle('is-open');
+      row.setAttribute('aria-expanded', String(!!open));
+    };
+    root.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      if (t.closest('[data-hl-metric-en]')) return; // the toggle owns its own clicks
+      const row = t.closest<HTMLElement>('[data-hl-metric-row]');
+      if (row) toggleRow(row);
+    });
+    root.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      const row = (ev.target as HTMLElement).closest<HTMLElement>('[data-hl-metric-row]');
+      if (row) { ev.preventDefault(); toggleRow(row); }
+    });
+    // Enable/disable: the toggle is a plain checkbox now — reflect its state into the muted class.
+    // (Faked: the grade recomputes on the next score; we just mute + mark "not counted".)
+    root.addEventListener('change', (ev) => {
+      const cb = (ev.target as HTMLElement).closest<HTMLInputElement>('[data-hl-metric-en] input');
+      if (cb) cb.closest('.hl-metric')?.classList.toggle('hl-metric-off', !cb.checked);
+    });
+
+    // H3 — prompt-editor drawer: open per metric, populate the resolution + textarea, fake edits.
+    const peToggle = document.getElementById('hl-prompt') as HTMLInputElement | null;
+    const peMetric = root.querySelector<HTMLElement>('[data-pe-metric]');
+    const peTa = root.querySelector<HTMLTextAreaElement>('[data-pe-ta]');
+    const peReset = root.querySelector<HTMLElement>('[data-pe-reset]');
+    const peStale = root.querySelector<HTMLElement>('[data-pe-stale]');
+    const peScopeCur = root.querySelector<HTMLElement>('[data-pe-scope-cur]');
+    const peScopeSearch = root.querySelector<HTMLInputElement>('[data-pe-scope-search]');
+    const peScopeEmpty = root.querySelector<HTMLElement>('[data-pe-scope-empty]');
+    const peSaveLabel = root.querySelector<HTMLElement>('[data-pe-save-label]');
+    const peResetLabel = root.querySelector<HTMLElement>('[data-pe-reset-label]');
+    const peChip = (src: string) => root.querySelectorAll<HTMLElement>('[data-pe-chip]').forEach((c) => c.classList.toggle('is-active', c.dataset.peChip === src));
+    const SPACE_LABEL = 'Whole Space — applies to all bases';
+    let peSystem = '';
+    let peSpace = '';
+    let peScopeVal = 'space';
+    let peRuleId = '';
+    const spaceId =
+      document.querySelector<HTMLElement>('[data-space-id]')?.dataset.spaceId ||
+      document.querySelector<HTMLElement>('[data-schema]')?.dataset.spaceId ||
+      '';
+    const activeBaseId = () =>
+      root.querySelector<HTMLElement>('[data-hl-card].is-active')?.dataset.hlCard ||
+      root.querySelector<HTMLElement>('[data-detail]:not([hidden])')?.dataset.detail ||
+      root.querySelector<HTMLElement>('[data-hl-card]')?.dataset.hlCard ||
+      '';
+    const setScope = (val: string, label: string) => { peScopeVal = val; if (peScopeCur) peScopeCur.textContent = label; };
+    // Reflect the chosen scope (whole Space vs a per-entity override) into the editor.
+    const applyScope = () => {
+      const ov = peScopeVal.startsWith('ent:');
+      if (peSaveLabel) peSaveLabel.textContent = ov ? 'Save override' : 'Save prompt';
+      if (peResetLabel) peResetLabel.textContent = ov ? 'Remove override' : 'Reset to default';
+      if (peTa) peTa.value = peSpace || peSystem;
+      if (ov) { peChip('override'); if (peReset) peReset.hidden = false; }
+      else { peChip(peSpace ? 'space' : 'default'); if (peReset) peReset.hidden = !peSpace; }
+    };
+    // Scope picker — searchable list of entities the override can target.
+    peScopeSearch?.addEventListener('input', () => {
+      const q = peScopeSearch.value.trim().toLowerCase();
+      let shown = 0;
+      root.querySelectorAll<HTMLElement>('[data-pe-scope-opt]').forEach((o) => {
+        const ok = !q || (o.dataset.search || '').includes(q);
+        o.hidden = !ok; if (ok) shown++;
+      });
+      if (peScopeEmpty) peScopeEmpty.hidden = shown > 0;
+    });
+    root.querySelectorAll<HTMLElement>('[data-pe-scope-opt]').forEach((o) => {
+      o.addEventListener('click', () => {
+        setScope(o.dataset.value || 'space', o.dataset.label || SPACE_LABEL);
+        applyScope();
+        (document.activeElement as HTMLElement | null)?.blur(); // close the dropdown
+      });
+    });
+    root.addEventListener('click', (ev) => {
+      const t = (ev.target as HTMLElement).closest<HTMLElement>('[data-hl-prompt-open]');
+      if (!t) return;
+      peSystem = t.dataset.system || '';
+      peSpace = t.dataset.space || '';
+      peRuleId = t.dataset.ruleId || '';
+      if (peMetric) peMetric.textContent = `${t.dataset.metric} · ${t.dataset.tiers}`;
+      setScope('space', SPACE_LABEL);
+      if (peScopeSearch) peScopeSearch.value = '';
+      root.querySelectorAll<HTMLElement>('[data-pe-scope-opt]').forEach((o) => (o.hidden = false));
+      if (peScopeEmpty) peScopeEmpty.hidden = true;
+      if (peStale) peStale.hidden = t.dataset.stale !== '1';
+      applyScope();
+      if (peToggle) peToggle.checked = true;
+    });
+    peReset?.addEventListener('click', () => {
+      if (peScopeVal.startsWith('ent:')) { setScope('space', SPACE_LABEL); applyScope(); }   // remove override → back to Space
+      else { if (peTa) peTa.value = peSystem; peChip('default'); peReset.hidden = true; }      // reset to default
+    });
+    root.querySelector<HTMLElement>('[data-pe-save]')?.addEventListener('click', () => {
+      // Persist space-level prompt via live health-prompt when we have a ruleId.
+      // Entity overrides stay honest-gated (engine entity-level prompt shape differs).
+      if (!spaceId || !peRuleId || peScopeVal.startsWith('ent:')) {
+        if (peToggle) peToggle.checked = false;
+        return;
+      }
+      const prompt = peTa?.value ?? '';
+      void fetch(`/api/spaces/${encodeURIComponent(spaceId)}/health-prompt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ruleId: peRuleId, level: 'space', prompt }),
+      }).then((res) => {
+        if (res.ok) {
+          peSpace = prompt;
+          peChip('space');
+          if (peReset) peReset.hidden = false;
+        }
+        if (peToggle) peToggle.checked = false;
+      });
+    });
+    root.querySelector<HTMLElement>('[data-pe-rerun]')?.addEventListener('click', () => {
+      const baseId = activeBaseId();
+      if (!spaceId || !baseId) { if (peStale) peStale.hidden = true; return; }
+      void fetch(`/api/spaces/${encodeURIComponent(spaceId)}/health-rerun`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ baseId }),
+      }).then((res) => {
+        if (res.ok && peStale) peStale.hidden = true;
+      });
+    });
+
+    // console search (many-bases mode): filter the master list by base name
+    const search = root.querySelector<HTMLInputElement>('[data-hl-search]');
+    const mrows = Array.from(root.querySelectorAll<HTMLElement>('.hl-mrow'));
+    const emptyMsg = root.querySelector<HTMLElement>('[data-hl-search-empty]');
+    search?.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      mrows.forEach((r) => {
+        const ok = !q || (r.dataset.name ?? '').includes(q);
+        r.hidden = !ok;
+        if (ok) shown++;
+      });
+      if (emptyMsg) emptyMsg.hidden = shown !== 0;
+    });
+
+    // console sort (many-bases mode): a small dropdown of sort options reorders the master list
+    const master = root.querySelector<HTMLElement>('.hl-master');
+    const sortOpts = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-hl-sort]'));
+    sortOpts.forEach((opt) =>
+      opt.addEventListener('click', () => {
+        const mode = opt.dataset.hlSort;
+        mrows
+          .slice()
+          .sort((a, b) => {
+            if (mode === 'name') return (a.dataset.name ?? '').localeCompare(b.dataset.name ?? '');
+            const sa = Number(a.dataset.score ?? 0);
+            const sb = Number(b.dataset.score ?? 0);
+            return mode === 'best' ? sb - sa : sa - sb;
+          })
+          .forEach((r) => master?.appendChild(r));
+        if (emptyMsg) master?.appendChild(emptyMsg); // keep the no-match line last
+        sortOpts.forEach((o) => o.classList.toggle('is-active', o === opt));
+        (document.activeElement as HTMLElement | null)?.blur(); // close the dropdown
+      }),
+    );
+
+    // Issues / Insights sub-switcher — per base detail, toggle the two panels.
+    root.querySelectorAll<HTMLElement>('.hl-detail').forEach((detail) => {
+      const subtabs = Array.from(detail.querySelectorAll<HTMLButtonElement>('[data-subtab]'));
+      const subpanels = Array.from(detail.querySelectorAll<HTMLElement>('[data-subpanel]'));
+      if (subtabs.length === 0) return;
+      const sevsum = detail.querySelector<HTMLElement>('[data-sevsum]');
+      subtabs.forEach((tb) =>
+        tb.addEventListener('click', () => {
+          subtabs.forEach((x) => { const on = x === tb; x.classList.toggle('is-active', on); x.setAttribute('aria-selected', String(on)); });
+          subpanels.forEach((p) => (p.hidden = p.dataset.subpanel !== tb.dataset.subtab));
+          if (sevsum) sevsum.hidden = tb.dataset.subtab !== 'issues'; // legend is issue-only
+        }),
+      );
+    });
+
+    // ===================== Insights =====================
+    const INS_SHOWN = 6; // keep in sync with INSIGHTS_SHOWN in the frontmatter
+    const setCardArchived = (card: HTMLElement, isArc: boolean) => {
+      const foot = card.querySelector('.hl-ins-foot');
+      if (foot) foot.innerHTML = isArc
+        ? '<button type="button" class="btn btn-sm btn-ghost gap-1 hl-ins-act" data-ins-restore><span class="iconify lucide--rotate-ccw size-3.5" aria-hidden="true"></span>Restore</button>'
+        : '<button type="button" class="btn btn-sm btn-ghost gap-1 hl-ins-act" data-ins-archive><span class="iconify lucide--archive size-3.5" aria-hidden="true"></span>Archive</button>';
+      const top = card.querySelector('.hl-ins-top');
+      let tag = card.querySelector('.hl-arctag');
+      if (isArc && !tag && top) {
+        tag = document.createElement('span');
+        tag.className = 'badge badge-sm badge-ghost hl-arctag';
+        tag.textContent = 'Archived';
+        top.insertBefore(tag, top.querySelector('.hl-ins-date'));
+      }
+      if (!isArc && tag) tag.remove();
+    };
+    root.querySelectorAll<HTMLElement>('[data-insights]').forEach((sec) => {
+      const showArc = sec.querySelector<HTMLInputElement>('[data-ins-show-archived]');
+      const moreBtn = sec.querySelector<HTMLElement>('[data-ins-more]');
+      // The active count lives on the Insights sub-tab (outside this section), so look it up via the base detail.
+      const countEl = sec.closest('.hl-detail')?.querySelector<HTMLElement>('[data-ins-count]');
+      const arcNEl = sec.querySelector<HTMLElement>('.hl-ins-arc-n');
+      const arcToggleWrap = sec.querySelector<HTMLElement>('.hl-ins-arctoggle');
+      const moreN = moreBtn?.querySelector<HTMLElement>('[data-ins-more-n]');
+      let expanded = false;
+      const apply = () => {
+        const cards = Array.from(sec.querySelectorAll<HTMLElement>('[data-insight]'));
+        const actives = cards.filter((c) => c.dataset.archived !== '1');
+        const archived = cards.filter((c) => c.dataset.archived === '1');
+        const showArchived = !!showArc?.checked;
+        actives.forEach((c, i) => (c.hidden = !expanded && i >= INS_SHOWN));
+        archived.forEach((c) => (c.hidden = !showArchived));
+        if (countEl) countEl.textContent = String(actives.length);
+        if (arcNEl) arcNEl.textContent = String(archived.length);
+        if (arcToggleWrap) arcToggleWrap.hidden = archived.length === 0;
+        if (moreBtn) moreBtn.hidden = expanded || actives.length <= INS_SHOWN;
+        if (moreN) moreN.textContent = String(Math.max(0, actives.length - INS_SHOWN));
+      };
+      showArc?.addEventListener('change', apply);
+      moreBtn?.addEventListener('click', () => { expanded = true; apply(); });
+      sec.addEventListener('click', (ev) => {
+        const t = ev.target as HTMLElement;
+        const card = t.closest<HTMLElement>('[data-insight]');
+        if (!card) return;
+        if (t.closest('[data-ins-archive]')) { card.dataset.archived = '1'; card.classList.add('hl-ins-arc'); setCardArchived(card, true); apply(); }
+        else if (t.closest('[data-ins-restore]')) { card.dataset.archived = '0'; card.classList.remove('hl-ins-arc'); setCardArchived(card, false); apply(); }
+      });
+      apply();
+    });
+
+    // Section-header Re-run: clear this base's stale banner + hide the button (faked regen).
+    root.querySelectorAll<HTMLElement>('[data-ins-rerun-base]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const sec = btn.closest<HTMLElement>('[data-insights]');
+        const stale = sec?.querySelector<HTMLElement>('[data-ins-stale]');
+        if (stale) stale.hidden = true;
+        btn.hidden = true;
+      });
+    });
+
+    // Insight prompt editor drawer — Space vs per-base override (resolution: default ▸ space ▸ override).
+    const ipeToggle = document.getElementById('hl-insight-prompt') as HTMLInputElement | null;
+    const ipeBase = root.querySelector<HTMLElement>('[data-ipe-base]');
+    const ipeTa = root.querySelector<HTMLTextAreaElement>('[data-ipe-ta]');
+    const ipeReset = root.querySelector<HTMLElement>('[data-ipe-reset]');
+    const ipeStale = root.querySelector<HTMLElement>('[data-ipe-stale]');
+    const ipeHint = root.querySelector<HTMLElement>('[data-ipe-hint]');
+    const ipeSaveLabel = root.querySelector<HTMLElement>('[data-ipe-save-label]');
+    const ipeResetLabel = root.querySelector<HTMLElement>('[data-ipe-reset-label]');
+    const ipeChip = (src: string) => root.querySelectorAll<HTMLElement>('[data-ipe-chip]').forEach((c) => c.classList.toggle('is-active', c.dataset.ipeChip === src));
+    let ipeSystem = '', ipeSpace = '', ipeBaseP = '', ipeScope = 'space';
+    const ipeApply = () => {
+      const ov = ipeScope === 'base';
+      if (ipeSaveLabel) ipeSaveLabel.textContent = ov ? 'Save override' : 'Save prompt';
+      if (ipeResetLabel) ipeResetLabel.textContent = ov ? 'Remove override' : 'Reset to default';
+      if (ipeHint) ipeHint.textContent = ov ? 'Overrides the Space prompt for this base only.' : 'Applies to insight generation across every base in this Space.';
+      if (ipeTa) ipeTa.value = ov ? (ipeBaseP || ipeSpace || ipeSystem) : (ipeSpace || ipeSystem);
+      if (ov) { ipeChip('override'); if (ipeReset) ipeReset.hidden = !ipeBaseP; }
+      else { ipeChip(ipeSpace ? 'space' : 'default'); if (ipeReset) ipeReset.hidden = !ipeSpace; }
+      root.querySelectorAll<HTMLElement>('[data-ipe-scope]').forEach((s) => s.classList.toggle('is-active', s.dataset.ipeScope === ipeScope));
+    };
+    root.querySelectorAll<HTMLElement>('[data-ipe-scope]').forEach((s) => s.addEventListener('click', () => { ipeScope = s.dataset.ipeScope || 'space'; ipeApply(); }));
+    root.addEventListener('click', (ev) => {
+      const t = (ev.target as HTMLElement).closest<HTMLElement>('[data-ins-prompt-open]');
+      if (!t) return;
+      ipeSystem = t.dataset.system || '';
+      ipeSpace = t.dataset.space || '';
+      ipeBaseP = t.dataset.baseprompt || '';
+      // Open on the effective source: a per-base override wins, else Space.
+      ipeScope = ipeBaseP ? 'base' : 'space';
+      if (ipeBase) ipeBase.textContent = t.dataset.baseName || 'Base';
+      root.querySelectorAll<HTMLElement>('[data-ipe-scope-base]').forEach((e) => (e.textContent = t.dataset.baseName || 'This base'));
+      if (ipeStale) ipeStale.hidden = t.dataset.stale !== '1';
+      ipeApply();
+      if (ipeToggle) ipeToggle.checked = true;
+    });
+    ipeReset?.addEventListener('click', () => {
+      if (ipeScope === 'base') { ipeBaseP = ''; ipeScope = 'space'; ipeApply(); }   // remove override → Space
+      else { ipeSpace = ''; if (ipeTa) ipeTa.value = ipeSystem; ipeChip('default'); ipeReset.hidden = true; } // reset to default
+    });
+    root.querySelector<HTMLElement>('[data-ipe-save]')?.addEventListener('click', () => {
+      if (ipeScope === 'base') { ipeBaseP = ipeTa?.value || ipeBaseP; ipeChip('override'); if (ipeReset) ipeReset.hidden = false; }
+      else { ipeSpace = ipeTa?.value || ipeSpace; ipeChip('space'); if (ipeReset) ipeReset.hidden = false; }
+      if (ipeToggle) ipeToggle.checked = false;
+    });
+    root.querySelector<HTMLElement>('[data-ipe-rerun]')?.addEventListener('click', () => { if (ipeStale) ipeStale.hidden = true; });
+  }
+  wireHealth();
+  document.addEventListener('astro:after-swap', wireHealth);
+</script>

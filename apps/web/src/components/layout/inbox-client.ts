@@ -337,12 +337,19 @@ export function wireInbox(): void {
   panel.dataset.activityFilter = 'all';
   panel.dataset.showHandled = 'false';
 
-  document.querySelector<HTMLElement>('[data-inbox-trigger]')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    setOpen(panel, panel.hidden);
-  });
+  // Page mode (InboxView) is a URL, not an overlay: always open, closed by
+  // navigating away. Skip the trigger / close / Esc controller the page has no
+  // use for — the tabs, filters, triage and sync below are shared verbatim.
+  const asPage = panel.dataset.asPage === 'true';
 
-  panel.querySelector('[data-inbox-close]')?.addEventListener('click', () => setOpen(panel, false));
+  if (!asPage) {
+    document.querySelector<HTMLElement>('[data-inbox-trigger]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      setOpen(panel, panel.hidden);
+    });
+
+    panel.querySelector('[data-inbox-close]')?.addEventListener('click', () => setOpen(panel, false));
+  }
 
   for (const tab of panel.querySelectorAll<HTMLElement>('[data-inbox-tab]')) {
     tab.addEventListener('click', () => selectTab(panel, tab.dataset.inboxTab ?? 'attention'));
@@ -536,12 +543,15 @@ export function wireInbox(): void {
   });
 
   // Esc closes the panel and returns focus to the trigger (it never trapped focus).
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !panel.hidden) {
-      setOpen(panel, false);
-      document.querySelector<HTMLElement>('[data-inbox-trigger]')?.focus();
-    }
-  });
+  // Page mode has nothing to close, so Esc must never blank the route.
+  if (!asPage) {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !panel.hidden) {
+        setOpen(panel, false);
+        document.querySelector<HTMLElement>('[data-inbox-trigger]')?.focus();
+      }
+    });
+  }
 
   window.addEventListener('inbox:resolve', (e) => {
     const id = (e as CustomEvent<{ id: string }>).detail?.id;

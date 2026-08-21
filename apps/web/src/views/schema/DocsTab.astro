@@ -3,6 +3,9 @@
  * Docs tab — mounts the DocsTab React island (Plate + tags + links + diagrams,
  * shared-schema-docs §5). client:visible defers hydration until the panel is
  * first shown (hidden panels do not intersect).
+ *
+ * `scope` / `noun` are additive (web-data-docs-chat): Schema's call site stays
+ * unchanged (defaults keep today's ExportControl noun + island props).
  */
 import DocsTab, { type DocsTabEntity } from '../../components/islands/DocsTab'
 import ExportControl from '../../components/patterns/ExportControl.astro'
@@ -13,9 +16,20 @@ interface Props {
   docs: SchemaDocSummary[]
   aiEnabled: boolean
   entities: DocsTabEntity[]
+  /** Which Knowledge surface mounted this tab. Default `'schema'` preserves Schema markup. */
+  scope?: 'schema' | 'data'
+  /** ExportControl noun; defaults from scope (`documents` / `data documents`). */
+  noun?: string
 }
 
-const { spaceId, docs, aiEnabled, entities } = Astro.props
+const {
+  spaceId,
+  docs,
+  aiEnabled,
+  entities,
+  scope = 'schema',
+  noun = scope === 'data' ? 'data documents' : 'documents',
+} = Astro.props
 ---
 
       {/* The island renders its own toolbar, so the export mounts above it in a
@@ -23,7 +37,7 @@ const { spaceId, docs, aiEnabled, entities } = Astro.props
           list rows carry no stable hook — current view equals everything. PDF
           generation ships with the reports backend. */}
       <div class="mb-3 flex flex-wrap items-center justify-end gap-3">
-        <ExportControl tab="docs" format="pdf" noun="documents" total={docs.length} />
+        <ExportControl tab="docs" format="pdf" noun={noun} total={docs.length} />
       </div>
       <DocsTab
         client:visible
@@ -31,4 +45,5 @@ const { spaceId, docs, aiEnabled, entities } = Astro.props
         initialDocs={docs}
         aiEnabled={aiEnabled}
         entities={entities}
+        scope={scope}
       />

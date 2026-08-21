@@ -39,6 +39,7 @@ const rows = await db
     attachmentCount: backupRuns.attachmentCount,
     startedAt: backupRuns.startedAt,
     completedAt: backupRuns.completedAt,
+    createdAt: backupRuns.createdAt,
     errorMessage: backupRuns.errorMessage,
     connectionDisplayName: connections.displayName,
     configStorageType: backupConfigurations.storageType,
@@ -75,7 +76,7 @@ const DEST: Record<string, { label: string; provider: string }> = {
 };
 const dest = DEST[row.configStorageType ?? 'r2_managed'] ?? DEST.r2_managed;
 
-const knownStatuses = ['succeeded', 'failed', 'running', 'cancelled', 'trial_succeeded'] as const;
+const knownStatuses = ['succeeded', 'failed', 'running', 'paused', 'cancelled', 'trial_succeeded', 'queued'] as const;
 const status = (knownStatuses as readonly string[]).includes(row.status)
   ? (row.status as (typeof knownStatuses)[number])
   : 'cancelled';
@@ -136,10 +137,26 @@ if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
 
 const metricsPending = engineBases.length === 0;
 
+// Run-level totals from the DB row — the summary-strip source when metricsPending (no engine
+// per-base detail). When metricsPending=false the view sums bases[] instead — they match.
+const summary = {
+  bases: metricsPending ? baseCount : engineBases.length,
+  tables: row.tableCount ?? 0,
+  records: row.recordCount ?? 0,
+  attachments: row.attachmentCount ?? 0,
+};
+
+// outcome — best-effort from run-level data (the engine returns no per-run outcome). A cleanly
+// settled run is 'complete'; a failed run that still wrote records is 'partial', else 'none'. Only
+// the failed-run alert reads it, so non-failed runs default 'complete'.
+const outcome: 'complete' | 'partial' | 'none' =
+  status === 'failed' ? ((row.recordCount ?? 0) > 0 ? 'partial' : 'none') : 'complete';
+
 const run = {
   id: row.id,
   status,
   triggeredBy: row.triggeredBy,
+  createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
   startedAt: row.startedAt ? new Date(row.startedAt).toISOString() : null,
   completedAt: row.completedAt ? new Date(row.completedAt).toISOString() : null,
   etaSeconds: null,
@@ -147,19 +164,14 @@ const run = {
   destinationLabel: dest.label,
   destProvider: dest.provider,
   destIcon: null,
-  // Run-level totals from the DB row are always shown in the summary stats.
-  // When metricsPending=false, the view sums bases[] instead — they match.
-  summary: {
-    bases: metricsPending ? baseCount : engineBases.length,
-    tables: row.tableCount ?? 0,
-    records: row.recordCount ?? 0,
-    attachments: row.attachmentCount ?? 0,
-  },
+  // Run-scoped failure sentence (real column); the redesigned alert/base pages render it.
+  error: row.errorMessage,
+  outcome,
   bases: engineBases,
   failedAttachments: [],
 };
 ---
 
 <SidebarLayout pageTitle="Backup run" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <BackupRunDetailView run={run} spaceId={spaceId} metricsPending={metricsPending} />
+  <BackupRunDetailView run={run} spaceId={spaceId} metricsPending={metricsPending} summary={summary} />
 </SidebarLayout>

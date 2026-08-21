@@ -9,6 +9,7 @@
 
 import type { BackupRunSummary } from '../backup-runs/types'
 import { setButtonLoading } from '../ui'
+import { showUndoToast } from '../../components/ui/undoToast'
 
 /**
  * Statuses where the engine can still accept a cancel:
@@ -53,6 +54,8 @@ export function cancelButtonHtml(run: Pick<BackupRunSummary, 'id' | 'status'>): 
 export interface CancelClickDeps {
   /** Test seam — defaults to global `fetch`. */
   fetchImpl?: typeof fetch
+  /** Test seam — defaults to showUndoToast. */
+  toast?: (label: string, action: null) => void
 }
 
 /**
@@ -62,9 +65,8 @@ export interface CancelClickDeps {
  * cancel — both POST the same route; only how they resolve `spaceId`/`runId`
  * and whether they confirm first differs.
  *
- * Transport errors are swallowed (polling / a page refresh catches up if the
- * cancel did land server-side). Loading is cleared in a `finally` so a network
- * drop never leaves the button stuck.
+ * Non-OK responses and transport errors surface a fact toast (item 16). Loading
+ * is cleared in a `finally` so a network drop never leaves the button stuck.
  */
 export async function postCancelRun(
   spaceId: string,
@@ -73,18 +75,21 @@ export async function postCancelRun(
   deps: CancelClickDeps = {},
 ): Promise<void> {
   const fetchFn = deps.fetchImpl ?? fetch
+  const toast = deps.toast ?? showUndoToast
   setButtonLoading(btn, true)
   try {
-    await fetchFn(
+    const res = await fetchFn(
       `/api/spaces/${encodeURIComponent(spaceId)}/backup-runs/${encodeURIComponent(runId)}/cancel`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
       },
     )
+    if (!res.ok) {
+      toast('Could not cancel the backup. Try again.', null)
+    }
   } catch {
-    // Transient network errors are swallowed; polling / refresh will catch up
-    // if the cancel did land server-side.
+    toast('Could not cancel the backup. Try again.', null)
   } finally {
     setButtonLoading(btn, false)
   }

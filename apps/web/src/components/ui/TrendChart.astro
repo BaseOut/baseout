@@ -1,0 +1,178 @@
+---
+/**
+ * TrendChart — the one charting primitive (catalog `pattern-trend-chart`). A themed ApexCharts line/area
+ * chart, rendered client-side. Used for the report's historical metrics (records/tables/…/interfaces over
+ * time) both as a COMPACT sparkline (in a trend card) and as a FULL chart (expanded), and for Data health.
+ *
+ * ApexCharts is the theme donor's charting lib (@opensided/theme ships apex line/bar examples), so this is
+ * the design-system-aligned choice. We use the vanilla `apexcharts` package (no react-apexcharts) inside an
+ * Astro island — lighter, no React-19 peer friction, and colours come from our `--color-*` tokens at render.
+ *
+ * Data + options are embedded as JSON next to a mount div; the script reads the tokens live (so it follows
+ * light/dark) and draws. Multiple charts per page each get a unique `name`.
+ */
+export interface TrendSeries {
+  name: string;
+  /** y-values in time order; the x-axis labels come from `categories`. */
+  data: number[];
+  /** Optional token name for this series' colour (e.g. 'primary', 'success'); defaults cycle. */
+  color?: string;
+}
+interface Props {
+  /** Unique id for this chart on the page. */
+  name: string;
+  series: TrendSeries[];
+  /** X-axis labels (dates), same length as each series' data. */
+  categories: string[];
+  /** compact = sparkline (no axes/grid, tiny); full = axes + grid + tooltip + legend. */
+  variant?: 'compact' | 'full';
+  height?: number;
+  /** Format a y-value for the tooltip/axis (e.g. bytes, counts). */
+  format?: 'number' | 'bytes';
+  /** Hide the built-in legend — used when an EXTERNAL shared filter controls the series. */
+  showLegend?: boolean;
+  /** Obey a shared facet filter: series whose name is in that facet's `hidden[]` are hidden. The value
+   *  is the facet `name` to listen for (e.g. a "Bases" FacetFilter above a grid of charts). */
+  filterGroup?: string;
+}
+const { name, series, categories, variant = 'full', height = variant === 'compact' ? 44 : 240, format = 'number', showLegend = true, filterGroup } = Astro.props;
+const payload = JSON.stringify({ series, categories, variant, height, format, showLegend, filterGroup });
+---
+
+<div class="tc" data-tc={name}>
+  <div class="tc-mount" data-tc-mount></div>
+  <script type="application/json" data-tc-data set:html={payload}></script>
+</div>
+
+<script>
+  // Lazy load so a missing apexcharts install degrades the chart mount instead of
+  // breaking the Reports page bundle (pnpm install required after Phase 8).
+  const pkg = 'apexcharts';
+  type ApexCtor = new (el: HTMLElement, opts: unknown) => {
+    render: () => Promise<void>;
+    hideSeries: (n: string) => void;
+    showSeries: (n: string) => void;
+    destroy: () => void;
+  };
+  let ApexCharts: ApexCtor | null = null;
+  try {
+    // Non-literal specifier keeps the dep optional at bundle time when unresolved.
+    ApexCharts = (await import(/* @vite-ignore */ pkg)).default as ApexCtor;
+  } catch {
+    document.querySelectorAll<HTMLElement>('[data-tc]').forEach((el) => {
+      const mount = el.querySelector('[data-tc-mount]');
+      if (mount) {
+        mount.textContent = 'Trend chart unavailable — install apexcharts (pnpm install).';
+        (mount as HTMLElement).className = 'text-xs text-base-content/60 p-2';
+      }
+    });
+  }
+  if (!ApexCharts) {
+    // Honest empty — Trends section still renders cards; charts wait on the dep.
+  } else {
+  const Apex = ApexCharts;
+
+  // Read a theme token as a concrete colour (ApexCharts needs real values, not var()).
+  // Reads a --color-* token to a concrete value for ApexCharts; the string fallbacks are only used if a
+  // token is somehow empty (never in practice) — they are not styling. ds-ok
+  function token(name: string, fallback: string): string {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+  const SERIES_TOKENS: Record<string, string> = {
+    primary: '--color-primary', success: '--color-success', warning: '--color-warning',
+    error: '--color-error', info: '--color-info', secondary: '--color-secondary',
+  };
+  const PALETTE = ['--color-primary', '--color-success', '--color-warning', '--color-info', '--color-secondary', '--color-error'];
+
+  function fmtBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    const u = ['KB', 'MB', 'GB', 'TB']; let i = -1; let v = n;
+    do { v /= 1024; i++; } while (v >= 1024 && i < u.length - 1);
+    return `${v.toFixed(1)} ${u[i]}`;
+  }
+
+  const charts = new WeakMap<HTMLElement, any>();
+  // Shared base-filter state per facet group → the series names to HIDE across every chart in that group.
+  const groupHidden: Record<string, Set<string>> = {};
+  function applyFilter(chart: any, cfg: any) {
+    const grp = cfg.filterGroup;
+    if (!grp) return;
+    const hidden = groupHidden[grp] || new Set<string>();
+    (cfg.series as any[]).forEach((s) => {
+      try { if (hidden.has(s.name)) chart.hideSeries(s.name); else chart.showSeries(s.name); } catch {}
+    });
+  }
+
+  function drawTrend(root: HTMLElement) {
+    const mount = root.querySelector<HTMLElement>('[data-tc-mount]');
+    const dataEl = root.querySelector<HTMLElement>('[data-tc-data]');
+    if (!mount || !dataEl) return;
+    const cfg = JSON.parse(dataEl.textContent || '{}');
+    const compact = cfg.variant === 'compact';
+    const muted = token('--color-base-content', '#888'); // ds-ok: token() fallback string, not styling
+    const grid = token('--color-base-300', '#333'); // ds-ok: token() fallback string, not styling
+    const colors = (cfg.series as any[]).map((s, i) => token(s.color ? SERIES_TOKENS[s.color] : PALETTE[i % PALETTE.length], '#6366f1')); // ds-ok: token() fallback
+    const nfmt = (v: number) => cfg.format === 'bytes' ? fmtBytes(v) : new Intl.NumberFormat('en-US').format(Math.round(v));
+
+    const options: any = {
+      chart: { type: 'area', height: cfg.height, sparkline: { enabled: compact }, toolbar: { show: false }, animations: { enabled: false }, fontFamily: 'inherit', background: 'transparent' },
+      series: cfg.series.map((s: any) => ({ name: s.name, data: s.data })),
+      colors,
+      stroke: { curve: 'smooth', width: compact ? 2 : 2.5 },
+      fill: { type: 'gradient', gradient: { shadeIntensity: 0.2, opacityFrom: compact ? 0.25 : 0.22, opacityTo: 0.02 } },
+      dataLabels: { enabled: false },
+      grid: { show: !compact, borderColor: `color-mix(in oklch, ${grid} 60%, transparent)`, strokeDashArray: 4, padding: compact ? { top: 0, bottom: 0, left: 0, right: 0 } : {} },
+      xaxis: {
+        categories: cfg.categories,
+        labels: { show: !compact, style: { colors: muted, fontSize: '11px' }, rotate: 0, hideOverlappingLabels: true },
+        axisBorder: { show: false }, axisTicks: { show: false }, tooltip: { enabled: false },
+      },
+      yaxis: { show: !compact, labels: { style: { colors: muted, fontSize: '11px' }, formatter: nfmt } },
+      legend: { show: cfg.showLegend !== false && !compact && cfg.series.length > 1, position: 'top', horizontalAlign: 'left', fontSize: '12px', labels: { colors: muted }, markers: { size: 5 } },
+      tooltip: { enabled: true, theme: 'dark', y: { formatter: nfmt } },
+    };
+
+    const prev = charts.get(root);
+    if (prev) { try { prev.destroy(); } catch {} }
+    const chart = new Apex(mount, options);
+    chart.render();
+    charts.set(root, chart);
+    applyFilter(chart, cfg); // respect the current shared filter for a freshly-drawn chart
+  }
+
+  function initTrends() {
+    document.querySelectorAll<HTMLElement>('[data-tc]').forEach((root) => {
+      if (root.dataset.tcWired) return;
+      root.dataset.tcWired = '1';
+      drawTrend(root);
+    });
+    // One shared listener: a "Bases" FacetFilter above a chart grid emits `facetchange {name, hidden[]}`;
+    // every chart whose filterGroup matches that name hides/shows its per-base series to match.
+    if (!(window as any).__tcFilterWired) {
+      (window as any).__tcFilterWired = true;
+      document.addEventListener('facetchange', (e) => {
+        const d = (e as CustomEvent).detail || {};
+        if (!d.name) return;
+        groupHidden[d.name] = new Set<string>(d.hidden || []);
+        document.querySelectorAll<HTMLElement>('[data-tc]').forEach((root) => {
+          const chart = charts.get(root);
+          if (!chart) return;
+          const cfg = JSON.parse(root.querySelector('[data-tc-data]')?.textContent || '{}');
+          if (cfg.filterGroup === d.name) applyFilter(chart, cfg);
+        });
+      });
+    }
+  }
+  initTrends();
+  document.addEventListener('astro:page-load', () => { document.querySelectorAll<HTMLElement>('[data-tc]').forEach((r) => delete r.dataset.tcWired); initTrends(); });
+  } // end ApexCharts available
+</script>
+
+<style is:global>
+  .tc { width: 100%; min-width: 0; }
+  .tc-mount { width: 100%; }
+  /* Apex injects inline styles; keep its tooltip readable on our surfaces. */
+  .tc :global(.apexcharts-tooltip) { border: 1px solid var(--color-base-300); background: var(--color-base-100); box-shadow: 0 8px 24px oklch(0 0 0 / .18); }
+  .tc :global(.apexcharts-tooltip-title) { background: var(--color-base-200); border-bottom: 1px solid var(--color-base-300); font-weight: 600; }
+</style>

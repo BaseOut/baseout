@@ -16,6 +16,7 @@
  * an abandoned wizard. Destination = 1 file (required) + 1 optional database.
  */
 import BaseSelectionTable from '../components/integrations/BaseSelectionTable.astro';
+import Alert from '../components/ui/Alert.astro';
 import BackLink from '../components/ui/BackLink.astro';
 import Button from '../components/ui/Button.astro';
 import Badge from '../components/ui/Badge.astro';
@@ -357,10 +358,7 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
 
         {/* Cleanup schedule — tiered retention keyed to the frequency above (informational). */}
         <h3 class="opt-subhead mt-5">Cleanup schedule</h3>
-        <div role="alert" class="alert alert-soft alert-info">
-          <span class="iconify lucide--info size-4" aria-hidden="true"></span>
-          <span>Older backup versions are thinned automatically so storage stays in check — recent backups are kept in full; as they age we keep them less often.</span>
-        </div>
+        <Alert severity="info" trigger="static" message="Older backup versions are thinned automatically so storage stays in check — recent backups are kept in full; as they age we keep them less often." />
         <div class="cleanup mt-3" data-cleanup data-tiers={JSON.stringify(CLEANUP_TIERS)}>
           <p class="cleanup-lead">With <span class="font-semibold text-base-content" data-cleanup-freq>{freqLabel(initialFreq)}</span> backups we keep:</p>
           <ol class="cleanup-ladder" data-cleanup-ladder>
@@ -702,6 +700,7 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
 
 <script>
   import { setButtonLoading } from '../lib/ui';
+  import { pushEscape } from '../lib/escapeStack';
   import { saveBaseSelection } from '../lib/backups/save-selection';
   import { saveConfigureForm } from '../lib/backups/configure-save';
   import { saveBackupConfig } from '../lib/backups/save-config';
@@ -927,7 +926,15 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
     const closeDrawer = (d: HTMLElement) => { d.classList.remove('is-open'); window.setTimeout(() => { d.hidden = true; }, 220); };
     $$('[data-open-drawer]').forEach((b) => b.addEventListener('click', () => openDrawer(b.dataset.openDrawer!)));
     $$('[data-drawer-close]').forEach((b) => b.addEventListener('click', () => { const d = b.closest<HTMLElement>('.drawer-shell'); if (d) closeDrawer(d); }));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $$<HTMLElement>('.drawer-shell.is-open').forEach(closeDrawer); });
+    pushEscape({
+      label: 'wizard-drawer',
+      onEscape: () => {
+        const open = $$<HTMLElement>('.drawer-shell.is-open');
+        if (!open.length) return false;
+        open.forEach(closeDrawer);
+        return true;
+      },
+    });
 
     // ── Source create (simulated) ──
     function injectSourceOption(name: string, method: string) {

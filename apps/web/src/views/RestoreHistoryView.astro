@@ -1,0 +1,403 @@
+---
+/**
+ * RestoreHistoryView — `/restore`'s default view: what this Space has restored (2026-08-11).
+ *
+ * Until now `/restore` WAS the wizard. Dan asked whether a restore history existed — *"I wonder if
+ * in backup history we have a restore history… we probably need a restore history here as well"* —
+ * and Oleh settled the shape: *"a history(logs) table as the default view of this page + CTA
+ * 'restore backup' → the wizard that we have now. similar to current Backup page"*.
+ *
+ * IT INVENTS NO DATA. A restore IS a run (D05 item 5): it consumes a snapshot, writes into a
+ * customer's live Airtable and already lands in the same `backup_runs` log as every backup, carrying
+ * `kind: 'restore'` plus a `restore` block. This view is that log filtered to `kind === 'restore'`.
+ * There is no second store, and if a future reader is tempted to add one, the rule is the one D05
+ * already set: one log, two views.
+ *
+ * WHY IT IS A DIFFERENT TABLE FROM /backups AND NOT A COPY. The behaviour is identical and is
+ * shared — search, facets, click-sort, pager and the no-match state all come from `lib/runLog.ts`,
+ * which both surfaces call. The COLUMNS are genuinely different: a backup row answers "which
+ * trigger, how many bases", a restore row answers "out of which backup, into what, and how much is
+ * left to finish by hand". Sharing the wiring and not the columns is the split that keeps this from
+ * becoming a seventh way to render a table.
+ *
+ * THE LAST COLUMN IS THE POINT OF THE PAGE. A backup log is read to learn whether something broke.
+ * A restore log is read to learn whether something is FINISHED — Airtable's API cannot recreate
+ * formula fields, single-selects come back as text and linked records drop, so a restore routinely
+ * succeeds while leaving work on the desk. "To finish" is that number, and it is the one fact this
+ * table has that no other surface carries.
+ */
+import { fmtAbsolute, fmtDayShort, fmtDuration, fmtRelative } from '../lib/time';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
+import EmptyState from '../components/ui/EmptyState.astro';
+import { restoreRunLine } from '../lib/restore/request';
+import LiveRefresh from '../components/backups/LiveRefresh.astro';
+import TablePager from '../components/ui/TablePager.astro';
+// PROMOTION NOTE (ui-only@5572f8f, 2026-08-12): the fork's Status/Outcome/Date `FacetFilter`
+// dropdowns are DROPPED here. FacetFilter (components/schema/FacetFilter.astro) belongs to the
+// diverged schema surface — it pulls in the workspace-grouping + Airtable field-glyph cluster the
+// task scopes out — so this log degrades gracefully to search + click-sort + pager (see the
+// toolbar + the createRunLog config below, which pass no facets). Restoring facets is a
+// schema-surface follow-up (needs FacetFilter + its glyph cluster promoted first).
+
+interface Props {
+  /** Restore runs only — the caller filters `kind === 'restore'` out of the one run log. */
+  runs?: BackupRunSummary[];
+  /** Where the CTA goes. One address, passed in, so the view never assembles a URL. */
+  newHref: string;
+}
+const { runs = [], newHref } = Astro.props;
+const nf = new Intl.NumberFormat('en-US');
+const hasActive = runs.some((r) => r.status === 'running' || r.status === 'queued');
+// What an in-flight restore's elapsed time is measured against, server-side so the first paint agrees.
+const nowIso = new Date().toISOString();
+
+// Same three helpers as the Backups log, from the ONE formatter module (D09) — never a private copy.
+const since = (iso: string | null): string => fmtRelative(iso) ?? '—';
+// NO DURATION COLUMN, and that is a decision rather than an omission. With it the table measured
+// 1141px inside a 1094px holder at 1440 — an inner scrollbar on the app's widest table — and of the
+// nine columns it was the one carrying least: this log answers WHAT was restored, out of what, and
+// how much is left to finish. How long it took is on the run's own page, one click away through the
+// row. Cutting a column beat shrinking every other one.
+
+// Status → catalog badge, IDENTICAL to the Backups log. A restore that failed must not wear a
+// different red from a backup that failed: they are rows in the same log.
+const statusMeta: Record<string, { label: string; badge: string }> = {
+  succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
+  // Oleh ruling 5 / D19: Running is PRIMARY (blue), not warning amber (item 15b).
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
+  queued: { label: 'Queued', badge: 'badge-ghost' },
+  failed: { label: 'Failed', badge: 'badge-soft badge-error' },
+  cancelled: { label: 'Cancelled', badge: 'badge-ghost' },
+};
+/**
+ * D43 — unknown statuses must not be guessed as Cancelled (X08-F5). See SourcesView /
+ * BackupsListView for the same neutral-unknown pattern.
+ */
+const statusUnknown = { label: 'Unknown', badge: 'badge-ghost' };
+const metaOf = (s: string) => statusMeta[s] ?? statusUnknown;
+const statusRank: Record<string, number> = { failed: 0, cancelled: 1, running: 2, queued: 3, succeeded: 4 };
+
+// The count rule from `pattern-audit-table`, unchanged: a row never prints `—` for data that
+// exists. A restore that stopped part-way still WROTE what it wrote; `—` is only for a value that
+// is genuinely absent, which on this page means a run that has not written anything yet.
+const countCell = (n: number | null | undefined): string => (n == null ? '—' : nf.format(n));
+const countKey = (n: number | null | undefined): number => (n == null ? -1 : n);
+
+// Newest first — the only default an audit log can have. Sorted on the server so the first paint is
+// already right, and copied so the caller's array is untouched.
+const ordered = runs
+  .slice()
+  .sort((a, b) => new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime());
+
+const outcomeMeta: Record<string, string> = {
+  complete: 'Complete',
+  partial: 'Partial',
+  none: 'Nothing written',
+  running: 'In progress',
+};
+/**
+ * THE OUTCOME BADGE ONLY WHEN IT DISAGREES WITH THE STATUS (Oleh, 2026-08-11).
+ *
+ * Both badges rendered on every row, and on three rows in five they were the same word twice:
+ * `Running · In progress`, `Succeeded · Complete`. A qualifier that merely restates its subject
+ * teaches the reader to stop reading qualifiers — including on the two rows where it carries the
+ * whole point: `Failed · Partial` (it broke AND it wrote some of it) and `Failed · Nothing restored`.
+ *
+ * The rule is not a list of pairs to suppress, which would go stale the first time a status is
+ * added. It is the question the second badge exists to answer: does the outcome tell you something
+ * the status did not? A succeeded restore is complete by definition; a running one is in progress by
+ * definition. Everything else is news.
+ */
+const outcomeAddsInfo = (status: string, outcome: string): boolean =>
+  !((status === 'succeeded' && outcome === 'complete') || (status === 'running' && outcome === 'running'));
+
+---
+
+<div class="mx-auto max-w-[1200px] rh">
+  <header class="rh-head">
+    <div class="min-w-0">
+      <h1 class="text-title">Restore</h1>
+      <p class="text-sm text-base-content/65 mt-1">Every restore this Space has run, and what each one left to finish by hand. Restore is best-effort and always writes into new tables.</p>
+    </div>
+    {/* D17 — one primary. With no restores the empty state below carries this same action, so the
+        header yields rather than the card: the action belongs where the explanation is. */}
+    {ordered.length > 0 && <a href={newHref} class="btn btn-primary shrink-0"><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Restore backup</a>} {/* ds-ok: page-header CTA is the documented md exception */}
+  </header>
+
+  {ordered.length > 0 ? (
+    <section class="rh-panel" data-rh-list>
+      <div class="rh-panel-head">
+        <h2>Restore history</h2>
+        {/* The header's right end: how stale this view is, and the control that un-stales it. They
+            answer one question — "can I trust what I am reading right now?" — so they sit together,
+            hard against the right edge, away from the heading. Refresh used to sit immediately after
+            the title, which put a control in the middle of a sentence.
+            The zone note used to close this cluster and is gone (Oleh, 2026-08-11): the product is
+            US-only and the times are already the reader's own, so it was a caption on a fact nobody
+            was in doubt about. It survives in ONE place — the schedule editor — where it changes
+            what a person types rather than how they read. */}
+        <span class="rh-meta">{hasActive && <LiveRefresh />}</span>
+      </div>
+
+      <div class="rh-toolbar">
+        <label class="input input-sm grow min-w-[12rem]">
+          <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+          <input type="search" data-rh-search class="grow" placeholder="Search by base, target or run ID…" aria-label="Search restores" />
+        </label>
+
+        {/* Status/Outcome/Date FacetFilters dropped in the apps/web promotion (see the import note):
+            search + click-sort + pager remain, which cover the empty/small log this Space has today. */}
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-rh-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+      </div>
+
+      {/* `data-mobile-rows` — the same restyle the Backups log gets below 1280 (pattern-mobile-row).
+          Restore is a desktop-only section, so this only ever runs on the FIRST request of a session,
+          before the cookie exists and the server can know: CSS covers what the gate cannot yet. */}
+      <div class="rh-tablewrap" data-rh-tablewrap data-mobile-rows>
+        <table class="table text-sm">
+          <thead class="tbl-colhead">
+            <tr>
+              {/* THE SENTENCE IS GONE FROM THIS TABLE, and that is the point of having columns.
+                  It read "Restored Sales CRM (4 tables) into Restored — Sales CRM — 2026-06-15, a
+                  new base · from backup run …" — and Restored, Into and their table counts are
+                  already columns here, so four fifths of it was the row repeating itself in prose.
+                  What it carried that the columns did not is TWO facts, and they are columns now:
+                  which backup it came out of, and why it stopped. */}
+              <th data-sort-col="0">Status</th><th data-sort-col="1">When</th><th data-sort-col="2">Restored</th><th data-sort-col="3">Into</th><th data-sort-col="4">From</th><th data-sort-col="5" class="rh-why-h">Why it stopped</th>
+              <th class="text-right" data-sort-col="6">Records</th><th class="text-right" data-sort-col="7">Files</th><th class="text-right" data-sort-col="8">To finish</th><th></th>
+            </tr>
+          </thead>
+          <tbody data-rh-body>
+            {ordered.map((r) => {
+              const m = r.restore!;
+              const sm = metaOf(r.status);
+              const active = r.status === 'running' || r.status === 'queued';
+              const line = restoreRunLine(m);
+              return (
+                <tr
+                  class="rh-row row-clickable"
+                  data-nrow
+                  role="button"
+                  tabindex="0"
+                  data-status={r.status}
+                  data-outcome={m.outcome}
+                  data-date={r.completedAt ?? r.createdAt}
+                  data-search={`${r.id} ${m.sourceRunId} ${m.baseName} ${m.targetName} ${line}`.toLowerCase()}
+                  data-rank={statusRank[r.status] ?? 9}
+                  data-base={m.baseName.toLowerCase()}
+                  data-target={m.targetName.toLowerCase()}
+                  data-src={m.sourceTakenAt ? String(new Date(m.sourceTakenAt).getTime()) : '-1'}
+                  data-records={countKey(r.recordCount)}
+                  data-attachments={countKey(r.attachmentCount)}
+                  data-fixups={m.outcome === 'complete' || m.outcome === 'partial' ? m.manualFixups : -1}
+                  data-reason={m.reason ?? ''}
+                  onclick={`window.location='${m.detailHref}'`}
+                >
+                  <td data-m="lead">
+                    <span class={`badge ${sm.badge}`}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</span>
+                  </td>
+                  {/* WHEN SAYS WHEN — it printed "in progress" for a running restore, the same words
+                      as the badge beside it, so the one row where elapsed time matters was the one
+                      row that did not show any. */}
+                  <td data-m="sub">{active
+                    ? <span class="tooltip" data-tip={fmtAbsolute(r.startedAt ?? r.createdAt)}>{r.startedAt ? `${fmtDuration(r.startedAt, nowIso) ?? '—'} so far` : since(r.createdAt)}</span>
+                    : <span class="tooltip" data-tip={fmtAbsolute(r.completedAt)}>{since(r.completedAt)}</span>}</td>
+                  <td data-m="off">
+                    <span class="rh-strong">{m.baseName}</span>
+                    <span class="rh-sub">{nf.format(m.tableCount)} {m.tableCount === 1 ? 'table' : 'tables'}</span>
+                  </td>
+                  <td data-m="off">
+                    <span class="rh-strong">{m.targetName}</span>
+                    <span class="rh-sub">{m.targetIsNew ? 'new base' : 'existing base'}</span>
+                  </td>
+                  {/* FROM BACKUP — the one thing a restore log is asked that a backup log is not:
+                      which copy did this come out of. It was buried mid-sentence as a run id. */}
+                  <td data-m="off"><span class="rh-src tooltip" data-tip={m.sourceTakenAt ? `${fmtAbsolute(m.sourceTakenAt)} · ${m.sourceRunId}` : m.sourceRunId}>{m.sourceTakenAt ? fmtDayShort(m.sourceTakenAt) : m.sourceRunId}</span></td>
+                  {/* WHY IT STOPPED — only the failures have one, and only they should carry text.
+                      The old sentence printed on all five rows and restated the columns on three. */}
+                  {/* THE OUTCOME SITS WITH ITS EXPLANATION. It was a second badge beside the status,
+                      where on three rows in five it repeated the status word for word and cost the
+                      column 73px. Here it leads the sentence that explains it: "Partial — Airtable
+                      rejected the write on Channels". One thought, one cell. And it still only
+                      appears when it says something the status did not. */}
+                  <td data-m="why" class="rh-why-c">{outcomeAddsInfo(r.status, m.outcome) || m.reason
+                    ? <span class="rh-why">
+                        {outcomeAddsInfo(r.status, m.outcome) && <span class="rh-outcome">{outcomeMeta[m.outcome] ?? m.outcome}</span>}
+                        {m.reason}
+                      </span>
+                    : <span class="row-nil text-base-content/45">—</span>}</td>
+                  <td data-m="num" class="text-right tabular-nums">{countCell(r.recordCount)}<span class="rh-numcap">records</span></td>
+                  <td data-m="off" class="text-right tabular-nums">{countCell(r.attachmentCount)}</td>
+                  {/* `0` is a real answer here and must read as one — "nothing left" is the good
+                      news this column exists to deliver, so it is a word, not a dash. A restore that
+                      has not settled yet has no count at all, which is what `—` means everywhere
+                      else in this log. */}
+                  <td data-m="off" class="text-right tabular-nums">
+                    {m.outcome === 'complete' || m.outcome === 'partial'
+                      ? (m.manualFixups > 0
+                          ? <span class="rh-fix">{nf.format(m.manualFixups)}</span>
+                          : <span class="rh-done">None</span>)
+                      : <span class="text-base-content/45">—</span>}
+                  </td>
+                  <td data-m="go" class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rh-nomatch" data-rh-nomatch hidden>
+        <span class="rh-nomatch-ic"><span class="iconify lucide--search-x" aria-hidden="true"></span></span>
+        <p class="rh-nomatch-title">No restores match these filters</p>
+        <button type="button" class="btn btn-sm btn-ghost" data-rh-clear>Clear filters</button>
+      </div>
+
+      <TablePager name="rh" sizes={[10, 20, 50]} selected={20} />
+    </section>
+  ) : (
+    /* `pattern-empty-state` condition 1 — nothing has happened yet. It says what the surface is
+       for and offers the way in, rather than apologising for being blank. A Space that has never
+       restored is the COMMON case for this page, not an edge: most customers back up for months
+       before they ever restore. */
+    <EmptyState
+      icon="lucide--rotate-ccw"
+      title="No restores yet"
+      description="When you bring a base back from a backup, it lands here — what was restored, out of which backup, and anything Airtable’s API could not rebuild for you."
+      actionHref={newHref}
+      actionLabel="Restore backup"
+    />
+  )}
+</div>
+
+<script>
+  import { createRunLog } from '../lib/runLog';
+  import { mountClipTips } from '../lib/clipTips';
+
+  // Search / click-sort / pager — from the shared controller, none of it retyped. FACETS are
+  // dropped in the apps/web promotion (FacetFilter belongs to the diverged schema surface), so
+  // `multiFacets` is empty and there is no `singleFacet`; createRunLog degrades to search + sort +
+  // pager, which is exactly what the empty/small restore log this Space has needs today.
+  function initRestoreLog() {
+    const root = document.querySelector<HTMLElement>('[data-rh-list]');
+    if (!root) return;
+    const body = root.querySelector<HTMLElement>('[data-rh-body]')!;
+    // The base and target names are capped at 11rem so they cannot drive column width. `clipTips`
+    // gives the full name back — and ONLY on the cells that actually clip, because a tooltip on
+    // every row repeating text already fully visible trains a reader to ignore all of them.
+    const clipTips = mountClipTips({ observe: body, rows: () => Array.from(body.querySelectorAll<HTMLElement>('.rh-row')), selector: '.rh-strong, .rh-why' });
+    const num = (row: HTMLElement, key: string) => Number(row.dataset[key] ?? -1);
+    createRunLog({
+      onAfterRender: () => clipTips.recheck(),
+      root,
+      name: 'rh',
+      rowSelector: '.rh-row',
+      sizes: [10, 20, 50],
+      defaultSize: 20,
+      multiFacets: [],
+      sortValue: (row, col) => {
+        if (col === 0) return num(row, 'rank');
+        if (col === 1) return new Date(row.dataset.date as string).getTime() || 0;
+        if (col === 2) return row.dataset.base || '';
+        if (col === 3) return row.dataset.target || '';
+        if (col === 4) return num(row, 'src');
+        // Rows that stopped for a reason sort above rows that did not — the failures, on one click.
+        if (col === 5) return row.dataset.reason?.trim() ? 0 : 1;
+        if (col === 6) return num(row, 'records');
+        if (col === 7) return num(row, 'attachments');
+        if (col === 8) return num(row, 'fixups');
+        return '';
+      },
+    });
+  }
+  initRestoreLog();
+  document.addEventListener('astro:page-load', initRestoreLog);
+</script>
+
+<style>
+  /* Composition + layout only — every control, badge and the table itself are catalog primitives.
+     The metrics deliberately MATCH the Backups log (`.bl-*`), because these are two views of one
+     audit log and a reader moving between them must not feel a change of product. */
+  .rh { display: flex; flex-direction: column; gap: 1.25rem; }
+  .rh-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  .rh-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 16px 20px 20px; }
+  .rh-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; }
+  .rh-meta { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .rh-panel-head h2 { font-size: var(--t-16); font-weight: 650; }
+
+  .rh-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 1rem; }
+
+  .rh-tablewrap { overflow-x: auto; }
+  .rh-tablewrap :is(th, td) { white-space: nowrap; }
+  .rh-tablewrap td.rh-why-c { white-space: normal; }
+
+  /* THE REASON LINE — the same 11rem the whole audit trail uses (`pattern-audit-table`). It is a
+     preview, never a column-width driver; the full sentence is on the catalog `tooltip`.
+     `display:block` overrides the `tooltip` class's inline-block, which would otherwise keep it on
+     the badge's line and defeat the truncation entirely. */
+  /* WHY IT STOPPED takes the table's slack — `width: 100%` on one cell of an auto-layout table is
+     how the remainder is handed to a single column. Two lines, clamped, with `clipTips` restoring
+     the rest only where it still clips. */
+  .rh-why-h, .rh-why-c { width: 100%; }
+  .rh-why {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+    overflow: hidden; font-size: var(--t-12); line-height: 1.45;
+    color: oklch(from var(--color-base-content) l c h / .65);
+  }
+  /* The outcome, leading its own explanation. A word, not a badge — a badge here would compete with
+     the status badge one column away and re-create the two-chips-in-a-row it was moved to escape. */
+  .rh-outcome { font-weight: 600; color: oklch(from var(--color-base-content) l c h / .85); }
+  .rh-outcome::after { content: ' — '; font-weight: 400; }
+  .rh-src { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .85); white-space: nowrap; }
+
+  /* Two-line cells: the name, then what kind of thing it is.
+     THE NAME IS CAPPED, and the number was measured rather than picked. A generated target reads
+     "Restored — Customer Success — 2026-06-03", and uncapped those two columns drove the table to
+     1230px inside a 1094px holder at 1440 — wider than anything else in the app, with an inner
+     scrollbar, and it would have moved the widest-table figure the 1280 boundary is derived from.
+     `pattern-audit-table` already forbids exactly this: explanatory text never drives column width.
+     9rem, not 11: this table gained two columns (which backup it came out of, and why it stopped)
+     and 11rem put it 128px past its 1094px holder — measured, then walked down until it fit. The full name comes back through `clipTips`, which
+     tooltips ONLY the cells that are genuinely clipped. */
+  .rh-strong { display: block; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-13); }
+  .rh-sub { display: block; margin-top: 2px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); }
+
+  /* "To finish" — a number that means work is waiting reads as a warning; zero reads as done. The
+     colours are the app's semantic tokens, not a private pair. */
+  .rh-fix { font-weight: 600; color: var(--color-warning); }
+  .rh-done { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); }
+
+  .rh-nomatch { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 2.5rem 1rem; }
+  .rh-nomatch-ic { width: 2.5rem; height: 2.5rem; border-radius: .7rem; display: grid; place-items: center; background: var(--color-base-200); }
+  .rh-nomatch-ic .iconify { font-size: 1.2rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rh-nomatch-title { font-size: var(--t-14); font-weight: 600; }
+
+  .rh-numcap { display: none; }
+
+  /* ── Below the 1280 product boundary ────────────────────────────────────────────────────────
+     Scoped HERE rather than in global.css for the reason PARKED P30 §13 records: Astro scopes
+     every selector in this block with a `[data-astro-cid-…]` attribute, so a global rule loses on
+     specificity while looking correct in both files. */
+  @media (max-width: 1279.98px) {
+    .rh-tablewrap :is(th, td) { white-space: normal; }
+    .rh-why {
+      max-width: none;
+      white-space: normal;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+    .rh-numcap { display: block; font-size: var(--t-11); font-weight: 500; color: oklch(from var(--color-base-content) l c h / .65); }
+    .rh-toolbar > .input { flex: 1 0 100%; }
+    .rh-head { gap: 12px; }
+    .rh-head > .btn { width: 100%; }
+    .rh-panel-head { flex-wrap: wrap; row-gap: 8px; }
+    .rh-panel-head h2 { flex: 1 0 100%; }
+    .rh-meta { margin-left: 0; }
+  }
+</style>

@@ -12,16 +12,23 @@
  * Model is richer than BackupRunSummary — the engineer wires the real per-run
  * detail endpoint; here it is a harness fixture.
  */
-import Badge from '../components/ui/Badge.astro';
-import Button from '../components/ui/Button.astro';
+import { fmtDateTime, fmtDuration, formatNextScheduledAt } from '../lib/time';
+import { backupRunTitle } from '../lib/backups/format';
 import Alert from '../components/ui/Alert.astro';
+import Drawer from '../components/ui/Drawer.astro';
 import ConfirmModal from '../components/ui/ConfirmModal.astro';
-
+import UndoToast from '../components/ui/UndoToast.astro';
+import LiveRefresh from '../components/backups/LiveRefresh.astro';
+import { entityIconClass } from '../components/schema/entityIcon';
+import RunBackupNowModal from '../components/backups/RunBackupNowModal.astro';
 interface FailedAttachment {
   base: string;
   table: string;
   file: string;
   reason: string;
+  /** A failure retrying cannot fix (over the size limit, source file gone). Marked, and excluded
+   *  from the retry count — offering "Retry 2" over one permanent failure promises a fix twice. */
+  permanent?: boolean;
 }
 interface BaseRun {
   id: string;
@@ -45,8 +52,10 @@ interface BaseRun {
 }
 interface RunDetail {
   id: string;
-  status: 'succeeded' | 'failed' | 'running' | 'cancelled' | 'trial_succeeded';
+  status: 'succeeded' | 'failed' | 'running' | 'paused' | 'cancelled' | 'trial_succeeded' | 'queued';
   triggeredBy: string;
+  /** When the run was ENQUEUED. It is the only time a queued run has, so it is what titles it. */
+  createdAt?: string | null;
   startedAt: string | null;
   completedAt: string | null;
   etaSeconds: number | null; // estimated time remaining while running
@@ -54,81 +63,165 @@ interface RunDetail {
   destinationLabel: string;
   destProvider: string; // e.g. "Google Drive" — named in the folder-link tooltip
   destIcon: string | null; // brand mark for the destination provider (falls back to a folder icon)
+  /**
+   * The RUN-scoped failure sentence — one canonical string, written once and rendered at both
+   * levels (here and on the base page). The page used to borrow `bases.find(b => b.error)?.error`,
+   * which made the run's headline the first failing base's private message: right by luck with one
+   * failure, wrong with two, and silent when a run failed before it reached any base at all.
+   */
+  error: string | null;
+  /**
+   * What the run ACHIEVED, which `status` does not say. `failed` covers both "stopped after
+   * writing five of six bases" and "lost access and wrote nothing", and those are not the same
+   * news. Derived by the engine, never inferred here from a truthy count.
+   */
+  outcome: 'complete' | 'partial' | 'none';
   bases: BaseRun[];
   failedAttachments: FailedAttachment[];
-  /**
-   * Real run-level totals (production). The harness sums `bases[]`, but the
-   * backup engine records only run-level totals today — no per-base split — so
-   * production passes them here and sets `metricsPending`. Optional: when
-   * absent the view sums `bases[]` exactly as before (harness behavior).
-   */
-  summary?: { bases?: number; tables: number; records: number; attachments: number };
 }
 interface Props {
   run: RunDetail;
+  /** A deep link to a deleted/missing run (email/support link) → scoped not-found. */
+  notFound?: boolean;
   /**
-   * Active Space UUID — required to wire the Cancel button to the cancel
-   * route (`/api/spaces/:spaceId/backup-runs/:runId/cancel`). Optional so the
-   * apps/design harness can render the view without a live backend; when
-   * absent the Cancel button's confirm is a no-op.
+   * `backup_configurations.next_scheduled_at`. Optional, and the clause is DROPPED when it is
+   * absent rather than filled with a guess — the same rule `RestoreRequest.workspaceName` follows.
+   *
+   * WHY THIS PAGE NEEDS IT (Wave B, mobile scenario 1). The 11pm moment ends with a choice:
+   * run it again now, or do nothing because the schedule will. This page offered the first and
+   * said nothing about the second, so "do nothing" was never a decision the reader could make —
+   * it was an absence of information. Home's rail already prints exactly this fact, from
+   * `formatNextScheduledAt`; the run page now prints the same one rather than a second wording.
    */
-  spaceId?: string;
+  nextScheduledAt?: string | null;
+  /** Active Space — powers the real Run-backup-now modal (POST /api/spaces/:id/backup-runs). */
+  spaceId?: string | null;
   /**
-   * Production (apps/web): the engine doesn't capture per-base / per-table
-   * detail yet (web-backups-redesign "To do"). When true the view shows a
-   * "pending" note, renders run-level totals from `run.summary`, blanks the
-   * per-base metric cells, and hides the not-yet-wired run actions. Default
-   * false = full harness behavior.
+   * PROMOTION RECONCILE (apps/web): the engine's per-base detail is unavailable for this run — a
+   * legacy run with no per-base snapshot, or the engine was unreachable. The fork view derives every
+   * total from `run.bases`, which would show zeros here; when this is true the summary strip reads
+   * the REAL run-level totals in `summary` instead, and the per-base table is replaced by a note.
    */
   metricsPending?: boolean;
+  /** Run-level totals from the DB row — the summary-strip source when `metricsPending`. */
+  summary?: { bases: number; tables: number; records: number; attachments: number } | null;
 }
-const { run, spaceId, metricsPending = false } = Astro.props;
+const { run, notFound = false, nextScheduledAt = null, spaceId = null, metricsPending = false, summary = null } = Astro.props;
 
 const nf = new Intl.NumberFormat('en-US');
 const running = run.status === 'running';
 const failed = run.status === 'failed';
+const paused = run.status === 'paused';
+const cancelled = run.status === 'cancelled';
+// D07 — a QUEUED run is a run, and it had no page: the list sent it to `?state=running`, so
+// clicking a row badged "Queued" opened a page headed "Running" with a spinner and an ETA over
+// bases it had not touched. Rendering the state it is actually in is the fix; inventing progress
+// for it was the defect.
+const queued = run.status === 'queued';
+// D07 — the run's IDENTITY, one string shared by the h1 and the breadcrumb leaf (and passed to the
+// route for the tab title). A queued run has no start, so it is titled by when it was enqueued.
+const runTitle = backupRunTitle(run.startedAt ?? run.createdAt ?? null);
+// Only a cleanly-finished run can be restored (client Q3 — not failed/cancelled/paused).
+const settled = run.status === 'succeeded' || run.status === 'trial_succeeded';
 
-const totalRecords = run.summary ? run.summary.records : run.bases.reduce((s, b) => s + b.records, 0);
-const totalAttachments = run.summary ? run.summary.attachments : run.bases.reduce((s, b) => s + b.attachments, 0);
-const totalTables = run.summary ? run.summary.tables : run.bases.reduce((s, b) => s + b.tables, 0);
+// PROMOTION RECONCILE: when the engine gave no per-base detail (metricsPending), the summary strip
+// reads the REAL run-level totals from `summary` rather than summing an empty `run.bases`.
+const totalRecords = metricsPending ? (summary?.records ?? 0) : run.bases.reduce((s, b) => s + b.records, 0);
+const totalAttachments = metricsPending ? (summary?.attachments ?? 0) : run.bases.reduce((s, b) => s + b.attachments, 0);
+const totalTables = metricsPending ? (summary?.tables ?? 0) : run.bases.reduce((s, b) => s + b.tables, 0);
+const totalBases = metricsPending ? (summary?.bases ?? 0) : run.bases.length;
 
-function durationStr(start: string | null, end: string | null): string {
-  if (!start || !end) return '—';
-  const sec = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000);
-  if (sec < 60) return `${sec}s`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return s ? `${m}m ${s}s` : `${m}m`;
-}
+// SCOPE — the first thing a failure has to answer: how much of the run failed, and how much of it
+// landed. Counted from the bases, so the header cannot disagree with the table under it.
+const failedBases = run.bases.filter((b) => b.status === 'failed');
+const writtenBases = run.bases.filter((b) => b.status === 'ok');
+const unreachedBases = run.bases.filter((b) => b.status === 'pending');
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+// "1 of 6 bases" — the Inbox's own phrasing ("3 of 12 bases incomplete"), not a third wording.
+const failedScope = `${failedBases.length} of ${run.bases.length} ${plural(run.bases.length, 'base', 'bases')}`;
+// Names, never ids — the ids are demoted to the page foot (catalog `pattern-copy-id`).
+const failedNames = failedBases.map((b) => b.name).join(', ');
+/*
+ * The failure sentence, assembled here rather than as markup. Two reasons: the four questions —
+ * what failed at what scope · why · what WAS written · what next — have to arrive in one order on
+ * every surface, and an Astro fragment drops the whitespace between an expression and the text
+ * beside it, which is how "3 of 6bases" gets shipped.
+ */
+const failHeadline = `${failedScope} failed${failedNames ? ` — ${failedNames}` : ''}.`;
+const writtenLine =
+  run.outcome === 'none'
+    ? 'Nothing was written by this run.'
+    : `${writtenBases.length} of ${run.bases.length} ${plural(run.bases.length, 'base was', 'bases were')} backed up — ${nf.format(totalRecords)} ${plural(totalRecords, 'record', 'records')} and ${nf.format(totalAttachments)} ${plural(totalAttachments, 'attachment', 'attachments')} written.`;
+const unreachedLine =
+  unreachedBases.length > 0
+    ? ` ${unreachedBases.length} ${plural(unreachedBases.length, 'base was', 'bases were')} never reached.`
+    : '';
+/*
+ * THE SECOND HALF OF THE CHOICE (Wave B, mobile scenario 1). Everything above says what happened;
+ * the reader's actual question at 11pm is what to DO, and there are two answers — run it again, or
+ * leave it because the schedule will. Only the first was on the page, which made "do nothing" an
+ * absence of information rather than a decision. Same fact and same formatter as Home's rail.
+ *
+ * `Not yet scheduled` is what `formatNextScheduledAt` returns for a null, and it is not a retry
+ * promise — so that value renders NO sentence rather than one that says nothing will happen.
+ * Joined into `failBody` in the frontmatter rather than appended as a fragment in the markup,
+ * because an Astro fragment drops the whitespace between an expression and the text beside it —
+ * the same trap the comment above this one already names, hit again by the first draft of this
+ * line ("never reached.The next scheduled backup…").
+ */
+const nextLabel = nextScheduledAt ? formatNextScheduledAt(nextScheduledAt) : null;
+const scheduleLine =
+  nextLabel && nextLabel !== 'Not yet scheduled' ? `The next scheduled backup runs ${nextLabel}.` : null;
+const failBody = `${run.error ?? ''} ${writtenLine}${unreachedLine}${scheduleLine ? ` ${scheduleLine}` : ''}`.trim();
+// The ids, for the foot — one string, so no fragment can eat the space before the <code>.
+const failedIdsLabel = failedBases.length > 0 ? `failed ${plural(failedBases.length, 'base', 'bases')}` : '';
+const failedIds = failedBases.map((b) => b.id).join(' ');
+
+// Attachments a retry could actually fix. A permanent failure is marked and skipped, so the retry
+// label never promises to re-fetch a file that is over the size limit or gone from Airtable.
+const retryableAttachments = run.failedAttachments.filter((f) => !f.permanent);
+
+// D09 — the third private formatter copy the audit named. Deleted, not wrapped.
+const durationStr = (start: string | null, end: string | null): string =>
+  fmtDuration(start, end) ?? '—';
 function etaStr(sec: number | null): string {
   if (sec == null) return '';
   if (sec < 60) return `~${sec}s left`;
   return `~${Math.round(sec / 60)}m left`;
 }
-function absTime(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
+const absTime = (iso: string | null): string => fmtDateTime(iso) || '—';
 
-type StatusVariant = 'success' | 'warning' | 'error' | 'default';
-const runStatusMeta: Record<string, { label: string; variant: StatusVariant }> = {
-  succeeded: { label: 'Succeeded', variant: 'success' },
-  trial_succeeded: { label: 'Trial run', variant: 'success' },
-  running: { label: 'Running', variant: 'warning' },
-  failed: { label: 'Failed', variant: 'error' },
-  cancelled: { label: 'Cancelled', variant: 'default' },
+// Status → catalog badge (soft tint + colored text for state; neutral = ghost).
+// Same map shape as BackupsListView so the audit trail reads consistently.
+const runStatusMeta: Record<string, { label: string; badge: string }> = {
+  succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
+  trial_succeeded: { label: 'Trial run', badge: 'badge-soft badge-success' },
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
+  paused: { label: 'Paused', badge: 'badge-soft badge-warning' },
+  queued: { label: 'Queued', badge: 'badge-ghost' },
+  failed: { label: 'Failed', badge: 'badge-soft badge-error' },
+  cancelled: { label: 'Cancelled', badge: 'badge-ghost' },
 };
 const rsm = runStatusMeta[run.status] ?? runStatusMeta.cancelled;
+// A failed run's badge STATES ITS SCOPE. "Failed" alone is the shape of a total loss, and this run
+// wrote five of six bases; the reader should not have to scroll a table to learn which it was.
+const runStatusLabel = failed ? `${rsm.label} — ${failedScope}` : rsm.label;
 // Carry the run's state + destination into the per-base drill-down so the deeper page matches.
 const drillState = run.status === 'running' ? 'running' : run.status === 'failed' ? 'failed' : 'done';
 const drillDest = run.destProvider === 'Amazon S3' ? 's3' : run.destProvider === 'Postgres' ? 'db' : 'drive';
 
-const baseStatusMeta: Record<string, { label: string; variant: StatusVariant }> = {
-  ok: { label: 'Backed up', variant: 'success' },
-  running: { label: 'Running', variant: 'warning' },
-  failed: { label: 'Failed', variant: 'error' },
-  pending: { label: 'Pending', variant: 'default' },
+const baseStatusMeta: Record<string, { label: string; badge: string }> = {
+  ok: { label: 'Backed up', badge: 'badge-soft badge-success' },
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
+  failed: { label: 'Failed', badge: 'badge-soft badge-error' },
+  pending: { label: 'Pending', badge: 'badge-ghost' },
 };
+// Status sort rank — problems first, so the first (ascending) click on Status answers "which base
+// did not make it?". Same convention as the Backups list.
+const baseStatusRank: Record<string, number> = { failed: 0, pending: 1, running: 2, ok: 3 };
+// Seconds, for sorting the Time column: "2m 14s" does not compare as text.
+const durationSec = (start: string | null, end: string | null): number =>
+  start && end ? Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000) : -1;
 
 const depthChips = [
   { label: 'Schema', on: run.depth.schema },
@@ -137,305 +230,580 @@ const depthChips = [
 ];
 ---
 
+{notFound ? (
+  <div class="mx-auto max-w-[640px]">
+    <div class="breadcrumbs text-sm py-0">
+      <ul><li><a href="/backups">Backups</a></li><li>Backup run</li></ul>
+    </div>
+    <div class="rd-notfound">
+      <span class="rd-nf-ic"><span class="iconify lucide--unlink size-6" aria-hidden="true"></span></span>
+      <h1 class="text-title mt-3">This backup run no longer exists</h1>
+      <p class="text-sm text-base-content/60 mt-2">It may have been deleted, or this link is out of date. Backed-up data is only ever removed by the cleanup schedule — there is no per-run delete, so an old run link can still go stale (a base removed from the Space, a Space deleted).</p>
+      <a href="/backups" class="btn btn-primary mt-5"><span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>Back to Backups</a>
+    </div>
+  </div>
+) : (
 <div class="mx-auto max-w-[1200px]" data-run-detail data-run-id={run.id} data-space-id={spaceId}>
-  <div class="rd-nav">
-    <a href="/backups" class="rd-back-link" aria-label="Back to Backups"><span class="iconify lucide--arrow-left" aria-hidden="true"></span></a>
-    <nav class="rd-crumbs" aria-label="Breadcrumb">
-      <a href="/backups">Backups</a>
-      <span class="rd-crumb-sep" aria-hidden="true">/</span>
-      <span class="rd-crumb-cur" aria-current="page">Backup run</span>
-    </nav>
+  {/* Breadcrumbs — daisyUI primitive (catalog) + a ghost square back button */}
+  <div class="flex items-center gap-2">
+    <a href="/backups" class="btn btn-sm btn-square btn-ghost" aria-label="Back to Backups"><span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span></a>
+    <div class="breadcrumbs text-sm py-0">
+      <ul>
+        <li><a href="/backups">Backups</a></li>
+        <li>{runTitle}</li>
+      </ul>
+    </div>
   </div>
 
   {/* Header */}
   <header class="rd-head">
     <div class="min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <h1 class="text-title">Backup run</h1>
-        <Badge variant={rsm.variant}>{running && <span class="loading loading-spinner loading-xs"></span>}{rsm.label}</Badge>
+        {/* D07 item 2 — the h1 is the run's IDENTITY, not the noun of its class. Six run tabs
+            open at once all read "Backup run" before this; they now read the run each one is.
+            Reports is the template (ReportDetailView h1 = its window label = its crumb leaf). */}
+        <h1 class="text-title">{runTitle}</h1>
+        <span class={`badge ${rsm.badge}`}>{running && <span class="loading loading-spinner loading-xs"></span>}{paused && <span class="iconify lucide--pause size-3" aria-hidden="true"></span>}{runStatusLabel}</span>
       </div>
       <p class="text-sm text-base-content/60 mt-1">
         {run.triggeredBy.startsWith('schedule') ? 'Scheduled' : run.triggeredBy.startsWith('onboarding') ? 'Trial' : run.triggeredBy.startsWith('webhook') ? 'Webhook' : 'Manual'} ·
-        started <span class="mono-data">{absTime(run.startedAt)}</span>
-        {running
-          ? <> · <span class="text-warning font-medium mono-data">{etaStr(run.etaSeconds)}</span></>
-          : <> · {run.status === 'failed' ? 'stopped' : 'finished'}{' '}<span class="mono-data">{absTime(run.completedAt)}</span> · <span class="mono-data">{durationStr(run.startedAt, run.completedAt)}</span></>}
+        {queued
+          ? <> queued <span class="mono-data">{absTime(run.createdAt ?? null)}</span> · waiting to start</>
+          : <>
+              started <span class="mono-data">{absTime(run.startedAt)}</span>
+              {running
+                ? <> · <span class="text-warning font-medium mono-data">{etaStr(run.etaSeconds)}</span></>
+                : paused
+                  ? <> · <span class="text-warning font-medium">paused</span> — resume to continue</>
+                  : <> · {failed ? 'stopped' : cancelled ? 'cancelled' : 'finished'}{' '}<span class="mono-data">{absTime(run.completedAt)}</span> · <span class="mono-data">{durationStr(run.startedAt, run.completedAt)}</span></>}
+            </>}
       </p>
+      {running && <div class="mt-2"><LiveRefresh /></div>}
     </div>
+    {/* Run-level actions: Cancel is REAL (POST cancel route). Pause/Resume are honestly
+        gated — no pause API on this branch (fork confirmHref prototypes dropped). Settled
+        runs offer Restore. Sizing: `btn-sm` throughout (decision-density-sm-is-default). */}
     <div class="flex items-center gap-2 shrink-0">
-      {/* Cancel is wired to the real cancel route (server-schedule-and-cancel
-          Phase A); shown whenever the run is still in flight, including in
-          production where metricsPending hides the other (still-stubbed) actions. */}
-      {running && (
-        <Button type="button" variant="outline" size="sm" class="border-error text-error" data-open-cancel>Cancel run</Button>
+      {(running || queued) && (
+        <button type="button" class="btn btn-sm btn-outline btn-error" data-open-cancel>
+          <span class="iconify lucide--x size-4" aria-hidden="true"></span>Cancel run
+        </button>
       )}
-      {/* Restore — shown for succeeded/trial_succeeded runs (web-restore). */}
-      {(run.status === 'succeeded' || run.status === 'trial_succeeded') && (
-        <Button href={`/restore?run=${run.id}`} variant="primary" size="sm">
-          <span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>
-          Restore
-        </Button>
-      )}
-      {/* Delete / Run again remain presentational stubs (web-backups-redesign
-          "To do") — hidden in production until wired to real endpoints. */}
-      {!metricsPending && !running && (
-        <>
-          <Button type="button" variant="ghost" size="sm">Delete</Button>
-          <Button href="/?status=running" variant="primary" size="sm">Run again</Button>
-        </>
+      {settled && (
+        <a href={`/restore?run=${run.id}`} class="btn btn-sm btn-soft btn-primary"><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Restore</a>
       )}
     </div>
   </header>
 
-  {/* Failed-attachments banner */}
+  {/* THE FAILURE, ABOVE THE CONTENT IT EXPLAINS (catalog `alert`, usageDo). It used to sit under
+      the per-base table, so the first fold of a failed run was a success-shaped stats strip and the
+      reader met "12,407 records" before "this run failed". It now takes the partial-warning's
+      position, and it answers the four questions in order: what failed at what scope · why · what
+      WAS written · what to do next. Bases are named by their display name; their ids are in the
+      foot. The recovery is the shared credits-warning confirm — a recorded run is immutable, so
+      "run again" is the only recovery this page can offer. */}
+  {failed && (
+    <Alert severity="error" trigger="static" class="rd-fail-alert">
+      <span><b>{failHeadline}</b>{' '}{failBody}</span>
+      {/* THE ONE WRITE VERB (Wave B, B4). It is the only control in the phone product that asks
+          the engine to do anything; everything else below 1280 reads. It writes nothing into
+          Airtable — it enqueues a new run — which is why it is the one verb that survived the cut
+          rather than mute, acknowledge or restore. The confirm behind it is the SAME shared
+          credits warning Home and the Backups list use. NOT-OURS: the retry handler itself. */}
+      <button slot="action" type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>
+    </Alert>
+  )}
+
+  {/* Failed-attachments banner — catalog Alert (soft) */}
   {run.failedAttachments.length > 0 && (
-    <Alert variant="warning">
-      <span class="flex flex-1 flex-wrap items-center gap-2 min-w-0">
-        <span class="flex-1 min-w-0"><b>{run.failedAttachments.length} attachment{run.failedAttachments.length === 1 ? '' : 's'}</b> couldn't be backed up. The rest of the run completed.</span>
-        <Button type="button" variant="warning" size="sm" data-open-failed>Review</Button>
-      </span>
+    <Alert severity="warning" trigger="static">
+      <span><b>{run.failedAttachments.length} attachment{run.failedAttachments.length === 1 ? '' : 's'}</b> couldn't be backed up. The rest of the run completed.</span>
+      <button slot="action" type="button" class="btn btn-sm btn-ghost" data-open-failed>Review</button>
     </Alert>
   )}
 
-  {/* Per-base detail pending — the engine records run-level totals only today. */}
-  {metricsPending && (
-    <Alert variant="info">
-      Showing run-level totals. Per-base and per-table breakdown isn't captured by the backup engine yet.
-    </Alert>
-  )}
-
-  {/* Summary */}
+  {/* Summary — THE metrics strip (`.hm-kpis`), not daisyUI's `stats`.
+      The catalog's own entry is unambiguous: "A small row of headline metrics is ALWAYS this strip…
+      reuse it anywhere a few key numbers need to read as part of the system", and names Home and the
+      Schema entity panel as its users. This page was the one place that reached past it for the raw
+      daisyUI primitive, and the cost showed up the moment the page was read narrow — Oleh: «тут
+      всякі внутрішні сторінки бекапа максимально хуйово виглядає». Measured at 540: `stat`'s own
+      2rem padding made each tile 165px tall for one label and one number, so four numbers claimed
+      330px of a 900px screen. The shared tile is ~90px and already answers 2-across below 768.
+      The glyphs come from `entityIcon` — the ONE concept-glyph map — rather than being picked here;
+      Records is `rows-3` for the same reason it is everywhere else, "how many records". */}
   <section class="rd-summary">
-    <div class="rd-stats">
-      <div class="rd-stat"><span class="rd-stat-k">Bases</span><span class="rd-stat-v">{run.summary?.bases ?? run.bases.length}</span></div>
-      <div class="rd-stat"><span class="rd-stat-k">Tables</span><span class="rd-stat-v">{nf.format(totalTables)}</span></div>
-      <div class="rd-stat"><span class="rd-stat-k">Records</span><span class="rd-stat-v">{nf.format(totalRecords)}</span></div>
-      <div class="rd-stat"><span class="rd-stat-k">Attachments</span><span class="rd-stat-v">{nf.format(totalAttachments)}</span></div>
+    <div class="hm-kpis">
+      <div class="hm-kpi">
+        <div class="hm-kpi-top"><span class="hm-kpi-k">Bases</span><span class={`iconify ${entityIconClass('base')} hm-kpi-ic`} aria-hidden="true"></span></div>
+        <span class="hm-kpi-v">{totalBases}</span>
+      </div>
+      <div class="hm-kpi">
+        <div class="hm-kpi-top"><span class="hm-kpi-k">Tables</span><span class={`iconify ${entityIconClass('table')} hm-kpi-ic`} aria-hidden="true"></span></div>
+        <span class="hm-kpi-v">{nf.format(totalTables)}</span>
+      </div>
+      <div class="hm-kpi">
+        <div class="hm-kpi-top"><span class="hm-kpi-k">Records</span><span class="iconify lucide--rows-3 hm-kpi-ic" aria-hidden="true"></span></div>
+        <span class="hm-kpi-v">{nf.format(totalRecords)}</span>
+      </div>
+      <div class="hm-kpi">
+        <div class="hm-kpi-top"><span class="hm-kpi-k">Attachments</span><span class={`iconify ${entityIconClass('asset')} hm-kpi-ic`} aria-hidden="true"></span></div>
+        <span class="hm-kpi-v">{nf.format(totalAttachments)}</span>
+        {run.failedAttachments.length > 0 && <span class="hm-kpi-sub text-error">{nf.format(run.failedAttachments.length)} failed</span>}
+      </div>
     </div>
     <div class="rd-meta">
+      {/* "Captured" was a CLAIM — the chips are the run's configured depth, so a run that wrote
+          nothing still lit "Data" and "Attachments" in success blue. The label now says what the
+          value actually is: what the run was asked to take. What it TOOK is the stats strip and
+          the per-base table beside it. */}
       <div class="rd-meta-row">
-        <span class="rd-meta-k">Captured</span>
-        <span class="rd-depth">{depthChips.map((d) => (<span class={`rd-depth-chip ${d.on ? 'on' : 'off'}`}>{d.on && <span class="iconify lucide--check"></span>}{d.label}</span>))}</span>
+        <span class="rd-meta-k">Depth requested</span>
+        <div class="flex flex-wrap gap-1.5">{depthChips.map((d) => (
+          d.on
+            ? <span class="badge badge-soft badge-primary badge-sm">{d.label}</span>
+            : <span class="badge badge-ghost badge-sm">{d.label}</span>
+        ))}</div>
       </div>
       <div class="rd-meta-row"><span class="rd-meta-k">Destination</span><span class="rd-meta-v">{run.destinationLabel}</span></div>
     </div>
   </section>
 
-  {/* Per-base breakdown */}
-  <section class="rd-panel">
-    <div class="rd-panel-head"><h2>Bases in this run</h2></div>
-    <div class="rd-gridwrap">
-      <table>
-        <thead>
+  {/* Per-base breakdown — same table elements as the Backups list (catalog table) */}
+  {/* A DISCLOSURE GROUP, and it is INERT above 1280 (catalog `pattern-mobile-group`).
+      `<details open>` with a summary that has no marker, no pointer and no pointer-events renders
+      byte-for-byte as the `<section>` + `<h2>` it replaces — verified at 1440 — and below the
+      product boundary the same element becomes the collapsible key-value group the Slopes and
+      Starlink run screens use. One DOM, one heading, one place the title lives.
+      OPEN by default, deliberately. The alternative — collapsed, the reader taps to expand — was
+      rejected: this page's whole job at 11pm is to answer without a second interaction, and a
+      disclosure that hides the evidence is friction charged at exactly the wrong moment. The
+      control exists so a reader can put the table away, not so the page can withhold it. */}
+  {/* PROMOTION RECONCILE: with no engine per-base detail (metricsPending) the table would be empty;
+      show a note and keep the run-level totals above as the honest source, rather than zeros. */}
+  {metricsPending ? (
+    <section class="rd-panel">
+      <div class="rd-panel-head"><h2>Bases in this run</h2></div>
+      <p class="text-sm text-base-content/60">Per-base breakdown isn’t available for this run — its counts are recorded at the run level (shown above). Runs captured with per-base detail list every base here.</p>
+    </section>
+  ) : (
+  <details class="rd-panel rd-group" open>
+    <summary class="rd-panel-head rd-group-head"><h2>Bases in this run</h2><span class="rd-group-chev iconify lucide--chevron-down" aria-hidden="true"></span></summary>
+    <div class="rd-tablewrap" data-mobile-rows>
+      {/* THE ONE TABLE (catalog `table`): `.tbl-colhead` type + `wireTableSort` behaviour, the same
+          pair the Backups list and Schema's table views use. */}
+      <table class="table text-sm">
+        <thead class="tbl-colhead">
           <tr>
-            <th>Base</th><th>Status</th><th>Time</th>
-            <th class="num">Records</th><th class="num">Attachments</th>
-            <th class="num">Tables</th><th class="num">Fields</th>
-            <th>Destination</th><th></th>
+            <th data-sort-col="0">Base</th><th data-sort-col="1">Status</th><th data-sort-col="2">Duration</th>
+            <th class="text-right" data-sort-col="3">Records</th><th class="text-right" data-sort-col="4">Attachments</th>
+            <th class="text-right" data-sort-col="5">Tables</th><th class="text-right" data-sort-col="6">Fields</th>
+            <th data-sort-col="7">Destination</th><th></th>
           </tr>
         </thead>
-        <tbody>
-          {metricsPending && run.bases.length === 0 && (
-            <tr>
-              <td colspan="9" class="rd-dim" style="text-align: center; padding: 1.5rem .7rem;">
-                Per-base breakdown isn't captured by the backup engine yet.
-              </td>
-            </tr>
-          )}
+        <tbody data-rd-body>
           {run.bases.map((b) => {
             const bsm = baseStatusMeta[b.status] ?? baseStatusMeta.pending;
             const isRunning = b.status === 'running';
+            const baseHref = `/backups/run/base?run=${run.id}&base=${b.id}&state=${drillState}&dest=${drillDest}`;
+            /* A base that never started holds no counts at all — the one case `—` is true. A base
+               that FAILED still holds what it wrote before it stopped, so its cells print that
+               number (catalog `pattern-audit-table`). Block comment, not `//`: inside a template
+               expression the Astro compiler collapses the lines and a `//` eats the rest. */
+            const unreached = b.status === 'pending';
+            /* "Nothing written" is DERIVED from the counts, never asserted from the status. A base
+               that fails part-way through still wrote what it wrote, and printing that claim beside
+               a non-zero Records cell is the asserted-claim shape this audit exists to remove. */
+            const wroteNothing = b.records + b.attachments === 0;
+            const hasDestination = b.destKind === 'file' ? !!b.folder : !!b.dbRef;
+            /* `role=button` + `tabindex` are the other half of `pattern-row-actions`, which this
+               table shipped without: the whole anatomy is "clickable row + keyboard-focusable +
+               Enter/Space", and only the click half was here. It matters twice below 1280 — the row
+               is the 44px tap target, and without `role` the base-name link inside it (17px tall) is
+               the only thing a finger can aim at. Home and the Backups list already carry it; this
+               table was the outlier. Block comment, not `//`, and above the `return` rather than
+               inside it: an Astro JSX comment as the first child of a `return (` is one of the five
+               shapes that serves a 500 past every static gate, and it is the second time this wave
+               hit it. THIRD TIME, 2026-08-12: the `data-nrow` note below was first written as a JSX
+               comment on the line after `return (` and served a blank 500 on the spot.
+
+               `data-nrow` on the row is the attribute this table has been missing since the pattern
+               was written. Every cell is already classified (`lead` · `sub` · five `off` · `num` ·
+               `go`) and the wrapper already declares `data-mobile-rows`, so the narrow layout was
+               fully authored and simply never switched on — the hook is the ROW attribute, and
+               without it the whole set is inert. What shipped instead was the ten-column desktop
+               table inside 459px, scrolling 175px sideways with the destination path (a cell marked
+               `off`) hanging 127px past the edge. Oleh: «тут всякі внутрішні сторінки бекапа
+               максимально хуйово виглядає». Third table to miss this one attribute. */
             return (
-              <tr>
-                <td class="strong"><a href={`/backups/run/base?run=${run.id}&base=${b.id}&state=${drillState}&dest=${drillDest}`} class="rd-row-link">{b.name}</a></td>
-                <td><Badge variant={bsm.variant}>{isRunning && <span class="loading loading-spinner loading-xs"></span>}{bsm.label}</Badge></td>
-                <td class="rd-dim mono-data">{isRunning ? 'running…' : b.status === 'failed' ? '—' : durationStr(b.startedAt, b.completedAt)}</td>
-                <td class="num">{isRunning && b.recordsRemaining != null
-                  ? <span>{nf.format(b.records)} <span class="rd-rem">/ {nf.format(b.records + b.recordsRemaining)}</span></span>
-                  : b.status === 'failed' ? '—' : nf.format(b.records)}</td>
-                <td class="num">{isRunning && b.attachmentsRemaining != null
-                  ? <span>{nf.format(b.attachments)} <span class="rd-rem">/ {nf.format(b.attachments + b.attachmentsRemaining)}</span></span>
-                  : b.status === 'failed' ? '—' : nf.format(b.attachments)}
-                  {b.failed > 0 && <button type="button" class="rd-failed" data-open-failed>{b.failed} failed</button>}
+              <tr
+                class="rd-row row-clickable"
+                data-nrow
+                role="button"
+                tabindex="0"
+                onclick={`window.location='${baseHref}'`}
+                data-name={b.name.toLowerCase()}
+                data-rank={baseStatusRank[b.status] ?? 9}
+                data-time={durationSec(b.startedAt, b.completedAt)}
+                data-records={unreached ? -1 : b.records}
+                data-attachments={unreached ? -1 : b.attachments}
+                data-tables={unreached ? -1 : b.tables}
+                data-fields={unreached ? -1 : b.fields}
+                data-dest={(b.destKind === 'file' ? (b.folder ?? '') : (b.dbRef ?? '')).toLowerCase()}
+              >
+                <td data-m="lead" class="font-medium"><a href={baseHref} class="text-primary font-semibold" onclick="event.stopPropagation()">{b.name}</a></td>
+                <td data-m="sub">
+                  <span class={`badge ${bsm.badge}`}>{isRunning && <span class="loading loading-spinner loading-xs"></span>}{bsm.label}</span>
+                  {/* The reason, on the row — the same construction as the Backups list, so the
+                      trail reads the same at every depth. */}
+                  {b.status === 'failed' && b.error && (
+                    <span class="rd-why tooltip tooltip-right" data-tip={b.error}>{b.error}</span>
+                  )}
                 </td>
-                <td class="num">{b.status === 'failed' ? '—' : nf.format(b.tables)}</td>
-                <td class="num">{b.status === 'failed' ? '—' : nf.format(b.fields)}</td>
-                <td>{b.status === 'failed'
-                  ? <span class="rd-dim">—</span>
+                <td data-m="off" class="text-base-content/55 mono-data">{isRunning ? 'running…' : unreached ? '—' : durationStr(b.startedAt, b.completedAt)}</td>
+                <td data-m="num" class="text-right tabular-nums">{isRunning && b.recordsRemaining != null
+                  ? <span>{nf.format(b.records)} <span class="text-base-content/55">/ {nf.format(b.records + b.recordsRemaining)}</span></span>
+                  : unreached ? '—' : nf.format(b.records)}<span class="rd-numcap">records</span></td>
+                <td data-m="off" class="text-right tabular-nums">{isRunning && b.attachmentsRemaining != null
+                  ? <span>{nf.format(b.attachments)} <span class="text-base-content/55">/ {nf.format(b.attachments + b.attachmentsRemaining)}</span></span>
+                  : unreached ? '—' : nf.format(b.attachments)}
+                  {b.failed > 0 && <button type="button" class="badge badge-soft badge-error badge-sm ml-1.5 cursor-pointer" data-open-failed onclick="event.stopPropagation()">{b.failed} failed</button>}
+                </td>
+                <td data-m="off" class="text-right tabular-nums">{unreached ? '—' : nf.format(b.tables)}</td>
+                <td data-m="off" class="text-right tabular-nums">{unreached ? '—' : nf.format(b.fields)}</td>
+                {/* OFF below 1280, and nothing becomes unreachable: the destination link also
+                    lives on the base's own page, which this row opens. Keeping it in a four-element
+                    row would have put a second, differently-destined link inside a row that already
+                    has one — the row goes to the base page, this anchor leaves for Google Drive. */}
+                <td data-m="off" class="rd-dest-cell">{unreached || !hasDestination
+                  ? <span class="text-base-content/55">{unreached ? '—' : wroteNothing ? '— nothing written' : '—'}</span>
                   : b.destKind === 'file'
-                    ? <a href={b.folderUrl ?? '#'} target="_blank" rel="noreferrer" title={`Open ${b.name} in ${run.destProvider} (opens in a new tab)`} class="rd-row-link rd-folder mono-data">{run.destIcon ? <img src={run.destIcon} alt="" width="15" height="15" class="rd-dest-ic" /> : <span class="iconify lucide--folder"></span>}{b.folder}<span class="iconify lucide--external-link rd-ext"></span></a>
-                    : <span class="rd-db mono-data" title="Backed up as rows in your database"><span class="iconify lucide--database"></span>{b.dbRef}</span>}</td>
-                <td class="num"><a href={`/backups/run/base?run=${run.id}&base=${b.id}&state=${drillState}&dest=${drillDest}`} class="rd-row-link">View tables →</a></td>
+                    ? <a href={b.folderUrl ?? '#'} target="_blank" rel="noreferrer" onclick="event.stopPropagation()" data-tip={`${b.folder} — open in ${run.destProvider} (new tab)`} class="rd-folder mono-data tooltip tooltip-left">{run.destIcon ? <img src={run.destIcon} alt="" width="15" height="15" class="rd-dest-ic" /> : <span class="iconify lucide--folder"></span>}<span class="rd-folder-path">{b.folder}</span><span class="iconify lucide--external-link rd-ext"></span></a>
+                    : <span class="rd-db mono-data"><span class="iconify lucide--database"></span><span class="rd-folder-path tooltip tooltip-left" data-tip={b.dbRef}>{b.dbRef}</span></span>}</td>
+                <td data-m="go" class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
-    {failed && run.bases.some((b) => b.error) && (
-      <Alert variant="error" class="mt-4">
-        <b>Error.</b> {run.bases.find((b) => b.error)?.error}
+  </details>
+  )}
+
+  {/* IDS LIVE HERE (catalog `pattern-copy-id`) — the prose above names bases by their display
+      name, and the machine handles a person pastes into a support thread are demoted to the foot.
+      The run id carries the shared copy control (spec `08-backups.md:104`). */}
+  <p class="rd-foot">
+    Run ID
+    <span class="rd-id">
+      <code class="mono-data">{run.id}</code>
+      <button type="button" class="rd-copyid tooltip tooltip-right" data-copy-id={run.id} data-tip="Copy id" aria-label="Copy run id"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>
+    </span>
+    {failedIds && <span class="rd-id">{`· ${failedIdsLabel}`}<code class="mono-data">{failedIds}</code></span>}
+    {' · counts are recorded by the backup engine as it writes each base.'}
+  </p>
+
+  {/* Cancel confirmation — REAL postCancelRun (not fork confirmHref). Pause modal
+      dropped (no pause API). */}
+  {(running || queued) && (
+    <ConfirmModal id="cancel-run-modal" title="Cancel this backup run?" cancelLabel="Keep running">
+      <p class="text-sm text-base-content/70">
+        This stops the run and asks the backup engine to abort any tables still in
+        flight. Tables already written to your destination are kept.
+      </p>
+      <Alert severity="warning" trigger="overlay" class="mt-3">
+        <span>A cancelled run <strong>can’t be resumed</strong> — start a new one with Run backup now.</span>
       </Alert>
-    )}
-  </section>
+      <button slot="confirm" type="button" class="btn btn-outline btn-error" data-confirm-cancel>
+        <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+        Cancel run
+      </button>
+    </ConfirmModal>
+  )}
 
-  <p class="rd-foot">Run ID <code class="mono-data">{run.id}</code> · counts are recorded by the backup engine as it writes each base.</p>
+  {/* The recovery the failed-run alert offers — web's REAL credits-warning confirm (POST
+      /api/spaces/:id/backup-runs), not the fork's navigation-only `confirmHref` prototype. */}
+  {failed && spaceId && <RunBackupNowModal spaceId={spaceId} redirectTo="/backups" />}
 
-  {/* Failed-attachments slide-over */}
-  <div class="rd-drawer" data-failed-drawer hidden>
-    <div class="rd-drawer-backdrop" data-close-failed></div>
-    <aside class="rd-drawer-panel" role="dialog" aria-label="Failed attachments">
-      <header class="rd-drawer-head">
-        <div><h3>Failed attachments</h3><p>{run.failedAttachments.length} file{run.failedAttachments.length === 1 ? '' : 's'} couldn't be backed up.</p></div>
-        <button type="button" class="rd-drawer-x" data-close-failed aria-label="Close"><span class="iconify lucide--x"></span></button>
-      </header>
-      <div class="rd-drawer-body">
-        <ul class="rd-fail-list">
-          {run.failedAttachments.map((f) => (
-            <li class="rd-fail">
-              <span class="rd-fail-ic"><span class="iconify lucide--file-x"></span></span>
-              <div class="min-w-0 flex-1">
-                <p class="rd-fail-name">{f.file}</p>
-                <p class="rd-fail-loc">{f.base} · {f.table}</p>
-                <p class="rd-fail-reason">{f.reason}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <footer class="rd-drawer-foot">
-        <Button type="button" variant="ghost" size="sm" data-close-failed>Close</Button>
-        <Button type="button" variant="primary" size="sm">Retry failed</Button>
-      </footer>
-    </aside>
-  </div>
+  {/* Failed-attachments slide-over — catalog Drawer (opened by the Review button / row chips). */}
+  <Drawer id="failed-drawer-detail" title="Failed attachments" subtitle={`${run.failedAttachments.length} file${run.failedAttachments.length === 1 ? '' : 's'} couldn't be backed up.`}>
+    <ul class="rd-fail-list">
+      {run.failedAttachments.map((f) => (
+        <li class="rd-fail">
+          <span class="rd-fail-ic"><span class="iconify lucide--file-x"></span></span>
+          <div class="min-w-0 flex-1">
+            <p class="rd-fail-name">{f.file}{f.permanent && <span class="badge badge-ghost badge-sm ml-1.5">Won't retry</span>}</p>
+            <p class="rd-fail-loc">{f.base} · {f.table}</p>
+            <p class="rd-fail-reason">{f.reason}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+    <Fragment slot="footer">
+      {/* `btn-sm`, per `decision-density-sm-is-default` — the wizard's drawers already sized their
+          footers; these two were the unsized outliers. */}
+      <label for="failed-drawer-detail" class="btn btn-sm btn-ghost">Close</label>
+      {/* The label carries scope and count, so pressing it is a decision rather than a guess.
+          Permanently-failed files are marked above and excluded from the count — a retry cannot
+          shrink a file that is over the limit or refetch one Airtable has already expired. */}
+      <button type="button" class="btn btn-sm btn-primary" disabled={retryableAttachments.length === 0}>
+        <span class="iconify lucide--rotate-cw size-4" aria-hidden="true"></span>
+        {retryableAttachments.length > 0 ? `Retry ${retryableAttachments.length} ${plural(retryableAttachments.length, 'attachment', 'attachments')}` : 'Nothing to retry'}
+      </button>
+    </Fragment>
+  </Drawer>
 
-  {/* Cancel-run confirmation — the trigger is the "Cancel run" header button. */}
-  <ConfirmModal id="cancel-run-modal" title="Cancel this backup run?" cancelLabel="Keep running">
-    <p class="text-sm text-base-content/70">
-      This stops the run and asks the backup engine to abort any tables still in
-      flight. Tables already written to your destination are kept.
-    </p>
-    <Button slot="confirm" type="button" variant="outline" class="border-error text-error" data-confirm-cancel>
-      <span class="iconify lucide--x size-4" aria-hidden="true"></span>
-      Cancel run
-    </Button>
-  </ConfirmModal>
+  {/* Item 16 — failed cancel posts land here via showUndoToast (no-ops if root missing). */}
+  <UndoToast />
 </div>
+)}
 
 <style>
-  [data-run-detail] { display: flex; flex-direction: column; gap: 1.1rem; }
-  .rd-nav { display: flex; align-items: center; gap: .6rem; }
-  .rd-back-link { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: .45rem; border: 1px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .7); flex: none; transition: background .12s ease, color .12s ease; }
-  .rd-back-link:hover { background: var(--color-base-200); color: var(--color-base-content); }
-  .rd-back-link .iconify { font-size: 1rem; }
-  .rd-crumbs { display: flex; align-items: center; gap: .4rem; font-size: .8125rem; flex-wrap: wrap; }
-  .rd-crumbs a { display: inline-flex; align-items: center; min-height: 1.5rem; color: oklch(from var(--color-base-content) l c h / .6); font-weight: 500; text-decoration: none; }
-  .rd-crumbs a:hover { color: var(--color-base-content); text-decoration: underline; }
-  .rd-crumb-sep { color: oklch(from var(--color-base-content) l c h / .35); }
-  .rd-crumb-cur { color: oklch(from var(--color-base-content) l c h / .85); font-weight: 600; }
+  /* Scoped not-found (stale deep-link to a deleted/missing run). */
+  .rd-notfound { display: flex; flex-direction: column; align-items: flex-start; padding: 2.5rem 0 1rem; }
+  .rd-nf-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .55); }
+  .rd-notfound p { max-width: 56ch; }
+</style>
+
+<style>
+  [data-run-detail] { display: flex; flex-direction: column; gap: 16px; }
   .rd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
-  /* Summary */
+  /* Summary — the shared `.hm-kpis` metric strip on the left, a bespoke meta panel on the right */
   .rd-summary { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
   @media (max-width: 760px) { .rd-summary { grid-template-columns: 1fr; } }
-  .rd-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; align-content: center; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; }
-  .rd-stat { display: flex; flex-direction: column; gap: .15rem; }
-  .rd-stat-k { font-size: .75rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); }
-  .rd-stat-v { font-size: 1.55rem; font-weight: 740; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .rd-meta { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
-  .rd-meta-row { display: flex; flex-direction: column; gap: .3rem; }
-  .rd-meta-k { font-size: .75rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); }
-  .rd-meta-v { font-size: .85rem; font-weight: 550; }
-  .rd-depth { display: flex; gap: .4rem; flex-wrap: wrap; }
-  .rd-depth-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; font-weight: 600; padding: .15rem .5rem; border-radius: 999px; }
-  .rd-depth-chip.on { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
-  .rd-depth-chip.off { color: oklch(from var(--color-base-content) l c h / .66); background: oklch(from var(--color-base-content) l c h / .07); }
-  .rd-depth-chip .iconify { font-size: .8rem; }
 
-  /* Panel + table */
-  .rd-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
-  .rd-panel-head h2 { font-size: .95rem; font-weight: 650; margin-bottom: 1rem; }
-  .rd-gridwrap { overflow-x: auto; }
-  .rd-gridwrap table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-  .rd-gridwrap th { text-align: left; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
-  .rd-gridwrap td { padding: .65rem .65rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .8); vertical-align: middle; }
-  .rd-gridwrap tbody tr:last-child td { border-bottom: 0; }
-  .rd-gridwrap .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .rd-gridwrap td.strong { font-weight: 600; }
-  .rd-row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; min-height: 1.5rem; }
-  .rd-row-link:hover { text-decoration: underline; }
-  .rd-folder { display: inline-flex; align-items: center; gap: .3rem; }
-  .rd-folder .iconify, .rd-db .iconify { font-size: .9rem; }
+  /* PROMOTION RECONCILE: the `.hm-kpi*` metric-strip rules are kept SCOPED here — the same call the
+     SpaceHomeView promotion made (§1.5: no global `pattern-metric-tiles` block until a broader
+     adoption). This is the second scoped copy; identical to SpaceHomeView's. */
+  .hm-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); overflow: hidden; }
+  .hm-kpi { display: flex; flex-direction: column; gap: .15rem; min-width: 0; padding: 1.05rem 1.25rem 1.1rem; }
+  .hm-kpi + .hm-kpi { border-left: 1px dashed oklch(from var(--color-base-content) l c h / .16); }
+  .hm-kpi-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .hm-kpi-k { font-size: .76rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .64); }
+  .hm-kpi-ic { font-size: 1.2rem; color: var(--color-primary); flex: none; }
+  .hm-kpi-v { font-size: 1.65rem; font-weight: 740; letter-spacing: -.02em; line-height: 1.12; font-variant-numeric: tabular-nums; }
+  .hm-kpi-sub { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); display: inline-flex; align-items: center; gap: .22rem; }
+  @media (max-width: 560px) { .hm-kpis { grid-template-columns: 1fr 1fr; } .hm-kpi:nth-child(odd) { border-left: 0; } .hm-kpi:nth-child(n+3) { border-top: 1px dashed oklch(from var(--color-base-content) l c h / .16); } }
+  /* daisyUI stats rounds to --radius-box (6px); lift it to match the neighbouring
+     bespoke panels (.rd-meta / .rd-panel use .85rem) so every card on the page agrees. */
+  .rd-summary .stats { border-radius: .85rem; }
+  .rd-meta { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 16px 20px; display: flex; flex-direction: column; gap: .75rem; }
+  .rd-meta-row { display: flex; flex-direction: column; gap: 4px; }
+  .rd-meta-k { font-size: var(--t-12); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rd-meta-v { font-size: var(--t-14); font-weight: 550; }
+
+  /* Panel + table (the table itself is the daisyUI primitive — same as the Backups list) */
+  .rd-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 16px 20px 20px; }
+  .rd-panel-head h2 { font-size: var(--t-16); font-weight: 650; margin-bottom: 1rem; }
+
+  /* ── The disclosure group, INERT above 1280 (catalog `pattern-mobile-group`) ─────────────────
+     The element is a `<details open>` so that below the boundary it is a real, keyboard-operable
+     collapsible group with no JavaScript. Above the boundary every affordance is removed — no
+     marker, no chevron, no pointer, no pointer-events — so it renders and behaves exactly as the
+     `<section>` + `<h2>` it replaced. `display: block` on the summary is required: a summary is
+     `display: list-item` by default and would otherwise carry a bullet box even with the marker
+     pseudo-elements suppressed. */
+  .rd-group > summary { display: block; list-style: none; pointer-events: none; }
+  .rd-group > summary::-webkit-details-marker { display: none; }
+  .rd-group > summary::marker { content: ''; }
+  .rd-group-chev { display: none; }
+
+  .rd-numcap { display: none; }
+  .rd-tablewrap { overflow-x: auto; }
+  .rd-tablewrap :is(th, td) { white-space: nowrap; }
+  /* .rd-row hover/cursor from shared .row-clickable */
+
+  /* Destination cell — a 12px muted path that truncates so the table never scrolls
+     horizontally. The full path is recoverable on hover through the catalog `tooltip`
+     (never the native `title`, which lags ~1s and ignores the theme): the link carries the
+     path plus where it opens, and the database ref puts its `data-tip` on the ELLIPSIS span
+     rather than the wrapper — the tooltip controller only exempts a tip from its
+     repeats-the-visible-label suppression when the element carrying `data-tip` is the one
+     actually overflowing. Hovering lifts the link to the primary colour to signal it opens. */
+  /* 10rem, not 11 — MEASURED, and the change came from a sentence, not from a column.
+     Adding the "next scheduled backup" clause to the failure alert made a FAILED run's page one
+     line taller, which at 1440x900 crossed the fold, added a vertical scrollbar, and took the
+     table's holder from 1094 to 1079. The columns then summed to 1080 — a ONE-PIXEL overflow,
+     the exact shape `pattern-audit-table` calls "not a fit, a coincidence", arrived at from the
+     other end. Its own rule names the lever: the cell that gives is the longest one that can lose
+     width without losing meaning, never the one carrying the warning. That is the destination
+     path, which already truncates and already carries its full value on a tooltip. Re-measured
+     after, at 1440x900: failed 1079 inside 1079, and succeeded / running / cancelled unchanged at
+     1094 inside 1094. */
+  .rd-dest-cell { max-width: 10rem; }
+  .rd-folder, .rd-db { display: inline-flex; align-items: center; gap: 4px; max-width: 10rem; min-width: 0; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rd-folder-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .rd-folder:hover { color: var(--color-primary); }
+  .rd-folder:hover .rd-folder-path { text-decoration: underline; }
+  .rd-folder .iconify, .rd-db .iconify { font-size: .9rem; flex: none; }
   .rd-dest-ic { width: 15px; height: 15px; object-fit: contain; flex: none; }
-  .rd-ext { font-size: .78rem !important; opacity: 0; transition: opacity .12s ease; color: oklch(from var(--color-primary) l c h / .8); }
+  .rd-ext { font-size: var(--t-12) !important; flex: none; opacity: 0; transition: opacity .12s ease; color: oklch(from var(--color-primary) l c h / .85); }
   .rd-folder:hover .rd-ext { opacity: 1; }
-  .rd-db { display: inline-flex; align-items: center; gap: .3rem; color: oklch(from var(--color-base-content) l c h / .7); }
-  .rd-dim { color: oklch(from var(--color-base-content) l c h / .66); }
-  .rd-rem { color: oklch(from var(--color-base-content) l c h / .66); }
-  .rd-failed { margin-left: .4rem; font-size: .75rem; font-weight: 650; color: var(--color-error); background: oklch(from var(--color-error) l c h / .12); border: none; border-radius: .4rem; padding: .1rem .4rem; cursor: pointer; }
-  .rd-failed:hover { background: oklch(from var(--color-error) l c h / .2); }
 
-  .rd-foot { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); }
-  .rd-foot code { font-size: 0.75rem; padding: .05rem .3rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
+  /* THE REASON LINE — ONE width across the whole audit trail (11rem / 176px). Two numbers were in
+     play (22rem here, 20rem on the run page) for the same element, and the wider one broke the run
+     page's layout: the reason inflated the Status column to 352px, the widest in the table, so the
+     columns summed to 1195px inside a 1094px holder and Destination fell off the right edge at
+     1440. The reason line is not allowed to drive column width — it is a preview, and the full
+     sentence is on the catalog `tooltip`. 11rem rather than 12: at 12rem the columns summed to
+     1093px inside a 1094px holder, and a one-pixel margin is not a fit, it is a coincidence. `display:block` overrides the `tooltip` class's
+     inline-block, which would keep it on the badge's line and defeat the truncation. 12px is the
+     floor, not below it: this is text a person reads. */
+  .rd-why { display: block; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
 
-  /* Slide-over */
-  .rd-drawer { position: fixed; inset: 0; z-index: 300; }
-  .rd-drawer[hidden] { display: none; }
-  .rd-drawer-backdrop { position: absolute; inset: 0; background: rgb(2 6 23 / .55); opacity: 0; transition: opacity .2s ease; }
-  .rd-drawer.is-open .rd-drawer-backdrop { opacity: 1; }
-  .rd-drawer-panel { position: absolute; top: 0; right: 0; height: 100%; width: min(92vw, 28rem); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -16px 0 50px oklch(from var(--color-base-content) l c h / .12); display: flex; flex-direction: column; transform: translateX(100%); transition: transform .24s cubic-bezier(.22,1,.36,1); }
-  .rd-drawer.is-open .rd-drawer-panel { transform: translateX(0); }
-  .rd-drawer-head { display: flex; align-items: flex-start; gap: 1rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--color-base-300); }
-  .rd-drawer-head h3 { font-size: 1rem; font-weight: 650; }
-  .rd-drawer-head p { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .15rem; }
-  .rd-drawer-x { margin-left: auto; color: oklch(from var(--color-base-content) l c h / .5); background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: .2rem; flex: none; }
-  .rd-drawer-x:hover { color: var(--color-base-content); }
-  .rd-drawer-body { flex: 1; overflow-y: auto; padding: .9rem 1.2rem; }
-  .rd-drawer-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .9rem 1.2rem; border-top: 1px solid var(--color-base-300); }
-  .rd-fail-list { display: flex; flex-direction: column; gap: .2rem; }
-  .rd-fail { display: flex; gap: .7rem; padding: .7rem 0; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .rd-foot { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rd-foot code { font-size: var(--t-12); padding: 0 4px; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .08); }
+  /* Copyable id (catalog `pattern-copy-id`) — the 20px ghost button, identical anatomy to
+     `.ep-copyid` / `.rp-copyid` / `.dcp-copyid`. */
+  .rd-id { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+  .rd-copyid { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border: 0; background: none; border-radius: 5px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .55); transition: color .4s ease, background-color .4s ease; }
+  .rd-copyid:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  .rd-copyid.is-copied { color: var(--color-success); }
+
+  /* Failed-attachments list — the slotted content of the catalog Drawer. */
+  .rd-fail-list { display: flex; flex-direction: column; gap: 4px; }
+  .rd-fail { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .65); }
   .rd-fail:last-child { border-bottom: 0; }
-  .rd-fail-ic { width: 1.9rem; height: 1.9rem; border-radius: .45rem; display: grid; place-items: center; flex: none; background: oklch(from var(--color-error) l c h / .12); color: var(--color-error); }
-  .rd-fail-name { font-size: .82rem; font-weight: 600; overflow-wrap: anywhere; }
-  .rd-fail-loc { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
-  .rd-fail-reason { font-size: .75rem; color: var(--color-error); margin-top: .15rem; }
+  .rd-fail-ic { width: 1.9rem; height: 1.9rem; border-radius: .45rem; display: grid; place-items: center; flex: none; background: oklch(from var(--color-error) l c h / .16); color: var(--color-error); }
+  .rd-fail-name { font-size: var(--t-13); font-weight: 600; overflow-wrap: anywhere; }
+  .rd-fail-loc { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: .05rem; }
+  .rd-fail-reason { font-size: var(--t-12); color: var(--color-error); margin-top: 4px; }
 
-  /* Light-theme contrast: the semantic status colors are tuned for accents/icons and for
-     the dark theme; as SMALL TEXT on white they fail WCAG AA. Darken them on light only
-     (dark keeps the brighter token). Icon/background graphics keep the bright token. */
-  :global([data-theme="baseout-light"]) .rd-depth-chip.on { color: oklch(from var(--color-success) calc(l - 0.16) c h); }
-  :global([data-theme="baseout-light"]) .rd-failed,
+  /* ── Below the 1280 product boundary ──────────────────────────────────────────────────────────
+     Scoped here rather than in global.css for the specificity reason spelled out in
+     BackupsListView: Astro stamps every selector in this block with `[data-astro-cid-…]`, so
+     `.rd-tablewrap :is(th, td)` above out-specifies any shared rule trying to undo it. */
+  @media (max-width: 1279.98px) {
+    .rd-tablewrap :is(th, td) { white-space: normal; }
+    .rd-numcap {
+      display: block;
+      font-size: var(--t-11);
+      font-weight: 500;
+      color: oklch(from var(--color-base-content) l c h / .65);
+    }
+    /* The per-base reason wraps instead of truncating, for the reason the Backups list states:
+       the truncate-plus-tooltip contract in `pattern-audit-table` assumes a pointer, and a phone
+       has none — so an ellipsis there withholds the sentence permanently. */
+    .rd-why {
+      max-width: none;
+      white-space: normal;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+    /* The group becomes operable: the summary is the tap target, at the touch floor, with the
+       chevron that rotates on open. */
+    .rd-group > summary {
+      pointer-events: auto;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: var(--touch-min);
+    }
+    .rd-group-head h2 { margin-bottom: 0; }
+    .rd-group-chev {
+      display: inline-block;
+      flex: none;
+      font-size: var(--t-20);
+      color: oklch(from var(--color-base-content) l c h / .65);
+      transition: transform .15s ease;
+    }
+    .rd-group[open] > summary .rd-group-chev { transform: rotate(180deg); }
+    .rd-group[open] > summary { margin-bottom: 12px; }
+    /* The header's action cluster is a full-width row of its own — Pause + Cancel side by side
+       at 44px each does not fit beside a wrapped run title at 390. */
+    .rd-head > div:last-child { width: 100%; }
+    .rd-head > div:last-child > :is(.btn, a) { flex: 1; }
+    /* The failure alert is the answer to scenario 1 and it must read as prose, not as a row with
+       a button jammed against it. Stack: sentence, then the one verb, full width. */
+    /* `grid-auto-flow: row` is load-bearing: daisyUI's `.alert` sets it to `column`, which put the
+       verb in an implicit third track 26px wide with its label broken over three lines. The
+       `grid-column: 1 / -1` below was applied the whole time and did nothing, which is why this
+       was found by reading the computed value rather than the class list. */
+    .rd-fail-alert { display: grid; grid-auto-flow: row; grid-template-columns: auto 1fr; gap: 8px 12px; }
+    /* Under the SENTENCE, at its left edge — column 2, natural width. `1 / -1` + `width: 100%`
+       stretched the button across the icon gutter too and centred its label, so the one action on a
+       failed run floated in the middle of a left-aligned paragraph with nothing under it. */
+    .rd-fail-alert > .btn { grid-column: 2; justify-self: start; }
+  }
+
+  /* Light-theme contrast: the drawer's small red reason text uses the raw error token,
+     which fails WCAG AA as small text on white. Darken it on light only (status badges
+     now use daisyUI badge-soft, which carries its own per-theme contrast). */
   :global([data-theme="baseout-light"]) .rd-fail-reason { color: oklch(from var(--color-error) calc(l - 0.06) c h); }
 </style>
 
 <script>
+  import { wireTableSort } from '../components/schema/tableSort';
+  import { wireCopyId } from '../components/backups/copyId';
   import { postCancelRun } from '../lib/backups/cancel-button';
 
   function wireRunDetail() {
     const root = document.querySelector<HTMLElement>('[data-run-detail]');
     if (!root) return;
-    const drawer = root.querySelector<HTMLElement>('[data-failed-drawer]');
-    const open = () => { if (!drawer) return; drawer.hidden = false; requestAnimationFrame(() => drawer.classList.add('is-open')); };
-    const close = () => { if (!drawer) return; drawer.classList.remove('is-open'); window.setTimeout(() => { drawer.hidden = true; }, 220); };
-    root.querySelectorAll('[data-open-failed]').forEach((b) => b.addEventListener('click', open));
-    root.querySelectorAll('[data-close-failed]').forEach((b) => b.addEventListener('click', close));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drawer && !drawer.hidden) close(); });
+    // Run ID → clipboard (catalog `pattern-copy-id`).
+    wireCopyId(root);
 
-    // Cancel-run flow: header button opens the confirm modal; confirming POSTs
-    // the cancel route and reloads so the status badge reflects the flip.
+    // Cancel-run: header opens confirm; confirm POSTs the real cancel route + reloads.
     const cancelModal = root.querySelector<HTMLDialogElement>('#cancel-run-modal');
     const cancelTrigger = root.querySelector<HTMLButtonElement>('[data-open-cancel]');
     const confirmBtn = cancelModal?.querySelector<HTMLButtonElement>('[data-confirm-cancel]') ?? null;
     cancelTrigger?.addEventListener('click', () => cancelModal?.showModal());
     confirmBtn?.addEventListener('click', async () => {
-      const spaceId = root.dataset.spaceId;
+      const sid = root.dataset.spaceId;
       const runId = root.dataset.runId;
-      if (!spaceId || !runId) { cancelModal?.close(); return; }
-      await postCancelRun(spaceId, runId, confirmBtn);
+      if (!sid || !runId) { cancelModal?.close(); return; }
+      await postCancelRun(sid, runId, confirmBtn);
       cancelModal?.close();
       window.location.reload();
     });
+    // Enter/Space opens the base — the keyboard half of `pattern-row-actions`, wired the same way
+    // Home and the Backups list wire theirs. The inline `onclick` does the navigating.
+    root.querySelectorAll<HTMLElement>('tr.rd-row[role="button"]').forEach((row) => {
+      if (row.dataset.rdKeyed === '1') return;
+      row.dataset.rdKeyed = '1';
+      row.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        row.click();
+      });
+    });
+    // Click-to-sort on the per-base breakdown — the shared sorter, so the caret, the toggle order
+    // and the `data-sort-*` vocabulary are the ones used everywhere else.
+    const body = root.querySelector<HTMLElement>('[data-rd-body]');
+    if (body) {
+      const num = (row: HTMLElement, key: string) => Number(row.dataset[key] ?? -1);
+      wireTableSort(
+        root,
+        () => [{
+          headers: Array.from(root.querySelectorAll<HTMLElement>('thead [data-sort-col]')),
+          container: body,
+          items: () => Array.from(body.querySelectorAll<HTMLElement>('.rd-row')),
+        }],
+        (row, col) => {
+          if (col === 0) return row.dataset.name || '';
+          if (col === 1) return num(row, 'rank');
+          if (col === 2) return num(row, 'time');
+          if (col === 3) return num(row, 'records');
+          if (col === 4) return num(row, 'attachments');
+          if (col === 5) return num(row, 'tables');
+          if (col === 6) return num(row, 'fields');
+          if (col === 7) return row.dataset.dest || '';
+          return '';
+        },
+      );
+    }
+    // The failed-attachments slide-over is the catalog Drawer: open it by checking its
+    // toggle. Close (×, overlay, the Close label) + Esc are handled by the component.
+    const toggle = document.getElementById('failed-drawer-detail') as HTMLInputElement | null;
+    root.querySelectorAll('[data-open-failed]').forEach((b) =>
+      b.addEventListener('click', () => { if (toggle) toggle.checked = true; }),
+    );
   }
   wireRunDetail();
   document.addEventListener('astro:after-swap', wireRunDetail);

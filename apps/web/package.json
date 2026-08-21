@@ -65,7 +65,8 @@
     "react-dom": "^19.2.7",
     "react-router": "^7.18.2",
     "stripe": "^22.0.2",
-    "tailwindcss": "^4.2.2"
+    "tailwindcss": "^4.2.2",
+    "apexcharts": "^5.3.4"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.8",

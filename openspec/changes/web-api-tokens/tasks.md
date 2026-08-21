@@ -12,6 +12,13 @@ Schema note (§5.5): no migration in this change — `api_tokens` + migration `0
 
 ## 2. Settings UI
 
+> **Moved by `web-settings` (2026-08-20 on `autumn/cursor-ui-implementation-test`):** the API-tokens
+> section below shipped on the pre-hub `pages/settings.astro`. The Settings-hub promotion lifted it
+> VERBATIM into `apps/web/src/views/ApiTokensPanel.astro` (create form + list table + plaintext-once +
+> revoke modals + client `<script>` unchanged; SSR query/mapping moved to the thin `pages/settings.astro`
+> loader), mounted in the hub's Developer pane. The `/api/tokens/*` routes (§1) and the token-hash
+> storage are untouched. Tasks 2.1–2.5 remain done — only the render location changed.
+
 - [x] 2.1 SSR token list on `src/pages/settings.astro`: org-scoped query, "API tokens" `Card` section, `token_prefix` + ellipsis display, "All Spaces" label for NULL binding, revoke hidden for `member` role. → NOTE: this branch has no `.data-table` class or `StatusBadge` component — used the live house patterns instead: daisyUI `<table class="table text-sm">` (as BackupsListView/SpaceHomeView) + `Badge` (success/error/warning variants).
 - [x] 2.2 Create form (name `TextInput`, `Checkbox` scope boxes defaulting to all three, Space `Select` from `account.spaces`, expiry preset `Select`) + submit via `setButtonLoading`, `finally`-cleared.
 - [x] 2.3 Plaintext-once `Modal`: full token injected client-side only after the 201, copy-to-clipboard, "you won't see this again" warning; page reloads on close so the plaintext leaves the DOM with the modal.

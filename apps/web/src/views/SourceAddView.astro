@@ -1,85 +1,124 @@
 ---
 /**
- * SourceAddView — add an account-level Airtable source (skeleton).
+ * SourceAddView — add an account-level Airtable source.
+ *
+ * Tip visual (ui-only@4073f919): AccessScopeNote, `.sb-segtrack` method control, connect-failure
+ * Alert via `failureCopy`. Real OAuth preserved: POST `/api/connections/airtable/start` (not the
+ * fork's fixture `/api/sources` redirect). PAT stays honestly gated (unsupported).
+ *
+ * ONE FAMILY WITH DestinationAddView (audit D12) — same `.reg-*` vocabulary when that twin lands.
  */
-import BackLink from '../components/ui/BackLink.astro';
-import Button from '../components/ui/Button.astro';
 import TextInput from '../components/ui/TextInput.astro';
-import Badge from '../components/ui/Badge.astro';
-import { SOURCE_PLATFORMS } from '../lib/provider-catalog';
+import AccessScopeNote from '../components/integrations/AccessScopeNote.astro';
+import Alert from '../components/ui/Alert.astro';
+import { connectFailure } from '../lib/connect/failureCopy';
 
 interface Props {
+  /** 'oauth' | 'pat' preselected method */
   method?: string | null;
+  /**
+   * Connect failure code from the OAuth round-trip (`?error=` on returnTo).
+   * One region above the actions — `lib/connect/failureCopy`, never a second field-level error.
+   */
+  connectError?: string | null;
 }
-const { method = null } = Astro.props;
+const { method = null, connectError = null } = Astro.props;
 const sel = method === 'pat' ? 'pat' : 'oauth';
-
-const comingSoonPlatforms = SOURCE_PLATFORMS.filter((p) => p.availability === 'coming_soon');
+const failure = connectFailure(connectError, 'Airtable');
 ---
 
-<div class="mx-auto max-w-2xl space-y-6">
-  <BackLink href="/sources" label="Sources" />
+<div class="mx-auto max-w-3xl space-y-6">
+  <a href="/sources" class="back-link"><span class="iconify lucide--arrow-left" aria-hidden="true"></span> Sources</a>
 
   <header class="flex items-center gap-3">
-    <img src="/airtable.svg" alt="" width="36" height="36" class="rounded-lg" />
+    <img src="/airtable.svg" alt="" width="36" height="36" class="reg-logo" />
     <div>
       <h1 class="text-xl font-bold tracking-tight leading-tight">Add an Airtable source</h1>
-      <p class="text-sm text-base-content/55 leading-tight mt-0.5">Connect once, reuse across Spaces. Read-only access.</p>
+      <p class="text-sm text-base-content/65 leading-tight mt-0.5">Connect once, reuse across Spaces.</p>
     </div>
   </header>
 
-  <div class="flex max-w-lg flex-col gap-5">
-    <TextInput label="Name" type="text" name="name" placeholder="e.g. Ops Airtable" hint="A label to tell this connection apart from your other Airtable accounts." />
+  <div class="reg-form">
+    <div class="reg-field">
+      <TextInput
+        label="Name"
+        name="name"
+        size="sm"
+        placeholder="e.g. Ops Airtable"
+        hint="A label to tell this connection apart from your other Airtable accounts. (Account-level naming lands with shared-sources — OAuth does not send this yet.)"
+      />
+    </div>
 
-    <div data-connect>
-      <span class="text-sm font-semibold">Connection method</span>
-      <div role="tablist" aria-label="Connection method" class="method-tabs mt-2 flex gap-1 rounded-lg bg-base-200/70 p-1">
-        <label class="method-tab flex-1 cursor-pointer"><input type="radio" name="src-method" value="oauth" class="sr-only" checked={sel === 'oauth'} /><span>OAuth</span></label>
-        <label class="method-tab flex-1 cursor-pointer"><input type="radio" name="src-method" value="pat" class="sr-only" checked={sel === 'pat'} /><span>Personal access token</span></label>
+    <AccessScopeNote />
+
+    <div class="reg-connect" data-reg-connect>
+      <span class="reg-label" id="src-method-label">Connection method</span>
+      <div role="radiogroup" aria-labelledby="src-method-label" class="sb-segtrack">
+        <label class="sb-seg"><input type="radio" name="method" value="oauth" class="sr-only" checked={sel === 'oauth'} />OAuth</label>
+        <label class="sb-seg"><input type="radio" name="method" value="pat" class="sr-only" checked={sel === 'pat'} />Personal access token</label>
       </div>
 
       <div data-method="oauth" class="mt-4">
-        <form method="POST" action="/api/connections/airtable/start" data-airtable-connect data-astro-reload>
-          <input type="hidden" name="returnTo" value="/sources" />
-          <p class="text-xs text-base-content/50">You approve read-only access on Airtable, then return here.</p>
-          <div class="mt-4 flex items-center justify-end gap-2">
-            <Button href="/sources" variant="ghost" size="sm">Cancel</Button>
-            <Button type="submit" variant="primary" data-airtable-connect-btn><span class="iconify lucide--plug" aria-hidden="true"></span> Authorize Airtable</Button>
+        <p class="reg-hint">You approve read-only access on Airtable, then return here.</p>
+        {failure && (
+          <Alert severity="error" trigger="static" class="mt-4" title={failure.message} message={`Reference: ${failure.code}`} />
+        )}
+        <form method="POST" action="/api/connections/airtable/start" class="mt-4" data-airtable-connect data-astro-reload>
+          <input type="hidden" name="returnTo" value="/sources/new" />
+          <div class="reg-actions">
+            <a href="/sources" class="btn btn-sm btn-ghost">Cancel</a>
+            <button type="submit" class="btn btn-sm btn-primary" data-airtable-connect-btn>
+              <span class="iconify lucide--plug size-4" aria-hidden="true"></span>
+              Authorize Airtable
+            </button>
           </div>
         </form>
       </div>
 
       <div data-method="pat" class="mt-4">
-        <TextInput label="Personal access token" type="password" name="token" placeholder="pat••••••••••••••" autocomplete="off" class="font-mono text-sm" hint="Create a read-only token in Airtable's builder hub with the data.records:read and schema.bases:read scopes." disabled />
+        <TextInput
+          label="Personal access token"
+          name="token"
+          type="password"
+          size="sm"
+          placeholder="pat••••••••••••••"
+          autocomplete="off"
+          class="reg-mono"
+          hint="Create a read-only token in Airtable's builder hub with the scopes above."
+          disabled
+        />
         <p class="mt-2 text-xs text-warning">Personal access tokens aren't supported yet — use OAuth above for now.</p>
-        <div class="mt-4 flex items-center justify-end gap-2">
-          <Button href="/sources" variant="ghost" size="sm">Cancel</Button>
-          <Button type="button" variant="primary" disabled>Coming soon</Button>
+        {failure && (
+          <Alert variant="error" class="mt-4" title={failure.message}>
+            <span class="block text-xs opacity-75">Reference: {failure.code}</span>
+          </Alert>
+        )}
+        <div class="reg-actions">
+          <a href="/sources" class="btn btn-sm btn-ghost">Cancel</a>
+          <button type="button" class="btn btn-sm btn-primary" disabled>Coming soon</button>
         </div>
       </div>
     </div>
   </div>
-
-  {comingSoonPlatforms.length > 0 && (
-    <section class="max-w-lg">
-      <h2 class="mb-3 text-xs font-bold uppercase tracking-wider text-base-content/50">More sources coming soon</h2>
-      <div class="flex flex-col gap-2">
-        {comingSoonPlatforms.map((p) => (
-          <div class="flex cursor-not-allowed items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 opacity-70" aria-disabled="true" title="Coming soon">
-            <span class="min-w-0"><span class="block text-sm font-semibold">{p.label}</span><span class="block text-xs text-base-content/50">{p.note}</span></span>
-            <Badge variant="default">Coming soon</Badge>
-          </div>
-        ))}
-      </div>
-    </section>
-  )}
 </div>
 
 <style>
-  .method-tab > span { display: block; padding: .4rem .9rem; border-radius: .45rem; text-align: center; font-size: .8125rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .6); transition: background .15s ease, color .15s ease; }
-  .method-tab:has(input:checked) > span { background: var(--color-base-100); color: var(--color-base-content); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
-  [data-connect]:has(input[value="oauth"]:checked) [data-method="pat"] { display: none; }
-  [data-connect]:has(input[value="pat"]:checked) [data-method="oauth"] { display: none; }
+  .back-link { display: inline-flex; align-items: center; gap: .25rem; font-size: var(--t-13); font-weight: 500; color: oklch(from var(--color-base-content) l c h / .65); text-decoration: none; }
+  .back-link:hover { color: var(--color-base-content); }
+  .back-link .iconify { font-size: .95rem; }
+  .reg-logo { border-radius: var(--r-8, 8px); flex: none; }
+
+  .reg-form { display: flex; flex-direction: column; gap: 1.25rem; max-width: 30rem; }
+  .reg-field { display: flex; flex-direction: column; }
+  .reg-label { display: block; font-size: var(--t-13); font-weight: 600; }
+  .reg-hint { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .reg-mono { font-family: ui-monospace, monospace; }
+  .reg-actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+
+  .reg-connect .sb-segtrack { margin-top: 8px; }
+
+  .reg-connect:has(input[value="oauth"]:checked) [data-method="pat"] { display: none; }
+  .reg-connect:has(input[value="pat"]:checked) [data-method="oauth"] { display: none; }
 </style>
 
 <script>

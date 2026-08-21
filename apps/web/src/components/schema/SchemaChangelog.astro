@@ -1,0 +1,521 @@
+---
+/**
+ * SchemaChangelog — the Schema page's Changelog tab (overview/schema/02-changelog-tab.md).
+ *
+ * A time-ordered, day-grouped feed of schema changes (field renamed, table added,
+ * type changed…) generated from backup-snapshot diffs. The engine pre-renders the
+ * human-readable strings; this tab styles them for hierarchy + scan. A ⚠️ flags
+ * changes that may have invalidated data — the highest-value signal in the feed.
+ *
+ * Filters (founder direction): show/hide by Base / Table / Field type via the faceted
+ * FacetFilter (the Visualize "Display" pattern); Change type + Time stay plain selects.
+ * Clicking an entry opens a right-side detail panel with its full context.
+ * All catalog Astro/daisyUI.
+ */
+import FacetFilter, { type FacetGroup } from './FacetFilter.astro';
+import { groupByWorkspace } from './workspaceGroups';
+import ExportControl from '../patterns/ExportControl.astro';
+import TablePager from '../ui/TablePager.astro';
+import DateRangePicker from '../ui/DateRangePicker.astro';
+import Badge from '../ui/Badge.astro';
+import { CHANGE_TYPE as TYPE, changeType } from './changelogTypes';
+import { entityIconMarkup } from './entityIcon';
+import { fmtDayLong, fmtTime } from '../../lib/time';
+
+export interface ChangelogEntry {
+  id: string;
+  at: string; // ISO timestamp
+  base: string; // base name
+  /** The table the change happened in (a new table names itself). */
+  table?: string;
+  /** The field, for field-level changes. */
+  field?: string;
+  /** C3 — the entity id (base/table/field) this change is about, so the location opens the
+   *  Browse panel. Absent for new/removed entities that aren't in the current schema. */
+  entityId?: string;
+  /** The Airtable field type, for field-level changes — drives the Field-type filter + icon. */
+  fieldType?: string;
+  /** Non-field entity changes — when set, the entry is about that entity (not a table/field);
+   *  the location shows base ▸ (table, for a view) ▸ its concept icon + `entityName`.
+   *  `view` = an Airtable view (view-schema-details): it lives UNDER a table, and unlike the
+   *  app-layer kinds it resolves against the Browse entity index, so it opens the shared
+   *  EntityPanel rather than the Automations/Interfaces tabs. */
+  entityKind?: 'automation' | 'interface' | 'page' | 'view';
+  /** The automation/interface/page/view name (non-field entries). */
+  entityName?: string;
+  type: 'added' | 'removed' | 'renamed' | 'typed' | 'config';
+  /** Pre-rendered summary (engine). Linked-record/type changes show before → after. */
+  summary: string;
+  before?: string;
+  after?: string;
+  /** AI-written plain-language explanation of the change + its impact (detail panel). */
+  aiSummary?: string;
+  /** Set when the change may have broken data — drives the ⚠️ affordance. */
+  warning?: string;
+}
+interface Props {
+  entries: ChangelogEntry[];
+  /** Current health per base name / "base::table" — drives the status dot in the Base/Table
+   *  facets so they read consistently with Browse + Visualize. Removed entities have none. */
+  baseHealth?: Record<string, 'green' | 'amber' | 'red'>;
+  tableHealth?: Record<string, 'green' | 'amber' | 'red'>;
+  /** Name → entity-id maps so the detail panel's Location breadcrumb can open the shared
+   *  EntityPanel (base by name, table by "base::table"; the field uses the entry's entityId). */
+  baseId?: Record<string, string>;
+  tableId?: Record<string, string>;
+  /** Name → workspace identity (workspace-visual-grouping) — groups the Base facet by Airtable
+   *  workspace, since Changelog entries key bases by name rather than id. */
+  baseWorkspace?: Record<string, { workspaceId?: string; workspaceName?: string }>;
+  /**
+   * D09 item 3 — the moment "last N days" counts BACK from: the backup this schema is as of,
+   * not the wall clock. The Data changelog had written the reasoning down and Schema had not,
+   * which is why the same control returned 0 rows here and 314 on its sibling at one instant.
+   * Absent → the clock, and the control's label says "· to today" so the anchor is never silent.
+   */
+  asOf?: string | null;
+}
+const { entries, baseHealth = {}, tableHealth = {}, baseId = {}, tableId = {}, baseWorkspace = {}, asOf = null } = Astro.props;
+const healthDot = (h?: string) =>
+  h === 'green' ? 'var(--color-success)' : h === 'red' ? 'var(--color-error)' : h === 'amber' ? 'var(--color-warning)' : undefined;
+
+// App-layer concept icons (match the Automations/Interfaces + Visualize legend).
+const APP_ICON: Record<string, string> = {
+  automation: '<span class="iconify lucide--zap concept-ic-automation size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  interface: '<span class="iconify lucide--layout-panel-left concept-ic-interface size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  page: '<span class="iconify lucide--file concept-ic-page size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  // view-schema-details: dereferenced UNGUARDED in the location cell below — an entityKind
+  // without a key here throws at render. Keep this map exhaustive over ChangelogEntry.entityKind.
+  view: '<span class="iconify lucide--eye concept-ic-view size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+};
+// Location-column concept glyphs (2026-07-30) — Base and Table each carry their glyph, matching
+// the drawer breadcrumb (.sb-crumb-ic); the deepest app-layer/view segment already had one via
+// APP_ICON above. Built from the ONE shared entityIcon.ts mapping, not a new literal.
+const BASE_IC = entityIconMarkup('base', { extraClass: 'cl-base-ic' });
+const TABLE_IC = entityIconMarkup('table', { extraClass: 'cl-loc-appic' });
+// The panel title (deepest entity) is itself openable when that entity exists in the schema.
+// App-layer entries open via their own handler, not the Browse EntityPanel, so deepId is empty.
+// A VIEW is the exception among entityKinds: it IS in the Browse entity index, so it keeps its
+// entityId and opens the shared panel like a field would (view-schema-details).
+const deepId = (e: ChangelogEntry) =>
+  (e.entityKind === 'view' ? e.entityId : e.entityKind ? '' : e.field ? e.entityId : e.table ? tableId[`${e.base}::${e.table}`] : baseId[e.base]) ?? '';
+/**
+ * T6 (2026-08-06) — the WHOLE ROW opens the changed entity in the page's ONE panel host, focused on
+ * this change. It replaces the private `.cl-detail-panel` drawer this file used to own, which was
+ * fixed at `right: 0` OUTSIDE the host and therefore opened BEHIND the panels (measured: drawer
+ * x=960 w=480 against a panel x=822 w=480 — 342px of overlap, and `elementFromPoint` in the
+ * drawer's middle returned an element of the PANEL). Session restore usually puts a panel there, so
+ * in practice the changelog read as if it did not open at all.
+ *
+ * The target follows the same ladder EntityPanel uses to place the change (see its
+ * `entityChangelog`): the changed entity itself → the table it happened in → its base. The two must
+ * agree, or a row would open a panel whose Changelog section does not carry the change it asked to
+ * focus. `deepId` already resolves the first rung for every kind except the app-layer ones, which
+ * open by their own id (T5 made automations / interfaces / pages openable panels).
+ */
+const rowTargetId = (e: ChangelogEntry): string =>
+  (e.entityKind && e.entityKind !== 'view' ? e.entityId ?? '' : deepId(e))
+  || (e.table ? tableId[`${e.base}::${e.table}`] ?? '' : '')
+  || (baseId[e.base] ?? '');
+const baseNames = [...new Set(entries.map((e) => e.base))];
+const multiBase = baseNames.length > 1;
+
+const TYPE_OPTS: [string, string][] = Object.entries(TYPE).map(([k, v]) => [k, v.label]);
+
+const FT_LABEL: Record<string, string> = {
+  single_line_text: 'text', long_text: 'long text', rich_text: 'rich text', single_select: 'single-select',
+  multiple_select: 'multi-select', number: 'number', currency: 'currency', percent: 'percent', date: 'date',
+  email: 'email', url: 'url', phone_number: 'phone', checkbox: 'checkbox', collaborator: 'user', link: 'link',
+};
+const ftLabel = (t: string) => FT_LABEL[t] ?? t.replace(/_/g, ' ');
+
+// Facet groups: Tables grouped by base; field types collapsed to those present.
+const tableGroups: FacetGroup[] = baseNames
+  .map((b) => ({
+    label: multiBase ? b : undefined,
+    items: [...new Set(entries.filter((e) => e.base === b && e.table).map((e) => e.table as string))].map((t) => ({ value: t, label: t, dot: healthDot(tableHealth[`${b}::${t}`]) })),
+  }))
+  .filter((g) => g.items.length);
+// Base facet groups by Airtable workspace (workspace-visual-grouping) — same grouping shape
+// as the base picker, keyed by name here since entries reference bases by name.
+const baseGroups: FacetGroup[] = groupByWorkspace(baseNames.map((n) => ({ name: n, ...baseWorkspace[n] }))).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  items: g.items.map((b) => ({ value: b.name, label: b.name, dot: healthDot(baseHealth[b.name]) })),
+}));
+const ftypeGroups: FacetGroup[] = [
+  { items: [...new Set(entries.map((e) => e.fieldType).filter(Boolean) as string[])].sort().map((t) => ({ value: t, label: ftLabel(t), iconKey: t })) },
+];
+const hasFieldTypes = ftypeGroups[0].items.length > 0;
+
+
+// Group sorted-desc by calendar day.
+const sorted = entries.slice().sort((a, b) => b.at.localeCompare(a.at));
+const days: { day: string; label: string; entries: ChangelogEntry[] }[] = [];
+for (const e of sorted) {
+  const day = e.at.slice(0, 10);
+  let g = days.find((d) => d.day === day);
+  if (!g) { g = { day, label: fmtDayLong(e.at), entries: [] }; days.push(g); }
+  g.entries.push(e);
+}
+---
+
+<div class="cl" data-changelog>
+  {entries.length > 0 ? (
+    <>
+      {/* One toolbar row (the shared .sch-tb pattern): search │ filters … → Export.
+          Base / Table / Field type / Change type = faceted show/hide; Time = single facet (a range). */}
+      <div class="sch-tb cl-filters">
+        <label class="input input-sm sch-tb-search cl-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" placeholder="Search changes…" data-cl-search data-sch-search aria-label="Search changes" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+
+        {multiBase && <FacetFilter label="Bases" name="base" groups={baseGroups} groupToggles />}
+        <FacetFilter label="Tables" name="table" groups={tableGroups} />
+        {hasFieldTypes && <FacetFilter label="Field types" name="ftype" groups={ftypeGroups} />}
+        <FacetFilter label="Change type" name="ctype" groups={[{ items: TYPE_OPTS.map(([v, l]) => ({ value: v, label: l })) }]} />
+        {/* D09's leftover, carried by D10: this was a single-select FacetFilter of day windows
+            while its sibling on /data was the shared DateRangePicker. One date control per
+            product — same presets, same printed anchor, same custom From/To. */}
+        <DateRangePicker name="cldate" presets={[7, 30, 90]} anchor={asOf} />
+        {/* ONE ATTENTION SHAPE (D10) — the same single facet, in the same words, on both
+            changelogs, beside the same badge column. */}
+        <FacetFilter single labelTrigger label="Attention" name="cattn" groups={[{ items: [
+          { value: 'all', label: 'All changes' },
+          { value: 'attention', label: 'Needs attention' },
+        ] }]} />
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-cl-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+
+        {/* Export offers CSV + JSON (client's answer: technical-ops users want machine-readable JSON
+            beside the spreadsheet CSV). No Excel — CSV opens in Excel and .xlsx is fiddly to get right. */}
+        <div class="sch-tb-right">
+          <ExportControl tab="changelog" format="csv" formats={['csv', 'json']} noun="changes" total={entries.length} rowSelector="[data-cl-open]" />
+        </div>
+      </div>
+
+      {/* day-grouped feed — timeline rail down the left, one node per change */}
+      <div class="cl-feed" data-cl-feed data-grid-fit data-narrow-pan>
+        {/* Column headers — aligned to the entry grid so the feed reads as a table down the rail. */}
+        <div class="tbl-colhead cl-fhead" aria-hidden="true">
+          <span></span>
+          <span>Location</span>
+          <span>What changed</span>
+          <span>Type</span>
+          <span>Attention</span>
+          <span class="cl-fh-end">When</span>
+          <span></span>
+        </div>
+        {days.map((g) => (
+          <section class="cl-day" data-cl-day>
+            <div class="cl-dayhead">
+              <span class="cl-daynode" aria-hidden="true"></span>
+              {/* `data-cl-day` holds the bare day words; the controller re-prints the heading with
+                  its own count (and "· continued" when the pager carried it over), so the count is
+                  never stale against the page under it. */}
+              <div class="cl-dayrow"><span class="cl-daylabel" data-cl-daylabel data-cl-daytext={g.label}>{g.label}</span><span class="cl-dayrule" aria-hidden="true"></span></div>
+            </div>
+            <div class="cl-entries">
+              {g.entries.map((e) => (
+                <button
+                  type="button"
+                  class="cl-entry row-clickable"
+                  data-cl-entry
+                  data-cl-open
+                  data-base={e.base}
+                  data-table={e.table ?? ''}
+                  data-field={e.field ?? ''}
+                  data-ftype={e.fieldType ?? ''}
+                  data-app-kind={e.entityKind ?? ''}
+                  data-app-id={e.entityId ?? ''}
+                  data-entity-name={e.entityName ?? ''}
+                  data-type={e.type}
+                  data-date={e.at}
+                  data-warn={e.warning ? '1' : '0'}
+                  data-cl-id={e.id}
+                  data-open-id={rowTargetId(e)}
+                >
+                  <span class="cl-node" aria-hidden="true"></span>
+                  {/* Columnar row (pattern-changelog-timeline): Location · What changed · Type · Time —
+                      fixed columns that line up across every entry. */}
+                  {/* Location — INERT markup (D10). The trail used to be its own <button>, and it
+                      dispatched `schema:openEntity` with the very id the whole row dispatches on
+                      every entry shape; the row also carries `changeId`, so it is the better of
+                      the two. Note the glyph markup is unchanged: the concept icons stay, from the
+                      ONE entityIcon.ts mapping. */}
+                  <span class="cl-c-loc cl-loclink">
+                    <span set:html={BASE_IC} /><span class="cl-basename">{e.base}</span>
+                    {e.table && <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={TABLE_IC} /><span class="cl-loc-appname">{e.table}</span></span>}
+                    {e.entityKind && <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={APP_ICON[e.entityKind].replace('cl-crumb-ic', 'cl-loc-appic')} /><span class="cl-loc-appname">{e.entityName}</span></span>}
+                  </span>
+                  <span class="cl-c-what">
+                    <span class="cl-summary">
+                      {e.summary}
+                      {e.before && e.after && (
+                        <span class="cl-delta"><span class="cl-before">{e.before}</span><span class="iconify lucide--arrow-right size-3.5 cl-arrow" aria-hidden="true"></span><span class="cl-after">{e.after}</span></span>
+                      )}
+                    </span>
+                  </span>
+                  {/* `size-3`, not `size-3.5`: one badge recipe for the family. A 14px glyph made
+                      this badge 24px against the sibling feed's 20px, which was the last 2px
+                      between the two row heights after everything else converged. */}
+                  <span class="cl-c-type"><span class={`badge badge-sm ${changeType(e.type).badge} gap-1`}><span class={`iconify ${changeType(e.type).icon} size-3`} aria-hidden="true"></span>{changeType(e.type).label}</span></span>
+                  {/* Attention — the column half of the one attention shape. The full sentence
+                      rides in the tooltip, exactly as the Data changelog's flags carry theirs. */}
+                  <span class="cl-c-attn">
+                    {e.warning && (
+                      <Badge size="sm" variant="warning" class="cl-attn tooltip tooltip-top" data-tip={e.warning}>
+                        <span class="iconify lucide--triangle-alert size-3" aria-hidden="true"></span>Needs attention
+                      </Badge>
+                    )}
+                  </span>
+                  <span class="cl-c-time mono-data">{fmtTime(e.at)}</span>
+                  <span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <TablePager name="cl" sizes={[10, 20, 50]} selected={20} />
+
+      {/* no-match (filters exclude everything) */}
+      <div class="cl-nomatch" data-cl-nomatch hidden>
+        <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
+        <p>No changes match these filters.</p>
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-cl-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+      </div>
+
+      {/* T6: the private `.cl-detail-panel` drawer that used to live here is DELETED. A row now opens
+          the changed entity in the page's ONE panel host, focused on that change — see `rowTargetId`
+          in the frontmatter and `focusChange` in entityPanelController.ts. */}
+    </>
+  ) : (
+    <div class="cl-empty">
+      <span class="cl-empty-ic"><span class="iconify lucide--history"></span></span>
+      <p class="cl-empty-title">No schema changes yet</p>
+      <p class="cl-empty-sub">Changes appear once there are two backups to compare. New tables, renamed fields, and type changes show up here as they happen.</p>
+    </div>
+  )}
+</div>
+
+<style is:global>
+  /* The feed + row grid (.cl / .cl-filters / .cl-feed / .cl-fhead / .cl-day* / .cl-entry /
+     .cl-node / .cl-c-* / .cl-nomatch / .cl-empty*) lives in styles/global.css, beside
+     `.sch-tabbar` — catalog `pattern-changelog-timeline`. It was moved out of this scoped
+     block (2026-07-29, comments-explorer) because an Astro scoped style cannot reach a
+     SIBLING component's DOM, so DataComments.astro could not have reused the grid from here.
+     This block is now EMPTY, and that is the point: with D10 this feed has nothing that is not
+     the family's.
+
+     D10 (2026-08-10): `.cl-warn`, the inline ⚠ sentence under the summary, is gone. Attention is
+     one shape on both changelogs now — a soft-warning badge in an Attention column, its full
+     sentence in the badge's `data-tip`, beside an Attention facet. The sentence is also still on
+     the change row inside the panel the row opens (`.ep-cl-warn`, EntityPanel.astro), which T6 put
+     there. So the copy is not lost; the second, differently-shaped rendering of it is.
+
+     T6 (2026-08-06): the ~56 lines of `.cl-detail*` drawer CSS that stood here went with the
+     drawer itself. */
+</style>
+
+<script>
+  // The runtime copy of the change-type map went with the drawer (T6): the only thing that ever read
+  // it was the drawer's own badge, and the row badge has always been rendered server-side from the
+  // ONE `changelogTypes` map in the frontmatter. One consumer, one source, no drift to police.
+  import { createPager } from '../ui/tablePager';
+  import { mountRefineCollapse } from '../../lib/refineCollapse';
+  import { mountClipTips } from '../../lib/clipTips';
+
+  function wireChangelog() {
+    const root = document.querySelector<HTMLElement>('[data-changelog]');
+    if (!root || root.dataset.clWired) return;
+    root.dataset.clWired = '1';
+
+    // Folded refinements — the shared control (lib/refineCollapse.ts), the same call Data's own
+    // Changelog makes. `always: true`: six facets, and the section rule is one answer everywhere.
+    const clTb = root.querySelector<HTMLElement>('.sch-tb');
+    if (clTb) mountRefineCollapse({ toolbar: clTb, selectors: ['[data-facet]'], always: true });
+    const feed = root.querySelector<HTMLElement>('[data-cl-feed]');
+    if (!feed) return;
+    const entries = Array.from(root.querySelectorAll<HTMLElement>('[data-cl-entry]'));
+    const dayGroups = Array.from(root.querySelectorAll<HTMLElement>('[data-cl-day]'));
+    const searchInput = root.querySelector<HTMLInputElement>('[data-cl-search]');
+    const noMatch = root.querySelector<HTMLElement>('[data-cl-nomatch]');
+    const clears = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-cl-clear]'));
+    // `[data-dr]` is in the reset list, not just `.ff[data-facet]`: the shared DateRangePicker
+    // clears on `facetreset` but was never sent one, so Clear zeroed the window while the trigger
+    // went on reading "Last 7 days · to Jun 22". Both changelogs had that hole; both are fixed.
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('.ff[data-facet], [data-dr]'));
+    // Cache each entry's searchable text once (its rendered summary + location + meta).
+    const searchText = new Map(entries.map((e) => [e, (e.textContent || '').toLowerCase()]));
+
+    /**
+     * Clip tooltips — the shared `lib/clipTips.ts` (pattern-audit-table's rule: explanatory text in
+     * a cell never drives column width; cap it and put the full text on a tooltip).
+     *
+     * This feed had NONE, and it is the surface other lists are told to copy. Measured at 1440 on
+     * the default fixture, eight labels in the Location column were cut with nothing to read them
+     * by — a base literally named `Sales CRM` rendered `Sales …`. The Location track is `14rem`
+     * and was `14rem` before D10 too, so the truncation predates this wave; what D10 removed was
+     * the trail's `data-tip="Open in Browse"`, which named an ACTION and never carried the name.
+     *
+     * `.cl-summary` joins them: it is `white-space: nowrap` + ellipsis by design (the row is a
+     * scan line, not a paragraph), so a long change summary clips exactly as readily.
+     */
+    const clipTips = mountClipTips({
+      observe: feed,
+      rows: () => entries,
+      selector: '.cl-basename, .cl-loc-appname, .cl-summary',
+    });
+
+    // hidden-value sets per multi facet (base / table / ftype / ctype)
+    const hidden: Record<string, Set<string>> = { base: new Set(), table: new Set(), ftype: new Set(), ctype: new Set() };
+    // The date window as the shared DateRangePicker emits it: ISO day strings, either end open —
+    // byte-identical to the Data changelog's handling of the same control (D09's leftover, D10's job).
+    let dateFrom = '';
+    let dateTo = '';
+    let attnFilter = 'all'; // 'all' | 'attention'  (was the "Needs attention" checkbox)
+    let query = '';
+
+    const pager = createPager({
+      root, name: 'cl', sizes: [10, 20, 50], defaultSize: 20,
+      storageKey: 'sch-cl-pagesize', onChange: () => apply(),
+    });
+
+    const apply = () => {
+      const q = query.trim().toLowerCase();
+      const facetActive = hidden.base.size || hidden.table.size || hidden.ftype.size || hidden.ctype.size;
+      const active = !!(dateFrom || dateTo || attnFilter !== 'all' || q || facetActive);
+      const matched: HTMLElement[] = [];
+      entries.forEach((e) => {
+        let ok = true;
+        const day = (e.dataset.date || '').slice(0, 10);
+        if (hidden.base.has(e.dataset.base || '')) ok = false;
+        if (e.dataset.table && hidden.table.has(e.dataset.table)) ok = false;
+        if (e.dataset.ftype && hidden.ftype.has(e.dataset.ftype)) ok = false;
+        if (hidden.ctype.has(e.dataset.type || '')) ok = false;
+        if (attnFilter === 'attention' && e.dataset.warn !== '1') ok = false;
+        if ((dateFrom && day < dateFrom) || (dateTo && day > dateTo)) ok = false;
+        if (q && !(searchText.get(e) || '').includes(q)) ok = false;
+        e.style.display = 'none';
+        if (ok) matched.push(e);
+      });
+      // Pager — a day heading is a divider over independent changes, not a parent, so the window is
+      // taken across the whole filtered feed and a day with nothing left on this page hides itself.
+      // 20/page, matching the Data ▸ Changelog run list.
+      const shown = matched.length;
+      const windowed = pager.window(matched);
+      windowed.forEach((e) => { e.style.display = ''; });
+      // D10 — THE PAGER NEVER SPLITS A DAY SILENTLY. A window taken across the feed can put four of
+      // June 18's seven changes on page 1 and the rest on page 2, and the old heading said "JUNE 18,
+      // 2026" over both — the same words over two different sets, with nothing to say the day was
+      // cut. So the heading carries the count it is actually heading, and a heading whose day began
+      // on an earlier page says "· continued".
+      //   The alternative is DAY-WINDOWING: page whole days, so a day is never split at all. It is
+      // the honest ideal and it is not taken here, because it makes the page size a lie (20 rows per
+      // page becomes "somewhere between 3 and 60"), and the pager's own "1–20 of 314" is then
+      // unwritable. Cheap half now; day-windowing noted in the catalog as the alternative.
+      dayGroups.forEach((g) => {
+        const own = Array.from(g.querySelectorAll<HTMLElement>('[data-cl-entry]'));
+        const visible = own.filter((e) => e.style.display !== 'none');
+        g.style.display = visible.length ? '' : 'none';
+        const label = g.querySelector<HTMLElement>('[data-cl-daylabel]');
+        if (!label || !visible.length) return;
+        // "Carried over" = this day's first MATCHED entry is not on this page. Read off the
+        // MATCHED order, never off the DOM order: a filter can remove the day's opening rows
+        // without anything having been split, and that must not read as "continued".
+        const firstMatchedOfDay = matched.find((e) => own.includes(e));
+        const carried = !!firstMatchedOfDay && !visible.includes(firstMatchedOfDay);
+        label.textContent = `${label.dataset.clDaytext ?? ''} · ${visible.length}${carried ? ' · continued' : ''}`;
+      });
+      if (noMatch) noMatch.hidden = shown !== 0;
+      feed.style.display = shown === 0 ? 'none' : '';
+      clears.forEach((c) => (c.hidden = !active));
+      // A row hidden by the pager measures 0 wide and loses its tip; the feed itself does not
+      // change size when the page turns, so the ResizeObserver never fires. Re-measure here.
+      clipTips.recheck();
+    };
+
+    // every filter (multi-facet + single-facet) reports via `facetchange`
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; hidden?: string[]; value?: string };
+      if (d.hidden && hidden[d.name]) { hidden[d.name] = new Set(d.hidden); pager.reset(); apply(); }
+      else if (d.name === 'cattn' && d.value !== undefined) { attnFilter = d.value || 'all'; pager.reset(); apply(); }
+    });
+    // The shared DateRangePicker's event, handled exactly as /data ▸ Changelog handles it.
+    root.addEventListener('daterangechange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; from: string | null; to: string | null };
+      if (d.name !== 'cldate') return;
+      dateFrom = d.from || '';
+      dateTo = d.to || '';
+      pager.reset();
+      apply();
+    });
+    searchInput?.addEventListener('input', () => { query = searchInput.value; pager.reset(); apply(); });
+    clears.forEach((c) =>
+      c.addEventListener('click', () => {
+        dateFrom = '';
+        dateTo = '';
+        attnFilter = 'all';
+        query = '';
+        if (searchInput) searchInput.value = '';
+        Object.values(hidden).forEach((s) => s.clear());
+        facets.forEach((f) => f.dispatchEvent(new CustomEvent('facetreset')));
+        pager.reset();
+        apply();
+      }),
+    );
+
+    /**
+     * ── the row opens the CHANGED ENTITY, focused on THIS change ──────────────────────────────
+     *
+     * This is the whole of T6. The private `.cl-detail-panel` drawer that used to open here is
+     * deleted: it was `position: fixed; right: 0` OUTSIDE the page's panel host, so it opened
+     * BEHIND any restored panel and could not be clicked (measured overlap 342px). Opening the
+     * entity in the ONE stack removes the class of bug rather than nudging the z-index
+     * (`decision-one-stack-one-entity-one-drawer`).
+     *
+     * `changeId` is what makes this an improvement rather than a lateral move: without it you click
+     * a dated row about invalid values and land in that field's whole change list, having to find
+     * the same row again. Same shape as the Comments deep link (`data:openRecord { commentId }`).
+     *
+     * ⌘/Ctrl-click and middle-click open BESIDE, as everywhere else. The row is a real
+     * `<button type="button">` since D10, so Enter / Space are the UA's — the hand-wired keydown
+     * that used to stand here is deleted, along with the class of bug a re-implemented keyboard
+     * contract carries.
+     */
+    const openChange = (e: HTMLElement, beside: boolean) => {
+      const id = e.dataset.openId || '';
+      if (!id) return;
+      document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id, beside, changeId: e.dataset.clId || '' } }));
+    };
+    entries.forEach((e) => {
+      e.addEventListener('click', (ev) => openChange(e, (ev as MouseEvent).metaKey || (ev as MouseEvent).ctrlKey));
+      e.addEventListener('auxclick', (ev) => { if ((ev as MouseEvent).button !== 1) return; ev.preventDefault(); openChange(e, true); });
+    });
+    /**
+     * DELETED WITH D10: the two location handlers (`[data-cl-entity]` and `[data-cl-app-kind]`).
+     *
+     * They existed because the Location trail was its own <button> — C3's "the location is its own
+     * click-through". Checked against `rowTargetId` above, the id they dispatched was the SAME id
+     * the row dispatches, on every entry shape: a field's own `entityId`; a view's `entityId`; an
+     * app-layer entry's `entityId`; a table entry's `tableId[base::table]`; a base entry's
+     * `baseId[base]`. The row also passes `changeId`, which focuses the change inside the panel, so
+     * the row was strictly the better of two controls doing one thing.
+     *
+     * The kind guard those handlers carried (view / automation / interface / page, a guard rather
+     * than a ternary because it was once BINARY and a view click silently opened an interface) is
+     * not lost: nothing branches on kind any more — the row dispatches one id to one host.
+     *
+     * Escape belongs to the panel host; this feed owns no overlay and registers no document keydown.
+     */
+
+    apply();
+  }
+  wireChangelog();
+  document.addEventListener('astro:after-swap', wireChangelog);
+</script>

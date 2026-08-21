@@ -12,9 +12,12 @@ import {
   type SchemaEntityTable,
   type SchemaEntityView,
 } from '../lib/backup-engine';
+import { adaptEngineRelationships, type SchemaRelationship } from '../lib/schema-docs/adapt-relationships';
+import { adaptChangelogEntries, type TipChangelogEntry } from '../lib/schema-docs/adapt-changelog';
+import { adaptHealthOverview, type TipBaseHealth } from '../lib/schema-docs/adapt-health';
 import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
-import { backupRuns } from '../db/schema/core';
+import { atBases, backupRuns } from '../db/schema/core';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 const breadcrumbs = getBreadcrumbs('/schema');
@@ -33,6 +36,9 @@ let schema: {
   fields: SchemaEntityField[];
   views: SchemaEntityView[];
 } = { bases: [], tables: [], fields: [], views: [] };
+let relationships: SchemaRelationship[] = [];
+let changelogEntries: TipChangelogEntry[] = [];
+let healthRows: TipBaseHealth[] = [];
 let viewState: 'ok' | 'not_ready' | 'unconfigured' | 'error' = 'ok';
 
 if (level !== 'none' && spaceId) {
@@ -53,6 +59,56 @@ if (level !== 'none' && spaceId) {
         fields: schemaRes.fields,
         views: schemaRes.views,
       };
+      const nameSchema = {
+        bases: schema.bases.map((b) => ({ baseId: b.baseId, name: b.name })),
+        tables: schema.tables.map((t) => ({ tableId: t.tableId, baseId: t.baseId, name: t.name })),
+        fields: schema.fields.map((f) => ({
+          fieldId: f.fieldId,
+          tableId: f.tableId,
+          baseId: f.baseId,
+          name: f.name,
+        })),
+        views: schema.views.map((v) => ({
+          viewId: v.viewId,
+          tableId: v.tableId,
+          baseId: v.baseId,
+          name: v.name,
+        })),
+      };
+      // SSR tip tabs: relationships + changelog + health (same engine proxies as the live *Tab modules).
+      const [relResults, clResults, hlResults] = await Promise.all([
+        Promise.all(
+          schema.bases.map(async (b) => {
+            const res = await engine.getRelationships(spaceId, b.baseId, true);
+            if (!res.ok) return [] as SchemaRelationship[];
+            return adaptEngineRelationships(b.baseId, b.name, {
+              derived: res.derived,
+              syncedViews: res.syncedViews,
+            });
+          }),
+        ),
+        Promise.all(
+          schema.bases.map(async (b) => {
+            const res = await engine.getSchemaChangelog(spaceId, b.baseId, 200);
+            if (!res.ok) return [] as TipChangelogEntry[];
+            return adaptChangelogEntries(res.entries, nameSchema);
+          }),
+        ),
+        Promise.all(
+          schema.bases.map(async (b) => {
+            const res = await engine.getHealthOverview(spaceId, b.baseId);
+            if (!res.ok) return null;
+            return adaptHealthOverview(b.baseId, b.name, {
+              grade: res.grade,
+              metrics: res.metrics,
+              issues: res.issues,
+            });
+          }),
+        ),
+      ]);
+      relationships = relResults.flat();
+      changelogEntries = clResults.flat().sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+      healthRows = hlResults.filter((h): h is TipBaseHealth => h != null);
     }
     if (!docsRes.ok && docsRes.code === 'space_db_not_ready') viewState = 'not_ready';
     else if (!docsRes.ok && !schemaRes.ok) viewState = 'error';
@@ -62,15 +118,31 @@ if (level !== 'none' && spaceId) {
 }
 
 // Freshness stamp — the schema reflects the latest completed backup run.
-let lastBackupAt: string | null = null;
+let lastBackupAt: string | null = null
+let lastBackupRunId: string | null = null
+/** at_bases workspace identity for Visualize "Group by workspace". */
+let baseWorkspaces: Record<string, { workspaceId?: string | null; workspaceName?: string | null }> = {}
 if (db && spaceId) {
   const [latest] = await db
-    .select({ completedAt: backupRuns.completedAt })
+    .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
     .from(backupRuns)
     .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
     .orderBy(desc(backupRuns.completedAt))
-    .limit(1);
-  lastBackupAt = latest?.completedAt?.toISOString() ?? null;
+    .limit(1)
+  lastBackupAt = latest?.completedAt?.toISOString() ?? null
+  lastBackupRunId = latest?.id ?? null
+
+  const wsRows = await db
+    .select({
+      atBaseId: atBases.atBaseId,
+      workspaceId: atBases.workspaceId,
+      workspaceName: atBases.workspaceName,
+    })
+    .from(atBases)
+    .where(eq(atBases.spaceId, spaceId))
+  baseWorkspaces = Object.fromEntries(
+    wsRows.map((r) => [r.atBaseId, { workspaceId: r.workspaceId, workspaceName: r.workspaceName }]),
+  )
 }
 ---
 
@@ -90,6 +162,18 @@ if (db && spaceId) {
       description="Select a Space to view its schema."
     />
   ) : (
-    <SchemaView spaceId={spaceId} level={level} docs={docs} schema={schema} state={viewState} lastBackupAt={lastBackupAt} />
+    <SchemaView
+      spaceId={spaceId}
+      level={level}
+      docs={docs}
+      schema={schema}
+      relationships={relationships}
+      changelogEntries={changelogEntries}
+      healthRows={healthRows}
+      baseWorkspaces={baseWorkspaces}
+      state={viewState}
+      lastBackupAt={lastBackupAt}
+      lastBackupRunId={lastBackupRunId}
+    />
   )}
 </SidebarLayout>

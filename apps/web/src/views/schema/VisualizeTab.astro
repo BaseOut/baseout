@@ -31,16 +31,26 @@ interface Props {
     tables: SchemaEntityTable[]
     fields: SchemaEntityField[]
   }
+  /** at_bases workspace identity keyed by Airtable base id. */
+  baseWorkspaces?: Record<string, { workspaceId?: string | null; workspaceName?: string | null }>
 }
 
-const { spaceId, level, hasSchema, schema } = Astro.props
+const { spaceId, level, hasSchema, schema, baseWorkspaces = {} } = Astro.props
 
 // Live bases/tables only — removed entities are history (Browse's include-removed
 // concern), not part of the live diagram. Removed FIELDS pass through with their
 // flag; the canvas filters them out of node rows itself.
 const liveBases = schema.bases.filter((b) => !isRemoved(b.status))
 const liveBaseIds = new Set(liveBases.map((b) => b.baseId))
-const canvasBases = liveBases.map((b) => ({ id: b.baseId, name: b.name }))
+const canvasBases = liveBases.map((b) => {
+  const ws = baseWorkspaces[b.baseId]
+  return {
+    id: b.baseId,
+    name: b.name,
+    workspaceId: ws?.workspaceId ?? undefined,
+    workspaceName: ws?.workspaceName ?? undefined,
+  }
+})
 
 const fieldsByTable = new Map<string, SchemaEntityField[]>()
 for (const f of schema.fields) {

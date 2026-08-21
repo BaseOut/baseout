@@ -1,26 +1,61 @@
 ## Status
 
-Not started. Web half of Reports over [`shared-backup-reports`](../shared-backup-reports/)
-(filed per its task 5.2). Blocked on the engine's report assembly/scheduling/render/
-delivery routes landing.
+Phase 8 landed on `autumn/cursor-ui-implementation-test` (backend port `fdfd1e90` from
+`4d3ff862` + UI promotion this change). Engine API + proxies + ui-only views + nav restore.
+Migration `0038_reports` present but **not** applied to remote/dev DBs — see Caveats.
 
 ---
 
-## 1. Web client + proxy routes (tests first)
+## 1. Data model (web-owned canonical migration)
 
-- [ ] 1.1 `backup-engine.ts` — report client methods + view types: `listReports`, `getReport` (versioned JSON document with typed entity refs), `generateReportNow`, `listReportSchedules` / `createReportSchedule` / `updateReportSchedule` / `deleteReportSchedule`, `getReportArtifact`.
-- [ ] 1.2 Proxy routes under `pages/api/spaces/[spaceId]/reports/` — middleware-guarded + capability-gated: `index.ts` (GET list), `[reportId].ts` (GET document), `generate.ts` (POST), `schedules.ts` (GET/POST) + `schedules/[scheduleId].ts` (PATCH/DELETE — recipient email validation + recipient cap server-side), `[reportId]/artifact.ts` (GET — authorize session + Space membership, resolve via engine, stream the artifact; PDF/HTML content types). Route tests per file (403 below tier, 400 invalid recipients, artifact requires membership, engine passthrough shape).
-- [ ] 1.3 Tier mapping reconciled with Features §5.5 in `tier-capabilities.ts` (+ test): manual run + in-app view vs scheduled email delivery as separate checks. Flag a spec conflict rather than inventing if the matrix has no entry.
+- [x] 1.1 `report_definitions` + `report_runs` + `report_deliveries` in `core.ts` + migration
+      `0038_reports.sql` (data model in `server-reports/design.md`): partial-unique one-default-per-Space,
+      one-running-per-definition guard, `next_run_at` index. `db:check` clean. (Landed via `/opsx:apply
+      server-reports` to unblock the engine half.)
+- [x] 1.2 Default-report creation: backfill a non-deletable "Full &lt;Space&gt; Report" for every
+      existing Space (in-migration `INSERT … SELECT`, idempotent) + a web-side hook in
+      `createSpaceForOrg` and the onboarding tx (`lib/reports/default-report.ts`). (Open question
+      resolved: web-side insert, in the Space-creation transaction.)
 
-## 2. Reports UI (port via /ui-sync)
+## 2. Web client + proxy routes (tests first, §3.4)
 
-- [ ] 2.1 Port `ReportsView.astro` per ui-sync §4.2 intake order, retiring the `PlaceholderView` for `/reports`: report list (period, generated-at, manual/scheduled trigger, delivery status via StatusBadge), **Run report now** (`setButtonLoading`, row appears generating → complete), empty/first-run state pointing at Backups.
-- [ ] 2.2 Report detail view rendering the JSON document: four sections (backup summary · connection health · schema health · docs updates), `{status: "clean"}` sections render "no issues" (never omitted), failed generations surfaced on the list with error text.
-- [ ] 2.3 Clickable typed refs: schema entities → shared entity detail sidebar; backup runs → run detail; docs → doc view; external destination copies → destination location link-out.
-- [ ] 2.4 Schedules UI: cadence (after every backup / daily / weekly / monthly), recipients (cap surfaced), format (PDF attachment and/or HTML link), enable/pause, per-recipient delivery status on past runs, manual re-send for failed deliveries.
-- [ ] 2.5 Exports: PDF + HTML download of any report through the authorized artifact route. Below-tier: standard upgrade affordance (view vs scheduled-delivery gates render distinctly). Update `shared/internal/ui-sync.md` ledger in the same change as the promotion.
+- [x] 2.1 `backup-engine.ts` — client methods + view types matching `lib/reports/types.ts`:
+      `listReportDefinitions`, `getReportDefinition`, `createReportDefinition`,
+      `updateReportDefinition`, `deleteReportDefinition`, `generateReportNow`, `getReportRun`
+      (rendered document), `getReportArtifact`, `resendReportDelivery`.
+- [x] 2.2 Proxy routes under `pages/api/spaces/[spaceId]/reports/` — middleware-guarded +
+      capability-gated: `index.ts` (GET/POST), `[reportId].ts` (GET/PATCH/DELETE — DELETE rejects the
+      default; recipient validation server-side), `[reportId]/generate.ts` (POST),
+      `runs/[runId].ts` (GET document), `runs/[runId]/artifact.ts` (GET — authorize session + Space
+      membership, resolve via engine, stream PDF/HTML), `runs/[runId]/resend.ts` (POST). Per-file
+      route tests (403 below tier, 400 invalid recipients, artifact requires membership, DELETE
+      default rejected, engine passthrough shape).
+- [x] 2.3 Gating: `checkCreationCap(orgId, 'active_reports')` on create; engine-side gate flags
+      Features §216-vs-§795 conflict (scheduled-delivery / export slugs inert until catalog adds them).
 
-## 3. Verification
+## 3. Reports UI (promote via `/ui-sync`)
 
-- [ ] 3.1 `pnpm --filter @baseout/web typecheck` + `build` green; new route tests green; `audit:components` clean; no stray `console.*`; mobile pass at <375/<768/<1024.
-- [ ] 3.2 Human smoke: Space with backup history → `/reports` → Run report now → report lists and opens with all four sections → click a schema ref (sidebar) and a run ref (run detail) → download PDF + HTML → create a schedule with a recipient → scheduled run delivers and shows per-recipient status → next report's window starts at the previous period_end. Below-tier account sees the gates.
+- [x] 3.1 Catalog prereqs: `ui/{Table,TrendChart,UndoToast}` (+stories+classification),
+      `PanelHost`/`FacetFilter`/`tableSort`/`entityIcon`/`schemaEntities`/`time`/`ui`/`refineCollapse`
+      present; `schema/EntityPanel` = Phase 8 honest-gate stub (full Schema drawer = Phase 9).
+- [x] 3.2 Promoted `lib/reports/{types,view,view2,deleteReport,mapFromEngine,clientApi}` +
+      `components/reports/{RecipientInput,ReportBodyKpi}` +
+      `views/{ReportsView,ReportDefinitionView,ReportDetailView}` from ui-only tip.
+- [x] 3.3 SSR loaders: `/reports`, `/reports/[id]`, `/reports/run/[runId]`. Run/Save/Delete/Export
+      wired to proxies (`setButtonLoading` on generate/save). `shared/internal/ui-sync.md` updated.
+
+## 4. Un-hide (reverse web-v1-scope-trim)
+
+- [x] 4.1 Re-add Reports to `app-config.json` `navigation.top` (Space group; `lucide--file-text`).
+- [x] 4.2 Replace `/reports` 302 with SSR list; design harness list page restored (views via `@web`).
+- [ ] 4.3 Add the superseding note to `web-v1-scope-trim` and confirm the PRD §10 revision path with
+      Dan (open question).
+
+## 5. Verification
+
+- [x] 5.1 Backend tests green (server 73 · workflows 9 · web reports 12). Classification/story fixes
+      for new ui/reports components. Full `audit:components` / `astro check` / `pnpm install`
+      (apexcharts) may need a local reinstall — see commit Caveats.
+- [ ] 5.2 Human smoke: after `db:migrate` + engine deploy — sidebar Reports → list → Run now →
+      History → export → Settings save → schedule delivery. EntityPanel = Phase 8 stub note.
+      PDF needs Trigger.dev render env.

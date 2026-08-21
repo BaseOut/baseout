@@ -18,9 +18,23 @@ import { KIND_META, rollUp, groupTitle, groupToggleLabel, plain, handledReason, 
 
 interface Props {
   items?: InboxItem[];
+  /**
+   * Render in the document flow as a full page (InboxView) instead of the
+   * sidebar overlay. Default false keeps the live dropdown byte-for-byte: the
+   * overlay `<aside id="layout-inbox" hidden>` chrome + close button, and the
+   * `position:absolute` overlay CSS. In page mode the SAME rows / lanes /
+   * filters / data attributes render in `<section class="ibx ibx-page">` with
+   * no overlay chrome; the client reads `data-as-page` to skip the
+   * open/close/esc controller the page has no use for.
+   * (web-notifications-inbox full-page promotion, ui-only@7c7202d7.)
+   */
+  asPage?: boolean;
 }
 
-const { items = [] } = Astro.props;
+const { items = [], asPage = false } = Astro.props;
+// Overlay is an <aside> (complementary to the work area); the page's own
+// content IS the inbox, so it renders as a <section>.
+const Root = asPage ? 'section' : 'aside';
 
 const now = new Date();
 const live = items.filter((i) => handledReason(i, now) === null);
@@ -59,12 +73,13 @@ const lanes = [
 
 ---
 
-<aside
-  id="layout-inbox"
-  class="ibx"
+<Root
+  id={asPage ? undefined : 'layout-inbox'}
+  class:list={['ibx', asPage && 'ibx-page']}
   data-inbox
+  data-as-page={asPage ? 'true' : undefined}
   aria-label="Inbox"
-  hidden
+  hidden={!asPage}
 >
   {/* The "Inbox" heading is gone — the two tabs already name the surface. It stays
       for screen readers, which have no icons to read. */}
@@ -96,7 +111,7 @@ const lanes = [
         aria-controls="ibx-panel-activity"
       >
         <span class="ibx-tab-label">Activity</span>
-        <span class="badge badge-sm badge-neutral badge-soft" data-tab-count="activity" hidden></span>
+        <span class="badge badge-sm badge-ghost" data-tab-count="activity" hidden></span>
       </button>
     </div>
 
@@ -106,10 +121,23 @@ const lanes = [
         <span class="sr-only">Notification settings</span>
       </a>
 
-      <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-bottom" data-inbox-close data-tip="Close">
-        <span class="iconify lucide--x size-4" aria-hidden="true"></span>
-        <span class="sr-only">Close inbox</span>
-      </button>
+      {/* Overlay only: page mode already IS the full inbox. Opens /inbox so the
+          panel stays the quick triage surface while the page gets a bookmarkable URL. */}
+      {!asPage && (
+        <a href="/inbox" class="btn btn-ghost btn-sm btn-square tooltip tooltip-bottom" data-tip="Open full inbox">
+          <span class="iconify lucide--expand size-4" aria-hidden="true"></span>
+          <span class="sr-only">Open full inbox</span>
+        </a>
+      )}
+
+      {/* No close control on the page — a URL is closed by navigating away, not
+          by a button that would leave an empty route behind. Overlay only. */}
+      {!asPage && (
+        <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-bottom" data-inbox-close data-tip="Close">
+          <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+          <span class="sr-only">Close inbox</span>
+        </button>
+      )}
     </div>
   </header>
 
@@ -152,7 +180,7 @@ const lanes = [
           <div class="ff-group">Show</div>
           <label class="ff-opt" data-inbox-menu-lane="attention">
             <span class="ff-label">Handled</span>
-            <span class="badge badge-sm badge-neutral badge-soft" data-inbox-handled-count hidden>0</span>
+            <span class="badge badge-sm badge-ghost" data-inbox-handled-count hidden>0</span>
             <input type="checkbox" class="toggle toggle-sm toggle-primary" data-inbox-show-handled />
           </label>
           <label class="ff-opt" data-inbox-menu-lane="activity" hidden>
@@ -245,7 +273,7 @@ const lanes = [
                           HAS more than one Space; CSS also drops it once the list is filtered to a
                           single Space, where it would repeat the trigger on every row. */}
                       {multiSpace && g.lead.space && (
-                        <span class="badge badge-sm badge-neutral badge-soft ibx-space">
+                        <span class="badge badge-sm badge-ghost ibx-space">
                           <span class="iconify lucide--layers size-3" aria-hidden="true"></span>
                           {g.lead.space}
                         </span>
@@ -351,7 +379,7 @@ const lanes = [
                     <span class:list={['ibx-copy', reason === 'resolved' && 'ibx-copy-resolved']} set:html={emph(item.title)} />
                   </a>
                   <p class="mt-1">
-                    <span class="badge badge-sm badge-soft badge-neutral">{HANDLED_LABEL[reason]}</span>
+                    <span class="badge badge-sm badge-ghost">{HANDLED_LABEL[reason]}</span>
                   </p>
                 </div>
 
@@ -379,7 +407,7 @@ const lanes = [
   </div>
 
   <span class="sr-only" role="status" aria-live="polite" data-inbox-live></span>
-</aside>
+</Root>
 
 <script>
   import { wireInbox } from './inbox-client';
@@ -604,5 +632,27 @@ const lanes = [
      over an already-narrow page helps nobody, and the sidebar is off-canvas anyway. */
   @media (max-width: 1023px) {
     .ibx { position: fixed; inset: 0; z-index: 400; width: 100%; box-shadow: none; }
+  }
+
+  /* PAGE VARIANT (web-notifications-inbox full-page promotion, ui-only@7c7202d7).
+     The SAME panel rendered in the document flow inside InboxView's tbl-frame
+     rather than overlaying the work area. Neutralises the overlay positioning at
+     every breakpoint; the frame supplies the surface (base-100 + 1px base-300 +
+     12px radius), so the panel itself goes transparent and borderless. These
+     rules come AFTER `.ibx` at equal specificity, so source order wins — the
+     default (dropdown) path is untouched. */
+  .ibx-page {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    width: 100%;
+    max-width: 100%;
+    border-inline-end: 0;
+    box-shadow: none;
+    background: transparent;
+    overflow: visible;
+  }
+  @media (max-width: 1023px) {
+    .ibx-page { position: static; inset: auto; z-index: auto; width: 100%; box-shadow: none; }
   }
 </style>

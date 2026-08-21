@@ -1,0 +1,524 @@
+---
+/**
+ * SchemaAutomations — Automations Schema tab body (web-automations-interfaces-tabs).
+ *
+ * Lazy-fetches `/api/spaces/:id/automations`, groups by Base (collapsible), create/edit
+ * in the catalog Drawer with EntitySearch tag-picker + raw definition JSON. Soft-delete
+ * mutes rows behind include-removed. Below Schema Docs → EmptyState upsell.
+ */
+import EmptyState from '../ui/EmptyState.astro'
+import Drawer from '../ui/Drawer.astro'
+import EntitySearch from './EntitySearch.astro'
+import { TRIGGER_TYPES } from './schemaTriggerTypes'
+import type { TypeaheadItem, TypeaheadGroups } from './typeaheadItems'
+
+/** Tag shape EntityPanel reverse-refs consume (fork SchemaAutomations parity). */
+export interface AutomationTag {
+  entityId: string
+  source: 'auto' | 'manual'
+}
+/** Listing row shape for EntityPanel reverse "Referenced by" (Phase 13). */
+export interface SchemaAutomation {
+  id: string
+  name: string
+  baseId?: string
+  status: 'active' | 'removed'
+  tags?: AutomationTag[]
+  removedAt?: string
+}
+
+interface Props {
+  bases: { baseId: string; name: string }[]
+  tagItems: TypeaheadItem[]
+  canUse: boolean
+}
+
+const { bases, tagItems, canUse } = Astro.props
+const tagGroups: TypeaheadGroups = [
+  ['table', 'Tables'],
+  ['field', 'Fields'],
+]
+const entMeta = Object.fromEntries(
+  tagItems.map((t) => [t.id, { name: t.name, kind: t.kind, scopeKey: t.scopeKey ?? '' }]),
+)
+---
+
+{!canUse ? (
+  <EmptyState
+    icon="lucide--zap"
+    title="Track your Airtable automations"
+    description="Register the automations Airtable’s API can’t export, so they’re tracked alongside your schema. Available on Growth and above."
+    actionHref="/settings/billing"
+    actionLabel="View plans"
+  />
+) : (
+  <div data-automations-tab class="space-y-4">
+    <div class="flex flex-wrap items-center gap-3">
+      {bases.length > 1 && (
+        <div class="flex items-center gap-2">
+          <label class="text-sm font-medium" for="au-base-select">Base</label>
+          <select id="au-base-select" class="select select-bordered select-sm w-64">
+            <option value="">All bases</option>
+            {bases.map((b) => (
+              <option value={b.baseId}>{b.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {bases.length === 1 && (
+        <input type="hidden" id="au-base-select" value={bases[0].baseId} />
+      )}
+      <label class="flex cursor-pointer items-center gap-2 text-sm">
+        <input type="checkbox" id="au-include-removed" class="toggle toggle-sm" />
+        <span>Include removed</span>
+      </label>
+      <button type="button" id="au-new" class="btn btn-primary btn-sm gap-1 ml-auto">
+        <span class="iconify lucide--plus size-4" aria-hidden="true"></span> Register automation
+      </button>
+    </div>
+    <div id="au-content" class="min-h-[12rem] text-sm text-base-content/60">
+      <span class="loading loading-spinner loading-sm"></span>
+    </div>
+
+    <Drawer id="au-drawer" title="Automation" width="w-[min(94vw,30rem)]">
+      <form id="au-form" class="flex flex-col gap-4">
+        <input type="hidden" id="au-f-row-id" value="" />
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Automation ID <span class="text-error">*</span></span>
+            <input type="text" id="au-f-entity-id" class="input input-bordered input-sm font-mono" placeholder="autXXXXXXXXXXXXXX" required />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Name <span class="text-error">*</span></span>
+            <input type="text" id="au-f-name" class="input input-bordered input-sm" placeholder="e.g. Notify on stage change" required />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Base <span class="text-error">*</span></span>
+            <select id="au-f-base" class="select select-bordered select-sm" required>
+              <option value="" disabled selected>Select a base…</option>
+              {bases.map((b) => (
+                <option value={b.baseId}>{b.name}</option>
+              ))}
+            </select>
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Trigger type</span>
+            <select id="au-f-trigger" class="select select-bordered select-sm">
+              <option value="">Select a trigger…</option>
+              {TRIGGER_TYPES.map((t) => (
+                <option value={t}>{t}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-semibold">Tagged tables &amp; fields</span>
+          <div id="au-chips" class="flex flex-wrap gap-2 empty:hidden"></div>
+          <EntitySearch
+            items={tagItems}
+            groups={tagGroups}
+            name="autag"
+            placeholder="Tag a table or field…"
+            pickEvent="schema:auTagAdd"
+            pickHint="tag"
+            emptyText="No matching tables or fields"
+            size="sm"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold">Definition (JSON)</span>
+            <span class="flex items-center gap-2">
+              <span id="au-def-valid" class="text-xs font-semibold" hidden></span>
+              <button type="button" id="au-def-format" class="btn btn-ghost btn-xs">Format</button>
+            </span>
+          </div>
+          <textarea id="au-f-definition" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="6" placeholder="{}"></textarea>
+          <span id="au-def-err" class="text-xs text-error" hidden>Invalid JSON</span>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-1">
+          <label for="au-drawer" class="btn btn-ghost btn-sm">Cancel</label>
+          <button type="submit" id="au-save" class="btn btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+    </Drawer>
+  </div>
+)}
+
+{canUse && (
+  <>
+    <script type="application/json" data-au-bases set:html={JSON.stringify(Object.fromEntries(bases.map((b) => [b.baseId, b.name])))} />
+    <script type="application/json" data-au-entmeta set:html={JSON.stringify(entMeta)} />
+  </>
+)}
+
+<script>
+  import { setButtonLoading } from '../../lib/ui'
+
+  type Tag = { targetType: 'table' | 'field'; targetId: string; source: 'auto' | 'manual'; targetRemoved?: boolean }
+  type Automation = {
+    id: string
+    baseId: string
+    airtableEntityId: string | null
+    name: string | null
+    type: string | null
+    definition: unknown
+    status: string
+    tags: Tag[]
+  }
+
+  const esc = (s: string) =>
+    String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+
+  function wireAutomations() {
+    const tab = document.querySelector<HTMLElement>('[data-automations-tab]')
+    const root = document.querySelector<HTMLElement>('[data-schema-docs]')
+    if (!tab || !root || tab.dataset.auWired) return
+    tab.dataset.auWired = '1'
+
+    const spaceId = root.dataset.spaceId!
+    const select = document.getElementById('au-base-select') as HTMLSelectElement | HTMLInputElement | null
+    const includeRemoved = document.getElementById('au-include-removed') as HTMLInputElement | null
+    const content = document.getElementById('au-content')
+    const drawerToggle = document.getElementById('au-drawer') as HTMLInputElement | null
+    const form = document.getElementById('au-form') as HTMLFormElement | null
+    const chipsEl = document.getElementById('au-chips')
+    const tagSearch = document.querySelector<HTMLElement>('[data-es-name="autag"]')
+
+    const basesMap: Record<string, string> = JSON.parse(document.querySelector('[data-au-bases]')?.textContent || '{}')
+    const entMeta: Record<string, { name: string; kind: string; scopeKey: string }> = JSON.parse(
+      document.querySelector('[data-au-entmeta]')?.textContent || '{}',
+    )
+
+    let rows: Automation[] = []
+    let editTags: Tag[] = []
+    let loaded = false
+
+    const openDrawer = (title: string) => {
+      const panelTitle = drawerToggle?.closest('.sb-drawer')?.querySelector<HTMLElement>('[data-sb-drawer-title]')
+      if (panelTitle) panelTitle.textContent = title
+      if (drawerToggle) drawerToggle.checked = true
+    }
+    const closeDrawer = () => {
+      if (drawerToggle) drawerToggle.checked = false
+    }
+
+    const statusBadge = (a: Automation) =>
+      a.status === 'removed'
+        ? '<span class="badge badge-sm badge-warning">removed from Airtable</span>'
+        : '<span class="badge badge-sm badge-success">active</span>'
+
+    const tagChip = (t: Tag, removable: boolean) => {
+      const meta = entMeta[t.targetId]
+      const label = esc(meta?.name ?? t.targetId)
+      const warn = t.targetRemoved ? ' badge-warning' : t.source === 'auto' ? ' badge-ghost' : ' badge-outline'
+      const x = removable && t.source === 'manual'
+        ? `<button type="button" class="btn btn-ghost btn-xs btn-square" data-au-untag="${esc(t.targetId)}" aria-label="Remove tag">×</button>`
+        : ''
+      return `<span class="badge badge-sm gap-1${warn}">${label}${t.targetRemoved ? ' (removed)' : ''}${x}</span>`
+    }
+
+    const renderChips = () => {
+      if (!chipsEl) return
+      chipsEl.innerHTML = editTags.map((t) => tagChip(t, true)).join('')
+    }
+
+    const renderList = () => {
+      if (!content) return
+      const showRemoved = !!includeRemoved?.checked
+      const filterBase = select && 'options' in select && select.value ? select.value : ''
+      let list = rows.filter((a) => (showRemoved || a.status !== 'removed') && (!filterBase || a.baseId === filterBase))
+      // When "All bases" + multi-base filter select: filterBase empty shows all.
+      // Single-base hidden input always has a value — still show that base only (API may already filter).
+
+      if (list.length === 0) {
+        content.innerHTML =
+          rows.length === 0
+            ? '<p class="text-base-content/50">No automations registered yet. Register one to track it alongside your schema.</p>'
+            : '<p class="text-base-content/50">No automations match these filters.</p>'
+        return
+      }
+
+      const byBase = new Map<string, Automation[]>()
+      for (const a of list) {
+        const k = a.baseId || '__none__'
+        ;(byBase.get(k) ?? byBase.set(k, []).get(k)!).push(a)
+      }
+      const order = Object.keys(basesMap)
+      const keys = [...byBase.keys()].sort((x, y) => {
+        const ix = order.indexOf(x)
+        const iy = order.indexOf(y)
+        return (ix < 0 ? 999 : ix) - (iy < 0 ? 999 : iy)
+      })
+
+      const sections = keys
+        .map((baseId) => {
+          const items = byBase.get(baseId)!
+          const label = esc(basesMap[baseId] || 'No base')
+          const body = items
+            .map((a) => {
+              const muted = a.status === 'removed' ? ' opacity-55' : ''
+              const tags = a.tags?.length ?? 0
+              return `<tr class="hover${muted}" data-au-id="${esc(a.id)}">
+                <td class="font-medium">${esc(a.name || a.airtableEntityId || a.id)}</td>
+                <td class="text-base-content/60 text-xs">${a.type ? esc(a.type) : '—'}</td>
+                <td>${statusBadge(a)}</td>
+                <td class="text-right text-xs">${tags ? `${tags} tagged` : '—'}</td>
+                <td class="text-right whitespace-nowrap">
+                  <button type="button" class="btn btn-ghost btn-xs" data-au-edit="${esc(a.id)}">Edit</button>
+                  ${a.status === 'removed' ? '' : `<button type="button" class="btn btn-ghost btn-xs text-error" data-au-delete="${esc(a.id)}">Delete</button>`}
+                </td>
+              </tr>`
+            })
+            .join('')
+          return `<details class="collapse collapse-arrow border border-base-300 bg-base-100 rounded-box" open>
+            <summary class="collapse-title text-sm font-semibold min-h-0 py-3">${label} <span class="text-base-content/40 font-normal">(${items.filter((i) => i.status !== 'removed').length})</span></summary>
+            <div class="collapse-content px-0">
+              <div class="overflow-x-auto">
+                <table class="table table-sm">
+                  <thead><tr><th>Name</th><th>Trigger</th><th>Status</th><th class="text-right">Tags</th><th></th></tr></thead>
+                  <tbody>${body}</tbody>
+                </table>
+              </div>
+            </div>
+          </details>`
+        })
+        .join('')
+      content.innerHTML = `<div class="space-y-3">${sections}</div>`
+    }
+
+    const load = async () => {
+      if (!content) return
+      content.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      const baseId = select && 'options' in select ? select.value : select?.value || ''
+      // Multi-base "All" → no baseId query; single-base hidden → always filter.
+      const multiAll = select && 'options' in select && !select.value
+      const q = new URLSearchParams()
+      if (!multiAll && baseId) q.set('baseId', baseId)
+      if (includeRemoved?.checked) q.set('includeRemoved', '1')
+      // Always request includeRemoved when toggle on; for listing soft-deleted we need the param.
+      // When toggle off, engine defaults to active-only — but we also filter client-side.
+      // Prefer fetching with includeRemoved=1 always so toggle can re-filter without refetch? Spec says refetch on toggle.
+      let res: Response
+      try {
+        res = await fetch(`/api/spaces/${spaceId}/automations?${q.toString()}`)
+      } catch {
+        content.innerHTML = '<span class="text-error">Could not load automations.</span>'
+        return
+      }
+      if (res.status === 403) {
+        content.innerHTML =
+          '<p class="text-base-content/60">Automations are available on Growth and above. <a class="link" href="/settings/billing">View plans</a></p>'
+        return
+      }
+      if (!res.ok) {
+        content.innerHTML = '<span class="text-error">Could not load automations.</span>'
+        return
+      }
+      const data = (await res.json()) as { automations: Automation[] }
+      rows = data.automations ?? []
+      renderList()
+    }
+
+    const resetForm = () => {
+      if (!form) return
+      form.reset()
+      ;(document.getElementById('au-f-row-id') as HTMLInputElement).value = ''
+      const idInput = document.getElementById('au-f-entity-id') as HTMLInputElement
+      idInput.disabled = false
+      editTags = []
+      renderChips()
+      const err = document.getElementById('au-def-err')
+      const valid = document.getElementById('au-def-valid')
+      if (err) err.hidden = true
+      if (valid) valid.hidden = true
+    }
+
+    const fillForm = (a: Automation) => {
+      ;(document.getElementById('au-f-row-id') as HTMLInputElement).value = a.id
+      const idInput = document.getElementById('au-f-entity-id') as HTMLInputElement
+      idInput.value = a.airtableEntityId || ''
+      idInput.disabled = true
+      ;(document.getElementById('au-f-name') as HTMLInputElement | null)!.value = a.name || ''
+      ;(document.getElementById('au-f-base') as HTMLSelectElement | null)!.value = a.baseId
+      ;(document.getElementById('au-f-trigger') as HTMLSelectElement | null)!.value = a.type || ''
+      const def = document.getElementById('au-f-definition') as HTMLTextAreaElement
+      def.value =
+        a.definition == null || a.definition === ''
+          ? ''
+          : typeof a.definition === 'string'
+            ? a.definition
+            : JSON.stringify(a.definition, null, 2)
+      editTags = (a.tags || []).map((t) => ({ ...t }))
+      renderChips()
+      if (tagSearch) tagSearch.dataset.esScopeBase = a.baseId
+    }
+
+    const parseDefinition = (): { ok: true; value: unknown } | { ok: false } => {
+      const raw = (document.getElementById('au-f-definition') as HTMLTextAreaElement).value.trim()
+      const err = document.getElementById('au-def-err')
+      const valid = document.getElementById('au-def-valid')
+      if (!raw) {
+        if (err) err.hidden = true
+        if (valid) valid.hidden = true
+        return { ok: true, value: null }
+      }
+      try {
+        const value = JSON.parse(raw)
+        if (err) err.hidden = true
+        if (valid) {
+          valid.hidden = false
+          valid.textContent = 'Valid JSON'
+          valid.className = 'text-xs font-semibold text-success'
+        }
+        return { ok: true, value }
+      } catch {
+        if (err) err.hidden = false
+        if (valid) {
+          valid.hidden = false
+          valid.textContent = 'Invalid'
+          valid.className = 'text-xs font-semibold text-error'
+        }
+        return { ok: false }
+      }
+    }
+
+    document.getElementById('au-def-format')?.addEventListener('click', () => {
+      const ta = document.getElementById('au-f-definition') as HTMLTextAreaElement
+      const parsed = parseDefinition()
+      if (!parsed.ok || parsed.value == null) return
+      ta.value = JSON.stringify(parsed.value, null, 2)
+    })
+    document.getElementById('au-f-definition')?.addEventListener('input', () => parseDefinition())
+
+    document.getElementById('au-f-base')?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLSelectElement).value
+      if (tagSearch) tagSearch.dataset.esScopeBase = v
+    })
+
+    document.addEventListener('schema:auTagAdd', ((e: CustomEvent<{ id: string }>) => {
+      const id = e.detail?.id
+      if (!id || !chipsEl) return
+      const meta = entMeta[id]
+      if (!meta || (meta.kind !== 'table' && meta.kind !== 'field')) return
+      if (editTags.some((t) => t.targetId === id)) return
+      editTags.push({
+        targetType: meta.kind as 'table' | 'field',
+        targetId: id,
+        source: 'manual',
+      })
+      renderChips()
+    }) as EventListener)
+
+    chipsEl?.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-au-untag]')
+      if (!btn) return
+      const id = btn.dataset.auUntag!
+      editTags = editTags.filter((t) => !(t.targetId === id && t.source === 'manual'))
+      renderChips()
+    })
+
+    document.getElementById('au-new')?.addEventListener('click', () => {
+      resetForm()
+      openDrawer('Register automation')
+      ;(document.getElementById('au-save') as HTMLButtonElement).textContent = 'Register automation'
+    })
+
+    content?.addEventListener('click', async (e) => {
+      const editBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-au-edit]')
+      if (editBtn) {
+        const a = rows.find((r) => r.id === editBtn.dataset.auEdit)
+        if (!a) return
+        fillForm(a)
+        openDrawer('Edit automation')
+        ;(document.getElementById('au-save') as HTMLButtonElement).textContent = 'Save changes'
+        return
+      }
+      const delBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-au-delete]')
+      if (!delBtn) return
+      const id = delBtn.dataset.auDelete!
+      setButtonLoading(delBtn, true)
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/automations`, {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id }),
+        })
+        if (res.status === 403) {
+          if (content)
+            content.innerHTML =
+              '<p class="text-base-content/60">Automations are available on Growth and above. <a class="link" href="/settings/billing">View plans</a></p>'
+          return
+        }
+        if (res.ok) await load()
+        else setButtonLoading(delBtn, false)
+      } catch {
+        setButtonLoading(delBtn, false)
+      }
+    })
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const saveBtn = document.getElementById('au-save') as HTMLButtonElement
+      const rowId = (document.getElementById('au-f-row-id') as HTMLInputElement).value
+      const airtableEntityId = (document.getElementById('au-f-entity-id') as HTMLInputElement).value.trim()
+      const name = (document.getElementById('au-f-name') as HTMLInputElement).value.trim()
+      const baseId = (document.getElementById('au-f-base') as HTMLSelectElement | null)?.value ?? ''
+      const type = (document.getElementById('au-f-trigger') as HTMLSelectElement | null)?.value || null
+      if (!name || !baseId || (!rowId && !airtableEntityId)) return
+      const def = parseDefinition()
+      if (!def.ok) return
+      const tags = editTags.map((t) => ({
+        targetType: t.targetType,
+        targetId: t.targetId,
+        source: t.source,
+      }))
+      setButtonLoading(saveBtn, true)
+      try {
+        const isCreate = !rowId
+        const body = isCreate
+          ? { baseId, airtableEntityId, name, type, definition: def.value, tags }
+          : { id: rowId, name, type, definition: def.value, tags }
+        const res = await fetch(`/api/spaces/${spaceId}/automations`, {
+          method: isCreate ? 'POST' : 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (res.status === 403) {
+          closeDrawer()
+          if (content)
+            content.innerHTML =
+              '<p class="text-base-content/60">Automations are available on Growth and above. <a class="link" href="/settings/billing">View plans</a></p>'
+          return
+        }
+        if (res.ok) {
+          closeDrawer()
+          await load()
+        }
+      } finally {
+        setButtonLoading(saveBtn, false)
+      }
+    })
+
+    const tabBtn = document.querySelector<HTMLButtonElement>('[data-tab="automations"]')
+    tabBtn?.addEventListener('click', () => {
+      if (!loaded) {
+        loaded = true
+        load()
+      }
+    })
+    // Refetch when filters change (after first open).
+    select?.addEventListener('change', () => {
+      if (loaded) load()
+    })
+    includeRemoved?.addEventListener('change', () => {
+      if (loaded) load()
+    })
+  }
+
+  wireAutomations()
+  document.addEventListener('astro:after-swap', wireAutomations)
+</script>

@@ -1,0 +1,43 @@
+---
+/**
+ * Connection-health chrome — loaded after first paint via `server:defer` so a
+ * Hyperdrive round-trip never blocks every sidebar click. 15s isolate cache
+ * covers ClientRouter navigations that re-request the island.
+ */
+import ConnectionHealthBanner from '../components/patterns/ConnectionHealthBanner.astro';
+import ConnectionHealthPill from '../components/patterns/ConnectionHealthPill.astro';
+import { getConnectionHealthSummary } from '../lib/integrations';
+import { deriveBannerProps } from '../lib/connection-health';
+import {
+  readConnectionHealthCache,
+  writeConnectionHealthCache,
+} from '../lib/shell-chrome';
+import type { ConnectionBannerProps } from '../components/patterns/connection-health-banner';
+
+let bannerProps: ConnectionBannerProps | null = null;
+const orgId = Astro.locals.account?.organization?.id ?? null;
+const db = Astro.locals.db;
+if (orgId && db) {
+  try {
+    const cached = readConnectionHealthCache(orgId);
+    const connections = cached?.connections
+      ?? (await getConnectionHealthSummary(db, orgId)).connections;
+    if (!cached) {
+      writeConnectionHealthCache(orgId, { connections });
+    }
+    bannerProps = deriveBannerProps({
+      connections,
+      storageDestinations: [],
+    });
+  } catch {
+    bannerProps = null;
+  }
+}
+---
+
+{bannerProps?.state === 'broken' && (
+  <div class="px-6 md:px-8 pt-3">
+    <ConnectionHealthPill {...bannerProps} />
+  </div>
+)}
+{bannerProps && <ConnectionHealthBanner {...bannerProps} bleed />}

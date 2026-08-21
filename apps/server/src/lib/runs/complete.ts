@@ -1,3 +1,5 @@
+import { isAirtableAuthFailureMessage } from "./airtable-auth-failure";
+
 // Pure-function orchestration for the run-complete callback (Phase 8b).
 //
 // processRunComplete() consumes one per-base callback from a Trigger.dev
@@ -115,7 +117,9 @@ export interface InsertRunTableSnapshotsInput {
 
 export interface ProcessRunCompleteDeps {
   /** 404 gate. Returns null if the row doesn't exist. */
-  fetchRunById: (runId: string) => Promise<{ id: string } | null>;
+  fetchRunById: (
+    runId: string,
+  ) => Promise<{ id: string; connectionId?: string | null } | null>;
   /**
    * Atomic per-base completion. Returns null if triggerRunId wasn't in
    * trigger_run_ids (idempotent replay). Otherwise returns the row's
@@ -129,6 +133,16 @@ export interface ProcessRunCompleteDeps {
     runId: string;
     finalStatus: FinalRunStatus;
     completedAt: Date;
+  }) => Promise<void>;
+  /**
+   * Flips the run's Connection to `pending_reauth` when a per-base callback
+   * reports an Airtable 401/403 auth failure. Optional so older callers /
+   * tests omit it; production wires it so Sources shows Reconnect without
+   * waiting for OAuth-refresh cron (which only sees token-endpoint failures).
+   */
+  markConnectionPendingReauth?: (input: {
+    connectionId: string;
+    reason: string;
   }) => Promise<void>;
   /**
    * Inserts one backup_run_bases row. Returns the new row's id so the
@@ -184,6 +198,21 @@ export async function processRunComplete(
   //    callback. Trigger.dev v3 may retry on transient transport errors;
   //    return 200-shape so the runner doesn't keep retrying.
   if (applied === null) return { ok: true, kind: "noop" };
+
+  // 3a. Airtable 401/403 on a still-refreshable token: flip Connection to
+  //     pending_reauth so Sources shows Reconnect. Fire on the first failing
+  //     base (partial), not only finalize — the UI must unlock immediately.
+  if (
+    input.status === "failed" &&
+    isAirtableAuthFailureMessage(input.errorMessage) &&
+    run.connectionId &&
+    deps.markConnectionPendingReauth
+  ) {
+    await deps.markConnectionPendingReauth({
+      connectionId: run.connectionId,
+      reason: input.errorMessage ?? "airtable_auth_failure",
+    });
+  }
 
   // 3b. Per-table snapshot (server-run-detail). Write one backup_run_bases
   //     row + its backup_run_tables rows when the caller supplies tables[].

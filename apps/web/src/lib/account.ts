@@ -16,6 +16,7 @@ import {
 } from '../db/schema'
 import { eq, and } from 'drizzle-orm'
 import { listSpacesForOrg } from './spaces'
+import { isInternalEmail } from './capabilities/internal-access'
 
 export interface AccountContext {
   user: {
@@ -43,6 +44,21 @@ export interface AccountContext {
   spaces: Array<{ id: string; name: string; status: string }>
 }
 
+export function shouldPromoteToStaff(input: {
+  role?: string | null
+  email?: string | null
+}): boolean {
+  return input.role !== 'super' && isInternalEmail(input.email)
+}
+
+async function promoteToStaffIfInternal(
+  db: AppDb,
+  user: { id: string; role?: string | null; email?: string | null },
+): Promise<void> {
+  if (!shouldPromoteToStaff(user)) return
+  await db.update(users).set({ role: 'super' }).where(eq(users.id, user.id))
+}
+
 export async function getAccountContext(
   db: AppDb,
   userId: string,
@@ -57,6 +73,7 @@ export async function getAccountContext(
         name: users.name,
         email: users.email,
         image: users.image,
+        role: users.role,
       },
       org: {
         id: organizations.id,
@@ -93,6 +110,13 @@ export async function getAccountContext(
   if (!row) return null
 
   const user = row.user
+  try {
+    await promoteToStaffIfInternal(db, user)
+  } catch {
+    // Staff access also resolves at the admin handoff gate. Promotion makes
+    // role-only surfaces catch up, but a transient write failure must not block
+    // normal account loading.
+  }
   let organization: AccountContext['organization'] = row.org?.id ? row.org : null
   let membership: AccountContext['membership'] = row.membership?.role
     ? row.membership

@@ -1,0 +1,467 @@
+---
+/**
+ * FacetFilter — the one filter-control pattern used across the app (Backups list +
+ * Schema). A daisyUI dropdown whose trigger is a bordered button with a small chevron
+ * and a "filter-working" active state (primary tint), matching the Backups faceted filter.
+ *
+ * Two modes:
+ *  - multi (default): rows are name-left + a daisyUI toggle-sm right; the row fades when
+ *    off. Show all / Hide all + an n/total count badge. Emits `facetchange { name, hidden[] }`.
+ *  - single: rows are radios; the trigger shows the selected option's label. Active when a
+ *    non-default option is picked. Emits `facetchange { name, value }`.
+ * Both listen for `facetreset` (back to the default) and for `facetset` — `{ value }` on a
+ * single-select, `{ selected: string[] }` on a multi — which is how `viewState.ts` restores a
+ * facet from the URL: it drives the CONTROL, which then emits `facetchange` as usual.
+ * An option row may carry ONE leading mark: a colour `dot`, the
+ * vendored Airtable field-type glyph (`iconKey`), or a Lucide `icon` — use the last when the
+ * column this facet filters shows the same glyphs, so filter and column read as one vocabulary.
+ *
+ * `groupToggles` (workspace-visual-grouping): opt a multi facet into WORKSPACE-GROUPED
+ * headings — each `FacetGroup.label` becomes an interactive row (collapse chevron + a
+ * tri-state group checkbox + a k/n count + a muted "· Airtable workspace" label for a real
+ * workspace group; the "Workspace unknown" bucket carries no such label). Only takes effect
+ * when there's more than one group — a single-group facet still renders flat, unchanged.
+ * Build `groups` with `groupByWorkspace` (./workspaceGroups) so every base facet groups the
+ * same way the base picker does.
+ */
+import Badge from '../ui/Badge.astro';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import { AIRTABLE_GLYPH } from './airtableGlyph';
+
+export interface FacetItem {
+  value: string;
+  label: string;
+  /** A colour swatch (a CSS colour) — for a status/select value whose identity IS its colour. */
+  dot?: string;
+  /** An Airtable FIELD-TYPE key — renders the vendored Airtable glyph for that type. */
+  iconKey?: string;
+  /**
+   * A Lucide class (e.g. `lucide--image`) for an option whose category has a glyph elsewhere in
+   * the UI. Use it when the COLUMN this facet filters carries the same icons: a column showing
+   * five category glyphs whose own filter shows none makes the two read as unrelated controls
+   * (Oleh 2026-07-31, the Attachments Type facet). Mutually exclusive with `iconKey` in practice
+   * — both paint into the same leading `.ff-icon` slot.
+   */
+  icon?: string;
+}
+export interface FacetGroup {
+  label?: string;
+  items: FacetItem[];
+  /** Stable id for a workspace-grouped heading (groupToggles) — falls back to `label`. */
+  groupId?: string;
+  /** Marks the "Workspace unknown" bucket — it renders without the "· Airtable workspace" label. */
+  unknown?: boolean;
+}
+/** A quick-select shortcut (multi mode): a chip that toggles a SET of option values on/off at once —
+ *  e.g. a "Calculated" category over field types. Values may overlap between groups. */
+export interface FacetQuickGroup {
+  label: string;
+  values: string[];
+}
+interface Props {
+  label: string;
+  name: string;
+  groups: FacetGroup[];
+  /** Single-select (radios + the selected label on the trigger) instead of multi-select. */
+  single?: boolean;
+  /** Open the menu right-aligned (dropdown-end) — for a trigger near the right edge of its container. */
+  end?: boolean;
+  /** Quick-select category chips (multi mode) shown above the list; each toggles its member values. */
+  quickGroups?: FacetQuickGroup[];
+  /**
+   * Single mode: keep the facet LABEL on the trigger and append the chosen non-default value after
+   * it — `Group by · Date`, `Size · Larger than 10 MB` — instead of replacing the label with the
+   * value the way the default single trigger does. Used where the label is the only thing that says
+   * what the control IS ("Group by" / "Size" / "Description"), so dropping it would leave a bare
+   * value nobody can place.
+   *
+   * IT USED TO PRINT NOTHING (D11, 2026-08-10). The suffix was a 6px primary DOT, on the argument
+   * that "the selected value is legible inside the dropdown". J06 measured what that costs: on both
+   * Data tabs the trigger read `Group by` in every state, including the states where the arrangement
+   * on screen was the direct answer to it — a control that never says what it is set to. The dot is
+   * gone and the value is printed; `.ff-selbadge` is now that text, capped and ellipsised so a long
+   * option cannot grow the toolbar.
+   */
+  labelTrigger?: boolean;
+  /** Optional leading concept icon on the trigger (a Lucide class, e.g. "lucide--database"). Signals
+   *  WHAT the picker selects — a base, a table — so a scope picker reads as more than a bare value. */
+  triggerIcon?: string;
+  /** Single mode: keep the trigger ALWAYS active (ff-on). For a SCOPE picker that always has a
+   *  meaningful selection (Base / Table), not a filter that's "off" at its default. */
+  alwaysActive?: boolean;
+  /** Render the trigger LOCKED (Dan 2026-07-23) — disabled, chevron swapped for a lock glyph, the
+   *  reason in a tooltip. For a single-select SCOPE picker whose owning preset is saved (e.g. Data's
+   *  Base/Table once a preset locks). A consumer flips this live by dispatching a bubbling
+   *  `facetlock` event (`{ locked, reason }`) — the initial `disabled`/`lockReason` only seed it. */
+  disabled?: boolean;
+  /** The reason shown in the lock tooltip — required whenever `disabled` is true. */
+  lockReason?: string;
+  /** Multi mode only: render workspace-grouped headings (collapse chevron + tri-state group
+   *  checkbox + k/n count) instead of an inert text heading. No-ops with 1 group or fewer. */
+  groupToggles?: boolean;
+}
+const { label, name, groups, single = false, end = false, quickGroups = [], labelTrigger = false, triggerIcon, alwaysActive = false, disabled = false, lockReason, groupToggles = false } = Astro.props;
+const total = groups.reduce((n, g) => n + g.items.length, 0);
+const firstLabel = groups[0]?.items[0]?.label ?? label;
+const showGroupToggles = groupToggles && !single && groups.length > 1;
+
+const fieldIcon = (key?: string) => {
+  if (!key) return '';
+  const k = airtableIconKey(key);
+  return k ? `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+---
+
+<div class:list={['dropdown ff', end && 'dropdown-end']} data-facet={name} data-facet-total={total} data-facet-single={single ? '1' : undefined} data-facet-labeltrigger={single && labelTrigger ? '1' : undefined} data-facet-alwaysactive={single && alwaysActive ? '1' : undefined} data-facet-disabled={disabled ? '1' : undefined} data-facet-lockreason={lockReason} data-ff-mode={!single && quickGroups.length > 0 ? 'types' : undefined}>
+  <div tabindex="0" role="button" class="btn btn-sm gap-1.5 ff-trigger" aria-label={label}>
+    {triggerIcon && <span class={`iconify ${triggerIcon} size-4 ff-trigicon`} aria-hidden="true"></span>}
+    {single
+      ? (labelTrigger
+          ? <>{label}<span class="ff-selbadge" data-facet-selbadge hidden></span></>
+          : <span data-facet-label>{firstLabel}</span>)
+      : <><span class="tb-word">{label}</span><Badge size="sm" variant="primary-solid" class="ff-count" data-facet-badge hidden /></>}
+    <span class="iconify lucide--chevron-down size-3 opacity-55" aria-hidden="true"></span>
+  </div>
+  <div tabindex="0" class="dropdown-content ff-panel">
+    {/* Two VIEWS of the same "which values are shown" state: the flat list, or coarse category toggles. */}
+    {!single && quickGroups.length > 0 && (
+      <div class="ff-modeseg sb-segtrack sb-segtrack-sm" role="tablist" aria-label="View">
+        <button type="button" class="sb-seg" data-ff-mode-btn="types" role="tab" aria-selected="true">Types</button>
+        <button type="button" class="sb-seg" data-ff-mode-btn="cats" role="tab" aria-selected="false">Categories</button>
+      </div>
+    )}
+    <div class="ff-search">
+      <label class="input input-sm ff-search-input">
+        <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+        <input type="text" data-facet-search placeholder="Search" aria-label={`Search ${label}`} autocomplete="off" />
+      </label>
+    </div>
+    {!single && (
+      <div class="ff-allrow">
+        <button type="button" class="btn btn-sm btn-ghost gap-1 px-2 text-primary" data-facet-all="show">
+          <span class="iconify lucide--eye size-3.5" aria-hidden="true"></span>Show all
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost gap-1 px-2" data-facet-all="hide">
+          <span class="iconify lucide--eye-off size-3.5" aria-hidden="true"></span>Hide all
+        </button>
+      </div>
+    )}
+    {groups.map((g) =>
+      showGroupToggles ? (
+        <div class="ff-groupwrap" data-ff-group={g.groupId ?? g.label}>
+          {/* Group header BAND — a shaded parent row: collapse chevron · tri-state parent
+              checkbox · a layers glyph that reads "workspace grouping" (the compact signal
+              that replaces the verbose "· Airtable workspace" text) · name · "N of M" count.
+              The bases below are checkbox LEAVES, indented — one control language (checkbox
+              tree), not a checkbox-for-the-group-plus-toggle-for-each-base mishmash. */}
+          <div
+            class="ff-group ff-group-int tooltip tooltip-right"
+            data-ff-ghead
+            data-tip={g.unknown ? 'Bases with no Airtable workspace' : `Airtable workspace: ${g.label}`}
+          >
+            <button type="button" class="ff-gchevron" data-ff-gtoggle aria-expanded="true" aria-label={`Toggle ${g.label}`}>
+              <span class="iconify lucide--chevron-down size-3.5" aria-hidden="true"></span>
+            </button>
+            <input type="checkbox" class="checkbox checkbox-sm ff-groupcheck" data-ff-groupcheck aria-label={`Select all in ${g.label}`} />
+            {/* Monochrome Airtable mark (brand-logo exception) — the "this is an Airtable
+                workspace" signal; faded for the "No workspace" bucket. */}
+            <span class:list={['ff-gicon', g.unknown && 'ff-gicon-mut']} set:html={AIRTABLE_GLYPH} />
+            <span class:list={['ff-gname', g.unknown && 'ff-gname-mut']}>{g.label}</span>
+            <span class="ff-gspacer"></span>
+            <span class="ff-gcount" data-ff-gcount aria-hidden="true"></span>
+          </div>
+          <div class="ff-grows" data-ff-grows>
+            {g.items.map((i) => (
+              <label class="ff-opt ff-opt-tree">
+                <input type="checkbox" class="checkbox checkbox-sm ff-treecheck" data-facet-opt value={i.value} checked />
+                <span class="ff-label">{i.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          {g.label && <div class="ff-group">{g.label}</div>}
+          {g.items.map((i, idx) => (
+            <label class="ff-opt">
+              {i.dot && <span class="ff-dot" style={`background:${i.dot}`} aria-hidden="true"></span>}
+              {i.iconKey && <span class="ff-icon" set:html={fieldIcon(i.iconKey)} />}
+              {i.icon && <span class="ff-icon"><span class={`iconify ${i.icon} size-3.5`} aria-hidden="true"></span></span>}
+              <span class="ff-label">{i.label}</span>
+              {single ? (
+                <input type="radio" class="radio radio-sm radio-primary" name={`ffr-${name}`} data-facet-opt value={i.value} data-label={i.label} checked={idx === 0} />
+              ) : (
+                <input type="checkbox" class="toggle toggle-sm toggle-primary" data-facet-opt value={i.value} checked />
+              )}
+            </label>
+          ))}
+        </>
+      ),
+    )}
+    {!single && quickGroups.length > 0 && (
+      <div class="ff-cats">
+        {quickGroups.map((q) => (
+          <button type="button" class="ff-catopt" data-facet-quick={q.values.join(',')} data-state="on">
+            <span class="ff-label">{q.label}</span>
+            <span class="ff-cat-count" data-facet-catcount aria-hidden="true"></span>
+            <span class="ff-cat-tog" aria-hidden="true"></span>
+          </button>
+        ))}
+      </div>
+    )}
+    <div class="ff-nomatch" data-facet-nomatch hidden>No matches</div>
+  </div>
+</div>
+
+{/* Styles live in styles/components/facet-filter.css — the Inbox filter menu renders the same
+    classes, so they cannot be scoped to this component. */}
+
+<script>
+  function wireFacets() {
+    document.querySelectorAll<HTMLElement>('.ff[data-facet]').forEach((ff) => {
+      if (ff.dataset.facetWired) return;
+      ff.dataset.facetWired = '1';
+      const name = ff.dataset.facet!;
+      const trigger = ff.querySelector<HTMLElement>('[role="button"]');
+      const opts = Array.from(ff.querySelectorAll<HTMLInputElement>('[data-facet-opt]'));
+
+      // ── Locked scope (Dan 2026-07-23) — a single-select SCOPE picker can be locked once its
+      // owning preset is saved. The trigger stays visible and in place, rendered disabled with its
+      // chevron swapped for a lock glyph and the reason in a tooltip (never hidden, never a native
+      // title=). `disabled`/`lockReason` seed the initial state; a consumer flips it live via a
+      // bubbling `facetlock` event, since this component is server-rendered once, not reactive.
+      const setLocked = (locked: boolean, reason?: string) => {
+        if (!trigger) return;
+        let wrap = trigger.parentElement?.classList.contains('ff-lockwrap') ? trigger.parentElement : null;
+        if (locked && !wrap) {
+          wrap = document.createElement('div');
+          wrap.className = 'tooltip tooltip-bottom ff-lockwrap';
+          trigger.replaceWith(wrap);
+          wrap.appendChild(trigger);
+        } else if (!locked && wrap) {
+          wrap.replaceWith(trigger);
+        }
+        if (wrap) wrap.setAttribute('data-tip', reason || '');
+        trigger.classList.toggle('btn-disabled', locked);
+        if (locked) { trigger.setAttribute('aria-disabled', 'true'); trigger.removeAttribute('tabindex'); }
+        else { trigger.removeAttribute('aria-disabled'); trigger.setAttribute('tabindex', '0'); }
+        const chevron = trigger.lastElementChild as HTMLElement | null;
+        if (chevron) chevron.className = `iconify ${locked ? 'lucide--lock' : 'lucide--chevron-down'} size-3 opacity-55`;
+      };
+      if (ff.dataset.facetDisabled) setLocked(true, ff.dataset.facetLockreason);
+      ff.addEventListener('facetlock', (e) => {
+        const d = (e as CustomEvent).detail || {};
+        setLocked(!!d.locked, d.reason);
+      });
+
+      // In-popover search — filters the option rows in place. Present on every facet for
+      // consistency (the client asked for a "Search" box in each dropdown).
+      const search = ff.querySelector<HTMLInputElement>('[data-facet-search]');
+      const nomatch = ff.querySelector<HTMLElement>('[data-facet-nomatch]');
+      const groupEls = Array.from(ff.querySelectorAll<HTMLElement>('.ff-group'));
+      // Workspace-grouped mode (groupToggles) wraps each heading + its rows in one
+      // `.ff-groupwrap`, so a group hides/reveals as a whole block rather than via the
+      // flat next-sibling walk below (which assumes headings and rows are siblings).
+      const searchGroupWraps = Array.from(ff.querySelectorAll<HTMLElement>('.ff-groupwrap'));
+      search?.addEventListener('input', () => {
+        const q = search.value.trim().toLowerCase();
+        let visible = 0;
+        ff.querySelectorAll<HTMLElement>('.ff-opt').forEach((row) => {
+          const t = (row.querySelector('.ff-label')?.textContent || '').toLowerCase();
+          const show = !q || t.includes(q);
+          row.style.display = show ? '' : 'none';
+          if (show) visible++;
+        });
+        if (searchGroupWraps.length) {
+          // Hide a whole group block (heading + rows) when none of its rows survive; a
+          // collapsed group whose rows still match stays reachable while the query holds
+          // (collapse state itself is preserved via the class, same as the base picker).
+          searchGroupWraps.forEach((wrap) => {
+            const any = Array.from(wrap.querySelectorAll<HTMLElement>('.ff-opt')).some((r) => r.style.display !== 'none');
+            wrap.style.display = any ? '' : 'none';
+          });
+          ff.classList.toggle('ff-searching', !!q);
+        } else {
+          // Flat groups: hide a group heading when none of its rows survive the filter.
+          groupEls.forEach((gl) => {
+            let n = gl.nextElementSibling as HTMLElement | null;
+            let any = false;
+            while (n && !n.classList.contains('ff-group')) {
+              if (n.classList.contains('ff-opt') && n.style.display !== 'none') any = true;
+              n = n.nextElementSibling as HTMLElement | null;
+            }
+            gl.style.display = any ? '' : 'none';
+          });
+        }
+        if (nomatch) nomatch.hidden = visible > 0;
+      });
+
+      if (ff.dataset.facetSingle) {
+        const labelEl = ff.querySelector<HTMLElement>('[data-facet-label]');
+        const selbadge = ff.querySelector<HTMLElement>('[data-facet-selbadge]');
+        const labelMode = !!ff.dataset.facetLabeltrigger;
+        const alwaysOn = !!ff.dataset.facetAlwaysactive;
+        const defaultVal = opts[0]?.value ?? '';
+        const sync = (emit = true) => {
+          const sel = opts.find((o) => o.checked) ?? opts[0];
+          const val = sel?.value ?? '';
+          const isDefault = val === defaultVal;
+          if (labelMode) {
+            /**
+             * The trigger keeps the facet LABEL and PRINTS THE CHOSEN VALUE after it — `Group by ·
+             * Date`. It used to print a 6px dot, whose whole argument was that the value is legible
+             * once you open the menu; J06 measured the cost of that on the two Data tabs, where the
+             * trigger read `Group by` in every state including the ones the reader was looking at.
+             * A control that will not say what it is set to makes the reader open it to find out.
+             *
+             * The DEFAULT option still prints nothing: `Group by`, `Size`, `Description` at rest.
+             * A suffix reading `· None` / `· Any size` would put a word on every toolbar to say
+             * that nothing is happening, which is the noise the multi facets' empty count badge is
+             * hidden for. The separator is the CSS `::before`, so this writes only the value.
+             *
+             * `aria-label` is re-stamped with the same sentence because the trigger carries one,
+             * and an `aria-label` wins over the text inside it — without this the value would be
+             * printed for the eye and withheld from a screen reader.
+             */
+            if (selbadge) {
+              selbadge.hidden = isDefault;
+              selbadge.textContent = isDefault ? '' : (sel?.dataset.label ?? '');
+            }
+            const named = trigger?.dataset.ffLabel ?? trigger?.getAttribute('aria-label') ?? '';
+            if (trigger) {
+              if (!trigger.dataset.ffLabel) trigger.dataset.ffLabel = named;
+              trigger.setAttribute('aria-label', isDefault ? named : `${named}: ${sel?.dataset.label ?? ''}`);
+            }
+          } else if (labelEl) {
+            labelEl.textContent = sel?.dataset.label ?? '';
+          }
+          // A scope picker (alwaysActive) always has a meaningful selection → keep it active.
+          trigger?.classList.toggle('ff-on', alwaysOn || !isDefault);
+          if (emit) ff.dispatchEvent(new CustomEvent('facetchange', { detail: { name, value: val }, bubbles: true }));
+        };
+        opts.forEach((o) =>
+          o.addEventListener('change', () => { sync(); (document.activeElement as HTMLElement | null)?.blur(); }),
+        );
+        ff.addEventListener('facetreset', () => { opts.forEach((o, i) => (o.checked = i === 0)); sync(false); });
+        // D07 — `facetset { value }`: drive this facet from OUTSIDE (the URL, via `viewState.ts`)
+        // and then emit, so the host updates through the same `facetchange` path a click takes.
+        // The counterpart of `facetreset`, and the reason restoring a shared link needs no second
+        // implementation of filtering in any host.
+        ff.addEventListener('facetset', (e) => {
+          const want = String(((e as CustomEvent).detail || {}).value ?? '');
+          if (!opts.some((o) => o.value === want)) return;
+          opts.forEach((o) => (o.checked = o.value === want));
+          sync();
+        });
+        sync(false);
+        return;
+      }
+
+      const total = Number(ff.dataset.facetTotal || '0');
+      const badge = ff.querySelector<HTMLElement>('[data-facet-badge]');
+      const showAll = ff.querySelector<HTMLButtonElement>('[data-facet-all="show"]');
+      const hideAll = ff.querySelector<HTMLButtonElement>('[data-facet-all="hide"]');
+      // Quick-category chips: each toggles a SET of option values on/off; its state (on/partial/off) is
+      // derived from how many of its members are currently shown. Values may overlap between chips.
+      const optByValue = new Map(opts.map((o) => [o.value, o]));
+      // ── Workspace-grouped headings (groupToggles): collapse chevron + tri-state group
+      // checkbox. Group checkboxes carry [data-ff-groupcheck], NEVER [data-facet-opt], so
+      // they never join `opts` — hidden[]/total (and every consumer reading them) are
+      // unaffected by a group's own checkbox.
+      const groupHandles = Array.from(ff.querySelectorAll<HTMLElement>('.ff-groupwrap')).map((wrap) => ({
+        wrap,
+        check: wrap.querySelector<HTMLInputElement>('[data-ff-groupcheck]'),
+        count: wrap.querySelector<HTMLElement>('[data-ff-gcount]'),
+        chevron: wrap.querySelector<HTMLButtonElement>('[data-ff-gtoggle]'),
+        opts: Array.from(wrap.querySelectorAll<HTMLInputElement>('[data-facet-opt]')),
+      }));
+      const quickChips = Array.from(ff.querySelectorAll<HTMLElement>('[data-facet-quick]'));
+      const chipMembers = (chip: HTMLElement) =>
+        (chip.dataset.facetQuick || '').split(',').filter(Boolean).map((v) => optByValue.get(v)).filter(Boolean) as HTMLInputElement[];
+      const refreshQuick = () => quickChips.forEach((chip) => {
+        const m = chipMembers(chip);
+        const on = m.filter((o) => o.checked).length;
+        chip.dataset.state = on === 0 ? 'off' : on === m.length ? 'on' : 'partial';
+        chip.setAttribute('aria-pressed', String(on === m.length && m.length > 0));
+        // Partial state count: "K/N" so the user sees how many of this category's types are shown.
+        const countEl = chip.querySelector<HTMLElement>('[data-facet-catcount]');
+        if (countEl) countEl.textContent = `${on}/${m.length}`;
+      });
+      const sync = (emit = true) => {
+        const hidden = opts.filter((o) => !o.checked).map((o) => o.value);
+        if (badge) {
+          badge.hidden = hidden.length === 0;
+          badge.textContent = `${total - hidden.length}/${total}`;
+        }
+        trigger?.classList.toggle('ff-on', hidden.length > 0);
+        if (showAll) showAll.disabled = hidden.length === 0;
+        if (hideAll) hideAll.disabled = hidden.length === total;
+        refreshQuick();
+        // Sync each workspace-group checkbox from its own rows: checked = all shown,
+        // indeterminate (dash) = some, empty = none; the k/n count mirrors it.
+        groupHandles.forEach((g) => {
+          const sel = g.opts.filter((o) => o.checked).length;
+          if (g.check) {
+            g.check.checked = sel > 0 && sel === g.opts.length;
+            g.check.indeterminate = sel > 0 && sel < g.opts.length;
+          }
+          if (g.count) g.count.textContent = `${sel} of ${g.opts.length}`;
+        });
+        if (emit) ff.dispatchEvent(new CustomEvent('facetchange', { detail: { name, hidden }, bubbles: true }));
+      };
+      quickChips.forEach((chip) => {
+        chip.addEventListener('mousedown', (e) => e.preventDefault()); // keep the dropdown open on click
+        chip.addEventListener('click', () => {
+          const m = chipMembers(chip);
+          const allOn = m.length > 0 && m.every((o) => o.checked);
+          m.forEach((o) => (o.checked = !allOn)); // full-on → clear the category; otherwise select it all
+          sync();
+        });
+      });
+      // Types ↔ Categories view segment — two views of the SAME state (which values are shown).
+      const modeBtns = Array.from(ff.querySelectorAll<HTMLElement>('[data-ff-mode-btn]'));
+      modeBtns.forEach((b) => {
+        b.addEventListener('mousedown', (e) => e.preventDefault());
+        b.addEventListener('click', () => {
+          const m = b.dataset.ffModeBtn || 'types';
+          ff.dataset.ffMode = m;
+          modeBtns.forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+        });
+      });
+      opts.forEach((o) => o.addEventListener('change', () => sync()));
+      // Group chevron collapses its rows; the group checkbox flips ALL its items at once
+      // (checked → uncheck all, otherwise check all) and re-syncs.
+      groupHandles.forEach((g) => {
+        g.chevron?.addEventListener('click', () => {
+          const collapsed = g.wrap.classList.toggle('ff-collapsed');
+          g.chevron?.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        });
+        g.check?.addEventListener('change', () => {
+          const allOn = g.opts.length > 0 && g.opts.every((o) => o.checked);
+          g.opts.forEach((o) => (o.checked = !allOn));
+          sync();
+        });
+      });
+      // Keep the dropdown OPEN after Show all / Hide all (Dan 2026-07-03). Preventing the button's
+      // mousedown stops it from taking focus, so the trigger stays focused and the focus-based
+      // daisyUI dropdown doesn't close (a disabled button would otherwise blur → close the menu).
+      [showAll, hideAll].forEach((b) => b?.addEventListener('mousedown', (e) => e.preventDefault()));
+      showAll?.addEventListener('click', () => { opts.forEach((o) => (o.checked = true)); sync(); });
+      hideAll?.addEventListener('click', () => { opts.forEach((o) => (o.checked = false)); sync(); });
+      ff.addEventListener('facetreset', () => { opts.forEach((o) => (o.checked = true)); sync(false); });
+      // D07 — `facetset { selected }`: the multi-select counterpart. Values this facet does not
+      // have are ignored rather than clearing it, so a stale link degrades to a working page.
+      ff.addEventListener('facetset', (e) => {
+        const sel = ((e as CustomEvent).detail || {}).selected as string[] | undefined;
+        if (!Array.isArray(sel)) return;
+        const want = new Set(sel);
+        if (!opts.some((o) => want.has(o.value))) return;
+        opts.forEach((o) => (o.checked = want.has(o.value)));
+        sync();
+      });
+      sync(false);
+    });
+  }
+  wireFacets();
+  document.addEventListener('astro:after-swap', wireFacets);
+</script>

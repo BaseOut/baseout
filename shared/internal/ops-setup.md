@@ -93,36 +93,49 @@ Staging + production bindings are deferred to a follow-up openspec change
 (those Workers aren't deployed yet — declaring the binding now would
 fail-resolve at deploy).
 
-### Local dev: deploying baseout-server-dev
+### Local engine binding (align with live Openside Workers)
+
+**Account reality (2026-08-20):** Production Workers are named **`baseout-web`**
+and **`baseout-server`**. Env separation on the account is Cloudflare
+**Production vs Previews** on those scripts — not a parallel
+`baseout-server-dev` Worker. Web’s `BACKUP_ENGINE` service binding must target
+**`baseout-server`**.
 
 apps/web runs `wrangler dev --remote` to keep real R2/KV/Hyperdrive/email
-bindings during local dev. `--remote` runs the Worker on Cloudflare's edge,
-which refuses outbound `fetch()` to RFC1918/loopback (so `http://localhost:4341`
-returns 403). The service binding sidesteps this — but it has to resolve to a
-real deployed Worker.
+bindings. `--remote` refuses RFC1918/loopback `fetch()`, so the service binding
+must resolve to a real deployed Worker.
 
-**One-time setup (per developer):**
+**Do this (local smoke):**
 
 ```sh
-# 1. Set the three required Cloudflare Secrets on the dev env:
-pnpm --filter @baseout/server exec wrangler secret put INTERNAL_TOKEN --env dev
-pnpm --filter @baseout/server exec wrangler secret put BASEOUT_ENCRYPTION_KEY --env dev
-pnpm --filter @baseout/server exec wrangler secret put DATABASE_URL --env dev
-# (Values: pull from your local apps/server/.dev.vars — same secrets the
-#  team's existing dev DB uses. INTERNAL_TOKEN must match apps/web's
-#  BACKUP_ENGINE_INTERNAL_TOKEN; BASEOUT_ENCRYPTION_KEY must match apps/web's.)
+# Point at the live engine (already set in wrangler.jsonc.example).
+# Re-render local wrangler.jsonc if needed:
+pnpm --filter @baseout/web exec node --env-file-if-exists=.env scripts/launch.mjs dev
 
-# 2. Deploy:
-pnpm --filter @baseout/server deploy:dev
+# Only if you need a newer engine build on the LIVE script name:
+pnpm --filter @baseout/server deploy
+# → deploys top-level name `baseout-server` (matches dashboard / DO namespaces)
 
-# 3. Sanity check:
-curl https://baseout-server-dev.openside.workers.dev/api/health           # → 200 + JSON liveness
-curl -X POST https://baseout-server-dev.openside.workers.dev/api/internal/ping  # → 401 unauthorized (proves the gate is live)
+# Then:
+pnpm dev   # or pnpm dev:web (+ local server if you want :8787 too)
 ```
 
-**When to redeploy:** any time `apps/server` source changes that touch
-the test-connection probe path or any `/api/internal/*` route the dev
-flow exercises. The redeploy takes ~10 seconds.
+**Avoid `deploy:dev` for smoke.** `wrangler deploy --env dev` publishes
+`baseout-server-dev`, which hits Durable Object namespace conflicts
+(`baseout-server-dev_ConnectionDO` already in use — CF 10065) and is not the
+Worker Production’s `BACKUP_ENGINE` binding uses.
+
+**Secrets:** `INTERNAL_TOKEN` on `baseout-server` must match web’s
+`BACKUP_ENGINE_INTERNAL_TOKEN`; `BASEOUT_ENCRYPTION_KEY` must match web’s.
+Prefer `.dev.vars` + the server’s secrets sync for the script you actually
+deploy (`pnpm --filter @baseout/server deploy`), not `--env dev`.
+
+**Health checks:** `*.openside.workers.dev` may have Access policies — a bare
+`curl` can return CF 1042 / Access HTML even when the Worker is healthy.
+Prefer dashboard Visit / an authenticated session, or Test connection in the app.
+
+**When to redeploy `baseout-server`:** any time `apps/server` source changes
+that touch `/api/internal/*` routes the local web flow exercises.
 
 **Gotcha — `remote: true` is required on the service binding.** Modern
 Wrangler (4.x) doesn't wire service bindings to deployed sibling Workers
@@ -130,7 +143,7 @@ during local dev unless the binding entry sets `"remote": true`, even under
 the legacy `wrangler dev --remote` flag. Without it, `binding.fetch()`
 returns 403 from Cloudflare's edge. The flag is local-dev-only — deployed
 Workers always resolve the binding to the named sibling regardless. See
-`apps/web/wrangler.jsonc.example` for the canonical shape.
+`apps/web/wrangler.jsonc.example` for the canonical shape (`baseout-server`).
 
 **Verifying the binding is healthy end-to-end:**
 
@@ -138,10 +151,11 @@ Workers always resolve the binding to the named sibling regardless. See
 2. Click **Test connection** on the Airtable card.
 3. Expected: `Connected. Airtable user: …` (success), or
    `airtable_token_rejected` (token expired — reconnect Airtable to verify).
-4. If you see `engine_unreachable` / 503, redeploy via `pnpm --filter @baseout/server deploy:dev`.
-5. If you see `unauthorized` / 502, the `INTERNAL_TOKEN` on apps/server doesn't
-   match `BACKUP_ENGINE_INTERNAL_TOKEN` on apps/web — re-run `wrangler secret put`
-   on the side that's wrong.
+4. If you see `engine_unreachable` / 503, redeploy the live engine via
+   `pnpm --filter @baseout/server deploy` (not `deploy:dev`).
+5. If you see `unauthorized` / 502, the `INTERNAL_TOKEN` on `baseout-server`
+   doesn't match `BACKUP_ENGINE_INTERNAL_TOKEN` on apps/web — sync secrets
+   from `.dev.vars` onto the script you actually deploy.
 
 **Hyperdrive (apps/server only):** the binding is currently commented out
 in `apps/server/wrangler.jsonc`. Until provisioned, the runtime falls back

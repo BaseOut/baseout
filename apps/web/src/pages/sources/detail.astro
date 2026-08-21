@@ -17,10 +17,14 @@ const spaceName = account?.space?.name ?? 'this Space';
 
 const state =
   orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
-const source = toSourceSummary(state, spaceId ?? 'space', spaceName);
+const sourceBase = toSourceSummary(state, spaceId ?? 'space', spaceName);
 
 // No source for this Space → nothing to manage; send back to the registry.
-if (!source) return Astro.redirect('/sources');
+if (!sourceBase) return Astro.redirect('/sources');
+
+// S25-F2 — preserve the typed name across needs_connection → Connect round-trips (?name=).
+const nameOverride = Astro.url.searchParams.get('name')?.trim();
+const source = nameOverride ? { ...sourceBase, name: nameOverride } : sourceBase;
 
 const reconnected = Astro.url.searchParams.get('reconnected') === '1';
 const breadcrumbs = getBreadcrumbs('/sources');

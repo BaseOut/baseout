@@ -37,7 +37,7 @@
   // the Hyperdrive `id`.
   //
   // The `id` REUSES the shared dev Hyperdrive that baseout-dev and
-  // baseout-server-dev already point at — Workers referencing the same config
+  // baseout-server already point at — Workers referencing the same config
   // share one origin pool (capped at 15 conns against dev PG's ~19 usable).
   // Do NOT create a separate Hyperdrive config for admin: that would add a
   // second 15-conn pool and saturate the cluster (the 2026-07-08 "backups
@@ -65,14 +65,14 @@
   // Backup engine — staff actions (force backup, invalidate connection) call
   // the server's INTERNAL_TOKEN-gated /api/internal/runs/:id/{start,cancel}.
   // Mirrors apps/web's binding: `remote: true` makes local `astro dev` proxy
-  // to the deployed baseout-server-dev Worker (same account, resolves
+  // to the deployed baseout-server Worker (same account, resolves
   // natively when deployed). Requires BACKUP_ENGINE_INTERNAL_TOKEN in
   // .dev.vars (same value as web's — see .dev.vars.example). Without the
   // binding/token, force-backup 503s and invalidate skips run cancels.
   "services": [
     {
       "binding": "BACKUP_ENGINE",
-      "service": "baseout-server-dev",
+      "service": "baseout-server",
       "remote": true
     }
   ],

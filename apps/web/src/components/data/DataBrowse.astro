@@ -1,0 +1,2374 @@
+---
+/**
+ * DataBrowse — the Browse tab of the Data page. The record-grid counterpart to
+ * SchemaBrowse: it pages through the *rows* inside the selected table.
+ *
+ * Iteration 2 (Dan 2026-07-15): the grid is wrapped in the VIEWS/TABS shell
+ * (`pattern-data-views`) — a set of saved configurations (table + filters + visible
+ * fields + sort) shown either as tabs-on-top or a sidebar rail, switchable via a toggle.
+ * The toolbar controls ARE the active view's config: the Base/Table pickers, the typed
+ * `+ Filter` (`pattern-field-filter`), the "Fields" show/hide picker (`pattern-fields-picker`,
+ * renamed from Columns and moved LEFT), an in-table search (no cross-table scope — that is a
+ * deferred later master-search modal), and Export. Read-only.
+ *
+ * The body renders client-side from an embedded JSON snapshot (rows are not server-rendered).
+ *
+ * WHY THIS TABLE IS NOT `ui/Table.astro`, decided 2026-08-15 by reading the code rather than by
+ * counting hold-outs. The vessel's guarantee is that a caller CANNOT write a `<th>`: it takes a
+ * static `columns: TableColumn[]` in frontmatter and renders the whole `<thead>` itself. This grid's
+ * header is not a static set that gets its labels rewritten — the SET ITSELF is a function of
+ * runtime state the server has never seen:
+ *
+ *   · `renderHead()` (below) sets `thead.innerHTML` outright. Anything the vessel server-rendered is
+ *     gone on the first paint, so all five of its guarantees — `scope="col"`, the sort `<button>`,
+ *     the computed `data-sort-col`, `aria-sort`, `.tbl-colhead` — would survive exactly zero renders.
+ *   · The column set changes on every field toggle (`v.hiddenCols` DROPS the `<th>`), every
+ *     drag-reorder (`orderedColIds()` / `colOrder`), every Record-ID toggle (the `REC` pseudo-column),
+ *     every table switch and every preset switch — and the ACTIVE preset is restored from
+ *     localStorage, so even the first paint's column set is not knowable in frontmatter.
+ *   · The sort key is the FIELD ID (`data-dg-sort="${f.id}"`), deliberately, because a column's index
+ *     moves when you hide or reorder one. The vessel's `data-sort-col=<array index>` is the right
+ *     answer for a fixed header and the wrong one for a reorderable grid.
+ *   · A `<th>` here is a field-type icon + name + live sort caret. `labelSlot` covers "a header that
+ *     carries an affordance", but it is one static value per column in frontmatter — it cannot be
+ *     regenerated per render.
+ *
+ * So this is contract.ts outcome (b): the vessel cannot express a RUNTIME header, and forcing it
+ * would ship a header that is server-correct for one frame and hand-written thereafter — strictly
+ * worse than the honest hand-written one, because it would also read as migrated. What this file
+ * DOES take from the vessel is everything not gated on the static `columns` array: `.tbl-colhead` on
+ * the `<thead>`, `.tbl-frame` and `data-narrow-pan` on the wrapper, and the shared `TablePager`.
+ * Closing the gap for real needs a runtime-header extension to the shared vessel — Oleh's call, not
+ * a migrator's.
+ */
+import FacetFilter from '../schema/FacetFilter.astro';
+import ExportControl from '../patterns/ExportControl.astro';
+import Alert from '../ui/Alert.astro';
+import TablePager from '../ui/TablePager.astro';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from '../schema/airtableFieldIcons';
+import type { DataBase, DataTable, DataRecord, DataComment, SavedView, ViewGroup } from './dataTypes';
+
+interface Props {
+  bases: DataBase[];
+  tables: DataTable[];
+  records: DataRecord[];
+  /** Captured Airtable record comments across the Space (comments-explorer) — used ONLY to derive
+   *  which record ids have at least one comment, for the Comments filter. Not rendered here. */
+  comments?: DataComment[];
+  /** Saved Browse views (iteration-2 Views/Tabs shell); the shell seeds its bar/rail from these. */
+  views?: SavedView[];
+  /** Thematic groups (folders) the saved views are filed under. */
+  viewGroups?: ViewGroup[];
+  /** Which table Browse opens on (defaults to the first). The `big` fixture points here. */
+  landingTableId?: string;
+  /** Active Space id — client cursor pages hit `/api/spaces/:spaceId/data/records`. */
+  spaceId?: string;
+  /** Primary field id per table (maps proxy `DataRecordRow` → grid Rec). */
+  primaryByTable?: Record<string, string | undefined>;
+  /** SSR page-1 nextCursor for the landing table (`null` = exhausted). */
+  recordsNextCursor?: string | null;
+  /** Async surface state. In production the grid streams row windows over a cursor, so a fetch can be
+   *  in-flight ('loading') or fail ('error'). The harness sets this via ?fixture=loading|error. */
+  loadState?: 'ready' | 'loading' | 'error';
+}
+const {
+  bases,
+  tables,
+  records,
+  comments = [],
+  views = [],
+  viewGroups = [],
+  landingTableId,
+  spaceId,
+  primaryByTable = {},
+  recordsNextCursor,
+  loadState = 'ready',
+} = Astro.props;
+const landing = tables.find((t) => t.id === landingTableId) ?? tables[0];
+
+// Comment-presence filter (comments-explorer): derive the SET of record ids with at least one
+// captured comment once, up front — never recomputed per row. A record absent from `comments` has
+// none; that is a fact of the capture, not a guess.
+const commentedRecordIds = Array.from(new Set(comments.map((c) => c.recordId)));
+
+// Base picker = a single-select facet of bases. Table picker = a single-select facet of
+// ALL tables grouped by base; the controller narrows its rows to the chosen base and keeps
+// the two in sync. Both are the real FacetFilter, so the bar reads like Schema's.
+const baseGroups = [{ items: bases.map((b) => ({ value: b.id, label: b.name })) }];
+const tableGroups = bases.map((b) => ({ label: b.name, items: tables.filter((t) => t.baseId === b.id).map((t) => ({ value: t.id, label: t.name })) }));
+
+// Save/Discard/lock/Draft model (Dan 2026-07-23): the first Save locks a preset's Base + Table.
+// The initial paint locks the scope pickers when the view that opens on load is already saved —
+// the client script (syncFacetsToActive) re-syncs this the moment it hydrates, same as it already
+// does for the trigger label/selection above.
+const LOCK_REASON = "Locked — this preset is saved. Duplicate it, or start a new one, to use another table.";
+const initialView = views.find((v) => v.pinned) ?? views[0];
+const initialLocked = !!initialView?.saved;
+
+// Embedded snapshot the client grid renders from (tables + records + base names + views).
+// `cursors` seeds SSR page-1 for the landing table; further pages + other tables fetch via the proxy.
+// Server-side filters are deferred — client filter/sort/search stay on accumulated rows.
+const snapshot = {
+  spaceId: spaceId ?? '',
+  primaryByTable,
+  cursors: landing && recordsNextCursor !== undefined ? { [landing.id]: recordsNextCursor } : ({} as Record<string, string | null>),
+  baseName: Object.fromEntries(bases.map((b) => [b.id, b.name])),
+  tables: tables.map((t) => ({ id: t.id, baseId: t.baseId, name: t.name, approx: t.approxRecordCount, fields: t.fields })),
+  records: records.map((r) => ({ id: r.id, tableId: r.tableId, primary: r.primary, cells: r.cells, linked: r.linked })),
+  landing: landing?.id ?? '',
+  views,
+  viewGroups,
+  commentedRecordIds,
+};
+
+// Server-render the field-type icon so the column headers match Schema's field icons.
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+---
+
+<section class="dg" data-databrowse data-dg-loadstate={loadState}>
+  {/* ── Views shell — a COLLAPSIBLE left library (search · groups · ungrouped) + a horizontal
+      PIN-BAR of the pinned working set over the grid. Collapsing hides the library entirely; a
+      "Views" reopen button then leads the pin-bar row. ── */}
+  <div class="dv-shell" data-dv-shell>
+    <aside class="dv-rail" data-dv-rail aria-label="Presets">
+      {/* Full library (expanded state). */}
+      <div class="dv-railfull">
+        <label class="input input-sm dv-railsearch">
+          <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+          <input type="search" data-dv-search placeholder="Find a preset…" aria-label="Find a preset" autocomplete="off" />
+        </label>
+        <div class="dv-railhead">
+          <button type="button" class="btn btn-sm btn-soft btn-primary gap-1.5 dv-newbtn" data-dv-new>
+            <span class="iconify lucide--plus size-4" aria-hidden="true"></span>New preset
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost btn-square dv-newgroup tooltip tooltip-bottom" data-dv-newgroup aria-label="New group" data-tip="New group">
+            <span class="iconify lucide--folder-plus size-4" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="dv-raillist" data-dv-raillist role="tablist"></div>
+      </div>
+    </aside>
+
+    {/* Dim behind the library SHEET (narrow sections only — display:none otherwise). Scoped to this
+        console, not the app: nothing outside the section is suspended. Click = close, like Escape. */}
+    <div class="dv-raildim" data-dv-raildim></div>
+
+    <div class="dv-main">
+      {/* Pin-bar — the horizontal working set (variant pinbar). JS-rendered; when the library is
+          collapsed, a "Views" reopen button leads the row as its first item. */}
+      <div class="dv-pinbar" data-dv-pinbar role="tablist" aria-label="Open presets"></div>
+
+      {/* Toolbar. Base → Table pickers lead (the primary "what am I viewing"), then the typed
+          + Filter and the Fields show/hide picker — all LEFT, because they are the view's
+          config. The right cluster is count · search (in-table) · layout toggle · Export. */}
+      <div class="sch-tb">
+        <FacetFilter single alwaysActive triggerIcon="lucide--database" label="Base" name="dbbase" groups={baseGroups} disabled={initialLocked} lockReason={LOCK_REASON} />
+        <FacetFilter single alwaysActive triggerIcon="lucide--table-2" label="Table" name="dbtable" groups={tableGroups} disabled={initialLocked} lockReason={LOCK_REASON} />
+
+        {/* + Filter — the typed field filter (pattern-field-filter), in the app's filter
+            language. JS-controlled open/close (a native <select>'s OS popup would collapse a
+            focus-dropdown), closing on Cancel / Add / Esc / outside. */}
+        {/* `data-tbf-w`: this condition builder was designed at 660 (`.dg-fbpop` below) and the drill
+            pane is 320, where its field / operator / value row wraps the moment a second
+            condition exists. The number lives beside the panel it describes rather than as a
+            special case inside the folding logic. */}
+        <div class="ff dg-filterdd" data-dg-filterdd data-tbf-key="filter" data-tbf-w="660">
+          <button type="button" class="btn btn-sm gap-1.5 ff-trigger" data-dg-filter-toggle aria-label="Add filter" aria-expanded="false">
+            <span class="iconify lucide--plus size-3.5" aria-hidden="true"></span>Filter
+            <span class="badge badge-sm badge-primary ff-count dg-filterbadge" data-dg-filterbadge hidden></span>
+            <span class="iconify lucide--chevron-down size-3 opacity-55" aria-hidden="true"></span>
+          </button>
+          <div class="ff-panel dg-filterpop dg-fbpop" data-dg-filterpop hidden>
+            <div class="dg-fb-head">In this preset, show records</div>
+            <div class="dg-fb-tree" data-dg-fbtree></div>
+            <div class="dg-fb-foot">
+              <button type="button" class="btn btn-sm btn-ghost gap-1.5 dg-fb-footbtn" data-dg-fbaddcond><span class="iconify lucide--plus size-3.5" aria-hidden="true"></span>Add condition</button>
+              <button type="button" class="btn btn-sm btn-ghost gap-1.5 dg-fb-footbtn" data-dg-fbaddgroup><span class="iconify lucide--folder-plus size-3.5" aria-hidden="true"></span>Add condition group</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Comment-presence filter (comments-explorer) — a tri-state facet beside + Filter, NOT a
+            pseudo-field inside the field-filter tree (comment presence isn't a table field). Owned
+            by the preset like everything else in this toolbar: participates in Save/Discard/Clear. */}
+        <FacetFilter single labelTrigger label="Comments" name="dgcomments" groups={[{ items: [
+          { value: 'all', label: 'All records' },
+          { value: 'with', label: 'With comments' },
+          { value: 'without', label: 'Without comments' },
+        ] }]} />
+
+        {/* Fields show/hide — "Fields" (Airtable's term, renamed from Columns), a VIEW setting so
+            it sits LEFT with the pickers. Three searchable sub-tabs: Names / Types / Categories. */}
+        <div class="ff dg-fieldsdd" data-dg-fieldsdd data-tbf-key="fields">
+          <button type="button" class="btn btn-sm gap-1.5 ff-trigger" data-dg-fields-toggle aria-label="Fields" aria-expanded="false">
+            {/* The FIELD concept icon, not the table one — this picker chooses fields, and wearing the
+                table glyph made it read as a second table selector (Oleh 2026-07-23). `lucide--tag
+                concept-ic-field` is what a field is rendered with everywhere else in the app. */}
+            <span class="iconify lucide--tag concept-ic-field size-3.5" aria-hidden="true"></span>Fields
+            <span class="badge badge-sm badge-primary ff-count dg-fieldsbadge" data-dg-fieldsbadge hidden></span>
+            <span class="iconify lucide--chevron-down size-3 opacity-55" aria-hidden="true"></span>
+          </button>
+          <div class="ff-panel dg-fieldspop" data-dg-fieldspop hidden>
+            <div class="dg-fieldstabs sb-segtrack sb-segtrack-sm" role="tablist" aria-label="Fields view">
+              <button type="button" class="sb-seg sb-seg-on" role="tab" aria-selected="true" data-dg-fieldstab="names">Names</button>
+              <button type="button" class="sb-seg" role="tab" aria-selected="false" data-dg-fieldstab="types">Types</button>
+              <button type="button" class="sb-seg" role="tab" aria-selected="false" data-dg-fieldstab="cats">Categories</button>
+            </div>
+            <label class="input input-sm dg-fieldssearch">
+              <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+              <input type="search" data-dg-fields-search placeholder="Search fields…" aria-label="Search fields" autocomplete="off" />
+            </label>
+            <div class="dg-fieldslist" data-dg-fieldslist></div>
+          </div>
+        </div>
+
+
+
+        {/* The divider sits HERE (Oleh 2026-07-23), after the Fields picker rather than after the scope
+            pickers: it should cut between what the preset IS — scope · filter · fields — and what you DO
+            to it — Save · Discard · Clear · the actions menu. Cutting it earlier grouped the filter with
+            the actions, which is not how the row reads. */}
+        <span class="sch-tb-div" aria-hidden="true"></span>
+
+        {/* Save / Discard — real toolbar markup (Dan 2026-07-23), hidden by default and toggled by
+            the client script once the active preset's config is computed to differ from its saved
+            baseline (see isDirty()). Save = Primary; Discard = Tertiary/ghost; each states its own
+            job in a tooltip so the two adjacent buttons never get confused for one another. */}
+        <button type="button" class="btn btn-sm btn-primary gap-1.5 tooltip tooltip-bottom" data-dv-save hidden data-tip="Save the current filters, fields, sort and search to this preset">
+          <span class="iconify lucide--save size-3.5" aria-hidden="true"></span>Save preset
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5 tooltip tooltip-bottom" data-dv-discard hidden data-tip="Return to the last saved state">
+          {/* `sch-tb-lbl` so the word drops with every other secondary label at the same section
+              width. Both of these already carry a tooltip, which is what the word becomes. `Save
+              preset` deliberately keeps its words — the primary action is the one you should never
+              have to hover to identify. */}
+          <span class="iconify lucide--undo-2 size-3.5" aria-hidden="true"></span><span class="sch-tb-lbl">Discard</span>
+        </button>
+
+        <button type="button" class="btn btn-sm btn-ghost dg-clear gap-1 tooltip tooltip-bottom" data-dg-clear hidden data-tip="Empty this preset's filter">
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span><span class="sch-tb-lbl">Clear</span>
+        </button>
+
+        {/* Preset actions — the SAME menu the library row's kebab opens (Oleh 2026-07-23): rename,
+            duplicate, move to a group, delete. It carries `data-dv-kebab`, so the existing delegated
+            handler routes it through popMenu() and there is no second menu to drift out of sync — the
+            id is stamped on every renderViews(). Without it the toolbar read as truncated and you had
+            to open the library panel just to delete the preset you are looking at. */}
+        <button type="button" class="btn btn-sm btn-ghost btn-square tooltip tooltip-bottom" data-dv-kebab="" data-dv-tbkebab aria-label="Preset actions" data-tip="Rename, duplicate, move or delete this preset">
+          <span class="iconify lucide--ellipsis size-4" aria-hidden="true"></span>
+        </button>
+
+        {/* Right cluster — search (in-table only) · layout toggle · Export. The row count now lives
+            in the pager below the grid (pattern-table-toolbar) — a single `1–50 of N` reading beats
+            two counters that could disagree. */}
+        <div class="sch-tb-right">
+          <label class="input input-sm sch-tb-search dg-search">
+            <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+            <input type="search" data-dg-search data-sch-search placeholder="Search this table…" aria-label="Search records" autocomplete="off" spellcheck="false" />
+            <kbd class="kbd kbd-sm dg-kbd" aria-hidden="true">/</kbd>
+          </label>
+
+          <span class="sch-tb-div" aria-hidden="true"></span>
+
+          <ExportControl tab="data-browse" format="csv" noun="records" total={landing?.approxRecordCount ?? 0} rowSelector="[data-dg-tbody] tr" />
+        </div>
+      </div>
+
+      {/* The grid — rendered client-side; window is the current page (pattern-table-toolbar). */}
+      <div class="tbl-frame dg-wrap" data-dg-wrap data-grid-fit data-narrow-pan>
+        <table class="table table-sm text-sm dg-table" data-dg-table>
+          <thead class="tbl-colhead" data-dg-thead></thead>
+          <tbody data-dg-tbody></tbody>
+        </table>
+      </div>
+
+      {/* Pager — same construction as Backups (pattern-table-toolbar): rows-per-page select +
+          range/total + prev/next. Default page size is per-surface (Backups 20, here 50 — a
+          record-grid row already fills ~50 on screen); the control itself is shared. Page size is
+          a user preference (its own localStorage key below), never part of a preset's saved config. */}
+      <TablePager name="dg" sizes={[25, 50, 100]} selected={50} />
+
+      {/* No-match empty state. */}
+      <div class="dg-empty" data-dg-empty hidden>
+        <span class="iconify lucide--search-x size-6 opacity-40" data-dg-empty-ic aria-hidden="true"></span>
+        <p data-dg-empty-msg>No records match your filters.</p>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-dg-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+      </div>
+
+      {/* Loading skeleton — a row-window fetch is in flight (prod streams windows over a cursor). */}
+      <div class="dg-skeleton" data-dg-skeleton hidden aria-hidden="true">
+        {Array.from({ length: 8 }).map(() => (
+          <div class="dg-skel-row">
+            <div class="skeleton h-4 w-44"></div>
+            <div class="skeleton h-4 w-28"></div>
+            <div class="skeleton h-4 w-36"></div>
+            <div class="skeleton h-4 w-20"></div>
+          </div>
+        ))}
+      </div>
+
+      {/* Load error — Alert vessel + showAlert (D42 write/reveal); Retry recovers in-context. */}
+      <div class="dg-empty dg-error" data-dg-error-panel hidden>
+        <Alert id="dg-load-error" severity="error" trigger="runtime" hidden message="" class="dg-error-alert" />
+        <button type="button" class="btn btn-sm btn-primary gap-1.5" data-dg-retry><span class="iconify lucide--rotate-ccw size-3.5" aria-hidden="true"></span>Retry</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script type="application/json" data-dg-snapshot set:html={JSON.stringify(snapshot)} />
+{/* Field icons for the header, keyed by type — read by the client renderer. */}
+<script type="application/json" data-dg-icons set:html={JSON.stringify(Object.fromEntries(tables.flatMap((t) => t.fields).map((f) => [f.type, fieldIconSvg(f.type)])))} />
+
+<style is:global>
+  /* Global (unique .dg-/.dv- prefix): the grid rows, fields list, views bar/rail are injected
+     via innerHTML, which Astro's scoped styles never reach. */
+  /* Pull the Browse content up to the section-tabs baseline (cancel the DataView `.sch` 1rem gap)
+     and restore the breathing room as INTERNAL top padding — so the library's vertical divider
+     (its own border-right) reaches all the way up to the horizontal tab line, no gap. */
+  .dg { display: flex; flex-direction: column; gap: 12px; margin-top: -1rem; }
+
+  /* ── Views shell — collapsible left library + main column. ─────── */
+  .dv-shell { display: flex; flex-direction: row; align-items: stretch; min-width: 0; }
+  /* padding-top restores the space under the tab line that the negative .dg margin removed. */
+  .dv-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; flex: 1; padding-top: 1rem; }
+  /* A vertical hairline separates the library from the main content (the Docs meta-rail idiom).
+     The panel collapses by ANIMATING its width + spacing to 0 (not display:none), so it slides. */
+  /* TOP ALIGNMENT (Oleh, 2026-08-17: «воно зараз навіть не на рівні з елементами справа»). The panel
+   is a sibling of `.dv-main` in one flex row, and `.dv-main` carries `padding-top: 1rem` \u2014 so its
+   first content (the tab row) starts 16px down while the panel BORDER started at 0, putting the card
+   16px above everything beside it. Measured: panel edge 161, tab row 177.
+   The fix is the same 1rem, moved from padding to MARGIN: the panel edge now starts where the tab
+   row starts, and the inside gets the pattern\u2019s uniform 12px like every other panel. Not a new
+   number \u2014 the one `.dv-main` already uses. */
+  .dv-rail { position: relative; flex: none; width: var(--rail-s); margin-right: 16px; margin-top: 1rem; overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: var(--r-12); padding: 12px; transition: width .2s ease, margin-right .2s ease, opacity .2s ease; }
+  /* Extend the divider UP through the panel gap so it meets the section-tabs baseline (a clean
+     T-junction). 1rem = the DataView `.sch` gap between the tab bar and the browse panel. */
+  /* Fixed width so the library keeps its layout (no text reflow) while the rail animates to 0.
+     padding-top matches .dv-main so the search sits under the tab line while the border reaches it. */
+  .dv-railfull { flex: none; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .dv-railsearch { width: 100%; }
+  /* BUTTON-OPPOSITE-BUTTON, the second half of Oleh's alignment note. With the panel edge level
+     with the tab row, `New preset` still sat 5px below `Filter`: the right column opens with a 36px
+     tab row + a 12px gap = 48px, the panel with 13px of chrome (1px border + 12px padding) + a 32px
+     search + an 8px gap = 53px. Pulling this row up 4px \u2014 the grid step, not the exact 5 \u2014 lands it
+     within 1px, which is a border's width. Applied HERE rather than by shrinking `.dv-railfull`'s
+     gap, so the list below keeps its own rhythm. */
+  .dv-railhead { display: flex; align-items: center; gap: 8px; margin-top: -4px; }
+  .dv-newbtn { flex: 1; justify-content: center; }
+  .dv-newgroup { flex: none; border: 1px solid var(--color-base-300); }
+  .dv-raillist { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
+
+  /* Pin-bar — a horizontal working-set strip of soft PILLS over the grid (no band border;
+     hidden when empty). The library collapses fully; the "Views" reopen leads the pin-bar row. */
+  /* Constant row height + centered items so nothing jumps a few px when the panel toggles. */
+  /* Chrome-style tab strip: tabs sit on a baseline; the active tab is a lifted card that breaks the line. */
+  /* Baseline drawn as the strip's BACKGROUND (a 1px line at the bottom) rather than a border, so the
+     active tab's opaque bg paints over it (breaking the line under the active tab) — immune to the
+     overflow-x clip that would swallow a negative-margin overhang. */
+  /* The bar itself must NOT clip (the ＋'s tooltip lives here) and needs its own stacking context so
+     that tooltip clears the grid below, whose sticky header/row layers sit at 30/40. The horizontal
+     scrolling moved to the inner .dv-tabscroll. */
+  /* `flex: 0 1 auto` — the strip is only as wide as its tabs, so the ＋ sits IMMEDIATELY after the last
+     one (flex:1 stretched it and shoved ＋ to the far edge); it still shrinks and scrolls once the tabs
+     overflow, because min-width:0 lets it. `overflow-y: hidden` is required: with overflow-x:auto the
+     other axis computes to auto and rendered a stray vertical scrollbar. */
+  /* `hidden`, not `auto`. The row used to scroll, which hid its own overflow: nothing said there were
+     more presets off to the right, and reaching one meant finding a 4px scrollbar. `fitPinbar()` now
+     decides what fits and the rest goes behind the counted chip. */
+  .dv-tabscroll { flex: 0 1 auto; min-width: 0; display: flex; align-items: flex-end; gap: 2px; overflow: hidden; }
+  /* `.dv-tab` sets `display: inline-flex`, which beats the `[hidden]` UA rule outright. */
+  .dv-tab[hidden] { display: none; }
+  .dv-pinmore { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 2rem; padding: 0 8px; margin-left: 4px; border: 0; border-radius: 8px 8px 0 0; background: none; cursor: pointer; font-size: var(--t-12); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  .dv-pinmore:hover { background: oklch(from var(--color-base-200) l c h / .55); color: var(--color-base-content); }
+  .dv-pinmore[hidden] { display: none; }
+
+
+  .dv-pinbar { position: relative; z-index: 60; display: flex; align-items: flex-end; gap: 2px; min-height: 2.25rem; padding-top: 4px; background: linear-gradient(to top, var(--color-base-300) 1px, transparent 1px); } /* ds-ok: 2px gap = Chrome-tight tab seam */
+  .dv-pinbar:empty { display: none; }
+  /* Collapsed: the library slides to zero width (animated); the "Views" toggle still leads the row. */
+  .dg[data-collapsed="1"] .dv-rail { width: 0; margin-right: 0; padding-left: 0; padding-right: 0; opacity: 0; border-color: transparent; }
+  /* The "Views" panel toggle — leads the pin-bar in both states; same height as the pills. */
+  .dv-pinreopen { flex: none; display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; margin-right: 4px; border: 0; border-right: 1px solid var(--color-base-300); background: none; cursor: pointer; font-size: var(--t-13); font-weight: 550; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  .dv-pinreopen:hover { color: var(--color-base-content); }
+
+  /* Section label (Ungrouped) — quiet uppercase, shared by rail + the "+" presets popover. */
+  .dv-seclabel { font-size: var(--t-11); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); padding: 8px 8px 2px; }
+
+  /* Group header — collapse caret + name + count + kebab. */
+  .dv-grouphead { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 4px; border-radius: var(--r-8); }
+  .dv-grouphead:hover { background: oklch(from var(--color-base-200) l c h / .55); }
+  .dv-groupcaret { display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .dv-groupcaret:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .dv-groupname { flex: 1; min-width: 0; font-size: var(--t-12); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dv-groupcount { font-size: var(--t-11); font-variant-numeric: tabular-nums; color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .dv-groupbody { display: flex; flex-direction: column; gap: 2px; padding-left: 12px; }
+  .dv-groupbody[hidden] { display: none; }
+  .dv-groupempty { font-size: var(--t-11); color: oklch(from var(--color-base-content) l c h / .65); padding: 8px; }
+
+  /* A view row — shared by the rail sections AND the tabs "All views" popover. */
+  .dv-vrow { display: flex; align-items: center; gap: 8px; border-radius: var(--r-8); padding: 0 4px 0 8px; min-height: 2rem; cursor: pointer; }
+  .dv-vrow:hover { background: oklch(from var(--color-base-200) l c h / .65); }
+  .dv-vrow.dv-active { background: oklch(from var(--color-primary) l c h / .08); }
+  .dv-vrow-ic { flex: none; opacity: .5; display: inline-grid; place-items: center; }
+  .dv-vrow.dv-active .dv-vrow-ic { color: var(--color-primary); opacity: 1; }
+  .dv-vrow-name { flex: 1; min-width: 0; font-size: var(--t-13); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px 0; }
+  .dv-vrow.dv-active .dv-vrow-name { color: var(--color-primary); font-weight: 600; }
+  .dv-vrow.dv-open .dv-vrow-ic { color: var(--color-primary); opacity: .85; }
+  /* Drag affordance: a grip that fades in on hover (space reserved so nothing shifts). */
+  .dv-vrow-grip { flex: none; display: inline-grid; place-items: center; width: 12px; color: oklch(from var(--color-base-content) l c h / .35); cursor: grab; opacity: 0; transition: opacity .12s ease; }
+  .dv-vrow:hover .dv-vrow-grip { opacity: .7; }
+  .dv-vrow-dragging { opacity: .45; }
+  /* Group / Ungrouped drop zones — highlighted while a view is dragged over them. */
+  .dv-groupzone { border-radius: var(--r-8); border: 1px solid transparent; }
+  .dv-groupzone.dv-dropactive { border-color: color-mix(in oklch, var(--color-primary) 45%, transparent); background: oklch(from var(--color-primary) l c h / .08); }
+  .dv-ungroupzone-empty { display: none; }
+  .dv-rail-dragging .dv-ungroupzone-empty { display: block; }
+  .dv-ungroup-hint { font-style: italic; opacity: .7; }
+
+  /* Chrome-style tabs — rounded-TOP card, flat bottom; the active tab lifts to base-100 and its
+     -1px bottom margin paints over the strip's baseline so it "connects" to the content below. */
+  .dv-tab { flex: none; position: relative; display: inline-flex; align-items: center; gap: 8px; max-width: 15rem; height: 2rem; padding: 0 8px 0 12px; font-size: var(--t-13); font-weight: 500; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: none; color: oklch(from var(--color-base-content) l c h / .65); cursor: pointer; white-space: nowrap; }
+  .dv-tab:hover { background: oklch(from var(--color-base-200) l c h / .55); color: var(--color-base-content); }
+  .dv-tab.dv-active { background: var(--color-base-100); border-color: var(--color-base-300); color: var(--color-base-content); font-weight: 600; }
+  .dv-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* Pill kebab — HIDDEN until hover (reserves no width, so pills stay compact); revealed on
+     hover / keyboard focus only (not permanently on the active pill). */
+  .dv-tab-x, .dv-tab-kebab, .dv-tab-close { display: none; place-items: center; width: 18px; height: 18px; border: 0; background: none; border-radius: 999px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); }
+  .dv-tab:hover .dv-tab-kebab, .dv-tab:focus-within .dv-tab-kebab,
+  .dv-vrow:hover .dv-tab-kebab, .dv-vrow:focus-within .dv-tab-kebab,
+  .dv-grouphead:hover .dv-tab-kebab, .dv-grouphead:focus-within .dv-tab-kebab { display: inline-grid; }
+  /* Chrome-tab ✕: visible on hover/focus and always on the active tab. */
+  .dv-tab:hover .dv-tab-close, .dv-tab:focus-within .dv-tab-close, .dv-tab.dv-active .dv-tab-close { display: inline-grid; }
+  .dv-tab-x:hover, .dv-tab-kebab:hover, .dv-tab-close:hover { background: oklch(from var(--color-base-content) l c h / .16); color: var(--color-base-content); }
+  /* Pin-bar "+" — a blue glyph with NO fill (Oleh 2026-07-23). Same construction as our red `Clear`
+     (`btn-ghost` + a semantic text colour), so it is the documented Tertiary rung tinted primary, not a
+     new variant. It earns the colour: once a preset is saved its Base + Table lock, so ＋ New / Duplicate
+     is the ONLY route to another table — the entry point has to be findable. Box model comes from
+     `btn btn-sm btn-ghost btn-square text-primary`; only placement stays here. Still a plain button, not
+     a daisyUI dropdown, so the strip's horizontal overflow can't clip its menu. */
+  .dv-addbtn { flex: none; align-self: center; }
+
+  /* View-action dropdown menu (both layouts): the shared kebab-menu recipe. */
+  /* ── Local z-index scale (Oleh 2026-07-23, after three regressions in a row) ──────────────────
+     30 / 40  grid sticky header + row layers
+     50       .sch-tb toolbar (global.css) — so its tooltips clear the grid
+     60       .dv-pinbar — ABOVE the toolbar, because its ＋ tooltip opens DOWNWARD over it. Equal
+              z-index is not enough: on a tie the later element in DOM wins, and the toolbar comes
+              after the pin-bar, which is exactly how the ＋ tooltip ended up underneath it.
+     62 / 63  .dv-raildim / the preset library as a SHEET (narrow sections, lib/listSheet.ts) — above
+              the pin-bar, which is a sibling and would otherwise punch through the dim.
+     70       .dv-menu — body-attached popovers, above everything on the page.
+     Pick from this ladder rather than inventing another number. ────────────────────────────────── */
+  .dv-menu { z-index: 70; width: 11rem; padding: 4px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: var(--r-12); box-shadow: 0 8px 24px oklch(0 0 0 / .16); font-size: var(--t-13); }
+  .dv-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; background: none; border-radius: var(--r-8); cursor: pointer; text-align: left; font: inherit; color: var(--color-base-content); }
+  .dv-menu button:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .dv-menu button.dv-menu-danger { color: var(--color-error); }
+  .dv-menu-sep { height: 1px; margin: 4px 0; background: var(--color-base-200); }
+  .dv-menu-label { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); padding: 4px 8px 2px; } /* ds-ok: menu section label, matches app menu-title scale */
+  .dv-menu .dv-check { margin-left: auto; color: var(--color-primary); }
+  /* "+" add-preset menu — wider, with a search over a scrollable existing-presets list. */
+  .dv-addmenu { width: 15rem; max-width: 88vw; }
+  .dv-addsearch { width: 100%; margin: 4px 0 8px; }
+  .dv-addlist { max-height: 40vh; overflow-y: auto; }
+  .dv-menu-empty { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); padding: 8px; }
+  /* Inline rename input inside a tab / rail row / group header. */
+  /* Edit mode has to LOOK like edit mode: a primary ring and a caret, not a subtly different tab. */
+  .dv-renameinput { font: inherit; font-size: var(--t-13); border: 1px solid var(--color-primary); border-radius: var(--r-6); padding: 2px 8px; background: var(--color-base-100); color: var(--color-base-content); min-width: 6rem; width: 8rem; outline: 2px solid color-mix(in oklch, var(--color-primary) 35%, transparent); outline-offset: 1px; caret-color: var(--color-primary); }
+
+  /* + Filter popover — ff-panel chrome; JS-positioned state. */
+  .dg-filterdd, .dg-fieldsdd { position: relative; }
+  .dg-filterpop[hidden], .dg-fieldspop[hidden] { display: none; }
+  /* Filter builder — a nested condition tree (Airtable model) in the ff-panel chrome. */
+  .dg-fbpop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; width: 660px; max-width: 94vw; padding: 12px; }
+  .dg-fb-head { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-bottom: 8px; }
+  .dg-fb-tree { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
+  .dg-fb-empty { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); padding: 8px 4px; }
+  .dg-fb-row, .dg-fb-grouprow { display: flex; align-items: flex-start; gap: 8px; }
+  .dg-fb-conj { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 56px; height: 2rem; font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); }
+  .dg-fb-where { justify-content: flex-start; padding-left: 4px; color: oklch(from var(--color-base-content) l c h / .65); }
+  .dg-fb-conjsel { flex: none; width: 56px; padding-inline: 8px; color: var(--color-base-content); }
+  .dg-fb-inputs { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .dg-fb-field { flex: none; width: 150px; color: var(--color-base-content); }
+  .dg-fb-op { flex: none; width: 132px; color: var(--color-base-content); }
+  .dg-fb-val { flex: 1; min-width: 48px; color: var(--color-base-content); }
+  .dg-fb-val-none { flex: 1; }
+  .dg-fb-and { flex: none; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .dg-fb-acts { display: flex; align-items: center; gap: 2px; flex: none; height: 2rem; }
+  .dg-fb-iconbtn, .dg-fb-grip { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); }
+  /* Nested groups eat horizontal space — tighten their inner rows so the value never gets crushed. */
+  .dg-fb-group .dg-fb-conj, .dg-fb-group .dg-fb-conjsel { width: 48px; }
+  .dg-fb-group .dg-fb-field { width: 128px; }
+  .dg-fb-group .dg-fb-op { width: 108px; }
+  .dg-fb-iconbtn:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  .dg-fb-iconbtn[data-dg-fbdel]:hover { color: var(--color-error); }
+  .dg-fb-grip { cursor: grab; color: oklch(from var(--color-base-content) l c h / .35); }
+  .dg-fb-grip:active { cursor: grabbing; }
+  .dg-fb-dragging { opacity: .5; }
+  .dg-fb-group { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: oklch(from var(--color-base-200) l c h / .45); padding: 8px; }
+  .dg-fb-groupfoot { display: flex; }
+  .dg-fb-foot { display: flex; align-items: center; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-base-200); }
+
+  /* Fields picker popover — sub-tabs + search + list (ff-panel chrome). */
+  .dg-fieldspop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; width: 280px; max-width: 88vw; padding: 8px; }
+  /* Chrome + selected paint = the shared `.sb-segtrack` / `.sb-seg` (global.css, catalog
+     `pattern-segmented-control`, compact density). Only the popover's spacing is local. */
+  .dg-fieldstabs { margin-bottom: 8px; }
+  .dg-fieldssearch { width: 100%; margin-bottom: 8px; }
+  .dg-fieldslist { max-height: 44vh; overflow-y: auto; }
+  /* Column-reorder grips + drop indicator in the Names tab. */
+  .dg-fieldrow { position: relative; }
+  .dg-fieldgrip { flex: none; display: inline-grid; place-items: center; width: 16px; height: 20px; margin-left: -2px; margin-right: 2px; color: oklch(from var(--color-base-content) l c h / .35); cursor: grab; }
+  .dg-fieldgrip[draggable="true"]:hover { color: oklch(from var(--color-base-content) l c h / .65); }
+  .dg-fieldgrip[draggable="true"]:active { cursor: grabbing; }
+  .dg-fieldgrip-lock { cursor: default; }
+  .dg-fieldrow-dragging { opacity: .45; }
+  .dg-fieldrow.dg-drop-before::before, .dg-fieldrow.dg-drop-after::after { content: ""; position: absolute; left: 4px; right: 4px; height: 2px; background: var(--color-primary); border-radius: var(--r-4); z-index: 1; pointer-events: none; }
+  .dg-fieldrow.dg-drop-before::before { top: -1px; }
+  .dg-fieldrow.dg-drop-after::after { bottom: -1px; }
+
+  /* Search (right cluster) — in-table only (no scope prefix). */
+  /* Width only above the collapse threshold — below it the shared `.sch-tb-search` rule takes
+     over (pattern-collapsing-search). */
+  .dg-search { flex: none; width: 210px; max-width: 44vw; background: var(--color-base-100); }
+  .dg-kbd { opacity: .5; }
+  .dg-search:focus-within .dg-kbd { display: none; }
+
+  /* Grid — a scroll container with a sticky header; only the current page's rows are in the DOM. */
+  /* NO max-height (Oleh 2026-07-23): the table grows and the PAGE scrolls, the way Backups and Schema
+     Browse behave. Scrolling a table inside its own box made sense only while the grid loaded endlessly;
+     with a pager, 50 rows should simply extend the page. `overflow` stays for the HORIZONTAL axis — a
+     preset showing many fields is wider than the viewport — and because the height is now content-driven
+     the vertical axis never actually scrolls, so no inner scrollbar appears.
+     Consequence, deliberate: `thead th` below keeps `position: sticky` but can no longer pin, since
+     sticky resolves against this container's scrollport and that no longer scrolls vertically. Pinning
+     the header to the PAGE would mean dropping this wrapper, which would push the whole layout sideways
+     on a wide table. Getting both needs a separate header row synced to the body's horizontal scroll —
+     a real piece of work, not a property. */
+  /* ADOPTS `tbl-frame` (audit S06-F1). This declared its own border, radius and background — at
+     **11px** against the catalog's 12 — inside the surface `pattern-data-grid` names as the
+     reference the others should follow. Its two sibling tabs adopt the shared frame by name
+     (`DataMedia.astro`, `DataChangelog.astro`) and the entry says to: *"adopt them by name, never
+     re-declare them on a surface"*. What is left here is what is genuinely this grid's: it scrolls
+     in both axes and must not collapse. */
+  .dg-wrap { overflow: auto; min-width: 0; }
+  .dg-table { margin: 0; }
+  /* The LABEL half comes from `.tbl-colhead` on the <thead> now — same 11px small-caps, and the
+     `.55` the rest of the app uses rather than the `.65` this file had drifted to. What stays is
+     what the shared class cannot know: this header STICKS while its body scrolls, and it is a sort
+     control, so it takes a pointer. */
+  .dg-table thead th { position: sticky; top: 0; z-index: 2; background: var(--color-base-200); cursor: pointer; user-select: none; }
+  .dg-table thead th:hover { color: var(--color-base-content); }
+  .dg-th-ic { display: inline-grid; place-items: center; width: 14px; vertical-align: -2px; margin-right: 4px; opacity: .7; }
+  .dg-th-ic svg { width: 13px; height: 13px; }
+  .dg-sortind { font-size: 8px; margin-left: 4px; color: var(--color-primary); } /* ds-ok — the ▲/▼ sort GLYPH, aria-hidden, not text; sized like an icon (P4), the ladder governs words */
+  .dg-table tbody tr { cursor: pointer; }
+  .dg-table tbody tr:hover { background: var(--color-base-200); }
+  .dg-table tbody td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  .dg-primary { font-weight: 600; }
+  .dg-num { font-family: var(--font-mono, ui-monospace); font-variant-numeric: tabular-nums; text-align: right; }
+  .dg-linkpill { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); padding: 1px 8px; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-primary) l c h / .08); color: oklch(from var(--color-base-content) l c h / .85); }
+  /* Linked-record NAMES in a grid cell — clickable chips that drill into the linked record. */
+  .dg-linkcell { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+  .dg-linkchip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); padding: 1px 8px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--color-primary) 30%, transparent); background: oklch(from var(--color-primary) l c h / .08); color: var(--color-primary); cursor: pointer; max-width: 15ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; line-height: 1.6; }
+  .dg-linkchip:hover { background: oklch(from var(--color-primary) l c h / .16); }
+  .dg-linkchip-ic { flex: none; opacity: .7; }
+  .dg-linkmore { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  /* Built-in Record ID column — monospace id + a copy button revealed on row hover. */
+  .dg-idcell { white-space: nowrap; }
+  .dg-idval { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .dg-copyid { display: none; place-items: center; width: 20px; height: 20px; margin-left: 4px; vertical-align: middle; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); transition: color .4s ease, background-color .4s ease; }
+  .dg-table tbody tr:hover .dg-copyid { display: inline-grid; }
+  .dg-copyid:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  /* Copied confirmation — green check pops in, holds, then fades back (shared .dg-copied recipe). */
+  .dg-copied, .dg-table tbody tr .dg-copied { display: inline-grid !important; color: var(--color-success); background: oklch(from var(--color-success) l c h / .16); transition: none; }
+  .dg-copied .iconify { animation: dg-copypop .32s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes dg-copypop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
+  .dg-selval { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--r-6); font-size: var(--t-12); background: color-mix(in oklch, var(--color-base-content) 10%, transparent); color: var(--color-base-content); }
+  .dg-empty-cell { color: oklch(from var(--color-base-content) l c h / .35); }
+  .dg-go { color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* The pager is <TablePager /> (pattern-table-toolbar) — its metrics live there, not here. */
+
+  .dg-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 48px 20px; text-align: center; color: oklch(from var(--color-base-content) l c h / .65); }
+  .dg-skeleton { display: flex; flex-direction: column; padding: 4px 0; }
+  .dg-skel-row { display: flex; align-items: center; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--color-base-200); }
+  .dg-skel-row:first-child { border-top: 0; }
+  .dg-empty p { font-size: var(--t-13); margin: 0; }
+
+  /* A `max-width: 1023.98px` block used to sit here, wrapping the toolbar's right cluster so a
+     phone-width grid would not push the page. It is DELETED (2026-08-10) rather than re-keyed:
+     /data is desktop-only, so below 1280 this grid is either never rendered (the server gate) or
+     hidden behind the explainer (first request, no cookie yet) — the rule had nothing to lay out.
+     It is also the last survivor of the four boundary spellings, and it survived a whole wave that
+     claimed there was one: `ds-lint` reads only files changed vs HEAD and this file was untouched,
+     while a plain `grep` skips .astro as binary without `-a`. `ds-audit` (whole tree) is what found
+     it. */
+  @media (max-width: 720px) {
+    /* The library becomes a full-width band above the grid (groups stay stacked, capped height);
+       the divider moves to the bottom edge. */
+    .dv-shell { flex-direction: column; }
+    .dg:not([data-collapsed="1"]) .dv-rail { width: 100%; margin-right: 0; margin-bottom: 12px; }
+    .dg[data-collapsed="1"] .dv-rail { width: 100%; height: 0; margin: 0; }
+    .dv-rail::before { display: none; }
+    .dv-railfull { width: 100%; padding-right: 0; padding-bottom: 8px; }
+    .dv-raillist { max-height: 240px; }
+  }
+
+  /* ============================================================================
+     NARROW SECTION — the preset library stops being a column and becomes a left
+     SHEET over the grid. Same mechanism, same threshold and same look as the Docs
+     list and the Chat thread rail: lib/listSheet.ts stamps `is-list-overlay` from
+     the SECTION column (not the viewport — split view changes one without the
+     other). Above the threshold none of these rules exist, so the collapsible
+     column, its width animation and its persisted preference are untouched.
+     z-index: 62 / 63 on the local ladder above — ABOVE .dv-pinbar (60), because the
+     pin-bar is a sibling that would otherwise punch through the dim, and BELOW the
+     body-attached .dv-menu (70), which is not this console's to cover.
+     ============================================================================ */
+  .dv-raildim { display: none; }
+
+  .dg.is-list-overlay .dv-shell { position: relative; }
+  .dg.is-list-overlay .dv-shell .dv-rail {
+    position: absolute;
+    inset: 0 auto 0 0;
+    margin-top: 0;
+    z-index: 63;
+    width: var(--rail-s);
+    max-width: calc(100% - 48px);
+    height: auto;
+    margin: 0;
+    padding: 12px;
+    overflow: visible;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--r-12);
+    background: var(--color-base-100);
+    box-shadow: 0 16px 40px oklch(0 0 0 / .28);
+    transform: translateX(-104%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform .16s ease, opacity .16s ease;
+  }
+  .dg.is-list-overlay.is-list-open .dv-shell .dv-rail { transform: none; opacity: 1; pointer-events: auto; }
+  /* The inner block's 220px + its tab-line padding exist to align with .dv-main. A sheet has
+     nothing to align to, so it fills its own padding box. */
+  .dg.is-list-overlay .dv-shell .dv-railfull { width: 100%; padding: 0; }
+  .dg.is-list-overlay .dv-shell .dv-rail::before { display: none; }
+
+  .dg.is-list-overlay .dv-raildim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 62;
+    border-radius: var(--r-12);
+    background: oklch(0 0 0 / .38);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease;
+  }
+  .dg.is-list-overlay.is-list-open .dv-raildim { opacity: 1; pointer-events: auto; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dg.is-list-overlay .dv-shell .dv-rail, .dg.is-list-overlay .dv-raildim { transition: none; }
+  }
+</style>
+
+<script>
+  import { mountRefineCollapse } from '../../lib/refineCollapse';
+  import { wireListSheet, listSheetToggleLabel } from '../../lib/listSheet';
+  import { createPager } from '../ui/tablePager';
+  import { clampBelow } from '../ui/popoverPlace';
+  import { pushEscape } from '../../lib/escapeStack';
+  import { setButtonLoading } from '../../lib/ui';
+  import { hideAlert, showAlert } from '../ui/alert';
+  import { ensureRecordsCover } from '../../lib/data-browse/records-cursor';
+  import { defaultRecordsPreset } from '../../lib/data-browse/system-preset';
+  import type { CellAttachment } from './dataTypes';
+
+  // ── Types ───────────────────────────────────────────────────────────────────
+  // `attachments` was `unknown[]` — the last hop of a shape that had already been degraded twice.
+  // It is the reconciled `CellAttachment` now (media-library, 2026-07-31): same object the
+  // Attachments tab and the record panel's comment chips use, one field name (`filename`).
+  type Cell = { raw: string; linkedCount?: number; empty?: boolean; attachments?: CellAttachment[] };
+  type Field = { id: string; name: string; type: string; linkedTableId?: string; expression?: string };
+  type Table = { id: string; baseId: string; name: string; approx: number; fields: Field[] };
+  type Rec = { id: string; tableId: string; primary: string; cells: Record<string, Cell>; linked?: Record<string, string[]> };
+  type CommentFilter = 'all' | 'with' | 'without';
+  type SavedViewJSON = { id: string; name: string; tableId: string; pinned: boolean; groupId?: string; hiddenFieldIds?: string[]; filters?: { fieldId: string; op: string; val?: string; val2?: string }[]; sortFieldId?: string; sortDir?: 1 | -1; query?: string; showRecordId?: boolean; colOrder?: string[]; commentFilter?: CommentFilter; saved?: boolean };
+  type ViewGroupJSON = { id: string; name: string };
+  type Snap = {
+    spaceId?: string;
+    primaryByTable?: Record<string, string | undefined>;
+    cursors?: Record<string, string | null>;
+    baseName: Record<string, string>;
+    tables: Table[];
+    records: Rec[];
+    landing: string;
+    views: SavedViewJSON[];
+    viewGroups: ViewGroupJSON[];
+    commentedRecordIds?: string[];
+  };
+  // A single condition (leaf) — one field/operator/value predicate.
+  type Cond = { kind: 'cond'; field: Field; op: string; val: string; val2?: string };
+  // A group of conditions/sub-groups joined by ONE conjunction (all siblings AND-ed or all OR-ed).
+  // The tree is capped at one level of nested groups (Airtable's A AND (B OR C), not arbitrary depth).
+  type FGroup = { kind: 'group'; conjunction: 'and' | 'or'; children: FNode[] };
+  type FNode = Cond | FGroup;
+  // A snapshot of a view's saved config — the baseline we revert to when the user discards edits.
+  type Baseline = { tableId: string; hiddenCols: Set<string>; filterTree: FGroup; sortField: string; sortDir: number; query: string; showRecId: boolean; colOrder: string[]; commentFilter: CommentFilter };
+  // A live view = its config, mutated in place as the toolbar changes.
+  // `saved` drives the Save/Discard/lock/Draft model (Dan 2026-07-23): a preset is explicitly saved;
+  // an unsaved one (never saved, or with edits pending) is a Draft. `dirty` is NOT stored — it is
+  // always COMPUTED by diffing the live config against `baseline` (see isDirty()), never a sticky
+  // boolean, so typing then deleting a character leaves the preset clean again. A Draft has no
+  // baseline (nothing saved yet to diff against or Discard to).
+  type View = { id: string; name: string; tableId: string; pinned: boolean; temporary: boolean; groupId?: string; hiddenCols: Set<string>; filterTree: FGroup; sortField: string; sortDir: number; query: string; showRecId: boolean; colOrder: string[]; commentFilter: CommentFilter; saved: boolean; baseline?: Baseline };
+  type Group = { id: string; name: string; collapsed: boolean };
+
+  // ── Persisted-preset shapes (localStorage mirror of the above) ───────────────────────────────
+  // localStorage has no notion of a Field object or a Set, so every shape below is the plain-JSON
+  // twin of its live counterpart: Cond.field (object) → fieldId (string, re-resolved against the
+  // CURRENT table on load), hiddenCols Set → string[]. See the PERSISTENCE BLOCK in wireDataBrowse()
+  // for the single load/save site this powers — the design-mirror stand-in for server-side
+  // persistence; the monorepo engineer replaces that block with real API calls, nothing else here.
+  type SerializedCond = { kind: 'cond'; fieldId: string; op: string; val: string; val2?: string };
+  type SerializedGroup = { kind: 'group'; conjunction: 'and' | 'or'; children: SerializedNode[] };
+  type SerializedNode = SerializedCond | SerializedGroup;
+  type SerializedConfig = { tableId: string; hiddenCols: string[]; filterTree: SerializedGroup; sortField: string; sortDir: number; query: string; showRecId: boolean; colOrder: string[]; commentFilter?: CommentFilter };
+  // A runtime-only preset (never in the fixture) — its FULL state, since there is no fixture default
+  // to fall back to on load. `baseline` is present only once the user has Saved it at least once.
+  type SerializedPreset = { id: string; name: string; tableId: string; pinned: boolean; temporary: boolean; groupId?: string; saved: boolean; config: SerializedConfig; baseline?: SerializedConfig };
+  type PersistedStateV2 = {
+    openIds: string[]; activeId: string;
+    drafts: SerializedPreset[];                // runtime-only presets — draft, or since-saved
+    saved: Record<string, SerializedConfig>;   // fixture preset id → baseline a Save overwrote
+    edits: Record<string, SerializedConfig>;   // fixture preset id → unsaved config on top of it
+    deletedFixtureIds?: string[];              // fixture preset ids the user deleted
+  };
+
+  // Pager (pattern-table-toolbar). Page size is a USER PREFERENCE — persisted under its own key,
+  // never folded into a preset's config/baseline (changing it must not flag a preset dirty).
+  const PAGE_SIZES = [25, 50, 100];
+  const DEFAULT_PAGE_SIZE = 50;
+  const PAGE_SIZE_KEY = 'dg-pagesize';
+  // Same copy as the Astro frontmatter's server-rendered initial lock (kept in sync by hand — the
+  // client script is a separate module, it can't read frontmatter consts).
+  const LOCK_REASON = "Locked — this preset is saved. Duplicate it, or start a new one, to use another table.";
+
+  const family = (t: string): 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'link' => {
+    if (['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'count', 'autoNumber'].includes(t)) return 'number';
+    if (['date', 'dateTime', 'createdTime', 'lastModifiedTime'].includes(t)) return 'date';
+    if (['singleSelect', 'multipleSelects'].includes(t)) return 'select';
+    if (t === 'checkbox') return 'checkbox';
+    if (['multipleRecordLinks', 'multipleLookupValues'].includes(t)) return 'link';
+    return 'text';
+  };
+  // Coarse category label per field family (the Categories sub-tab of the Fields picker).
+  const CATEGORY: Record<ReturnType<typeof family>, string> = { text: 'Text', number: 'Number', date: 'Date', select: 'Select', checkbox: 'Checkbox', link: 'Linked' };
+  // Human label for an Airtable field type (the Types sub-tab).
+  const TYPE_LABEL: Record<string, string> = {
+    singleLineText: 'Single line text', multilineText: 'Long text', email: 'Email', url: 'URL', phoneNumber: 'Phone',
+    number: 'Number', currency: 'Currency', percent: 'Percent', rating: 'Rating', duration: 'Duration', autoNumber: 'Auto number',
+    date: 'Date', dateTime: 'Date & time', createdTime: 'Created time', lastModifiedTime: 'Last modified',
+    singleSelect: 'Single select', multipleSelects: 'Multiple select', checkbox: 'Checkbox',
+    multipleRecordLinks: 'Link to record', multipleLookupValues: 'Lookup', rollup: 'Rollup', count: 'Count', formula: 'Formula',
+  };
+  const typeLabel = (t: string) => TYPE_LABEL[t] || t;
+
+  const OPS: Record<string, { v: string; label: string; two?: boolean; noval?: boolean }[]> = {
+    text: [{ v: 'contains', label: 'contains' }, { v: 'notcontains', label: 'does not contain' }, { v: 'is', label: 'is' }, { v: 'isnot', label: 'is not' }, { v: 'empty', label: 'is empty', noval: true }, { v: 'notempty', label: 'is not empty', noval: true }],
+    number: [{ v: 'eq', label: '=' }, { v: 'ne', label: '≠' }, { v: 'gt', label: '>' }, { v: 'lt', label: '<' }, { v: 'gte', label: '≥' }, { v: 'lte', label: '≤' }, { v: 'between', label: 'between', two: true }, { v: 'empty', label: 'is empty', noval: true }, { v: 'notempty', label: 'is not empty', noval: true }],
+    date: [{ v: 'on', label: 'is' }, { v: 'before', label: 'is before' }, { v: 'after', label: 'is after' }, { v: 'onbefore', label: 'is on or before' }, { v: 'onafter', label: 'is on or after' }, { v: 'between', label: 'is between', two: true }, { v: 'empty', label: 'is empty', noval: true }, { v: 'notempty', label: 'is not empty', noval: true }],
+    select: [{ v: 'is', label: 'is' }, { v: 'isnot', label: 'is not' }, { v: 'anyof', label: 'is any of' }, { v: 'noneof', label: 'is none of' }, { v: 'empty', label: 'is empty', noval: true }, { v: 'notempty', label: 'is not empty', noval: true }],
+    checkbox: [{ v: 'checked', label: 'is checked', noval: true }, { v: 'unchecked', label: 'is unchecked', noval: true }],
+    link: [{ v: 'contains', label: 'contains' }, { v: 'notcontains', label: 'does not contain' }, { v: 'empty', label: 'is empty', noval: true }, { v: 'notempty', label: 'is not empty', noval: true }],
+  };
+  const num = (s: string) => parseFloat((s || '').replace(/[^0-9.\-]/g, ''));
+  const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  // Copy confirmation: the icon pops to a green check, holds, then fades back to the copy glyph.
+  const flashCopied = (btn: HTMLElement) => {
+    const ci = btn.querySelector<HTMLElement>('.iconify'); if (!ci) return;
+    btn.classList.add('dg-copied');
+    ci.className = 'iconify lucide--check size-3.5';
+    window.setTimeout(() => { btn.classList.remove('dg-copied'); ci.className = 'iconify lucide--copy size-3.5'; }, 1100);
+  };
+
+  function wireDataBrowse() {
+    const root = document.querySelector<HTMLElement>('[data-databrowse]');
+    if (!root || root.dataset.dgWired) return;
+    root.dataset.dgWired = '1';
+    const snap: Snap = JSON.parse(document.querySelector('[data-dg-snapshot]')?.textContent || '{}');
+    const icons: Record<string, string> = JSON.parse(document.querySelector('[data-dg-icons]')?.textContent || '{}');
+    if (!snap.tables?.length) return;
+
+    const tableById = new Map(snap.tables.map((t) => [t.id, t]));
+    const recById = new Map((snap.records || []).map((r) => [r.id, r]));
+    if (!Array.isArray(snap.records)) snap.records = [];
+    const spaceId = snap.spaceId || '';
+    const primaryByTable: Record<string, string | undefined> = snap.primaryByTable || {};
+    // Per-table nextCursor from SSR / subsequent fetches (`null` = exhausted).
+    const cursors: Record<string, string | null | undefined> = { ...(snap.cursors || {}) };
+    // Comment-presence filter (comments-explorer) — computed ONCE from the server-derived list, not
+    // per row. A record id absent here has zero comments; that is a fact of the capture, not a guess.
+    const commentedIds = new Set(snap.commentedRecordIds || []);
+    const q = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    // The synthetic Record ID column slot — declared up-front (not down by orderedColIds(), its main
+    // consumer) because deserializeConfig() also needs it to validate a persisted colOrder/hiddenCols,
+    // and that runs during the PERSISTENCE BLOCK below, ahead of where this constant used to live.
+    const REC = '__recid__';
+
+    // ── PERSISTENCE BLOCK — design-mirror stand-in for server-side persistence ────────────────────
+    // Everything from here down to persistState() (defined below, near isDirty) is the ONE place that
+    // reads/writes preset state to localStorage. The monorepo engineer swaps this block for real API
+    // load/save calls — nothing else in this file needs to change. Every read is defensive: a
+    // missing, malformed, or stale value degrades to the fixture defaults, it never throws.
+    const fixtureIds = new Set((snap.views || []).map((v) => v.id));
+    let persisted: PersistedStateV2 | null = null;
+    try {
+      const raw = JSON.parse(localStorage.getItem('dg-presets-v2') || 'null');
+      if (raw && typeof raw === 'object') persisted = raw as PersistedStateV2;
+    } catch { /* corrupt v2 value — degrade to fixture defaults below */ }
+    const savedMap: Record<string, SerializedConfig> = (persisted?.saved && typeof persisted.saved === 'object') ? persisted.saved : {};
+    const editsMap: Record<string, SerializedConfig> = (persisted?.edits && typeof persisted.edits === 'object') ? persisted.edits : {};
+    const draftEntries: SerializedPreset[] = Array.isArray(persisted?.drafts) ? persisted!.drafts : [];
+    const deletedFixtureIds = new Set<string>(Array.isArray(persisted?.deletedFixtureIds) ? persisted!.deletedFixtureIds : []);
+
+    // ── Views state ──────────────────────────────────────────────────────────
+    const rehydrate = (v: SavedViewJSON): View => {
+      const t = tableById.get(v.tableId) || snap.tables[0];
+      // Serialized filters are a flat list → a root group AND-ing each condition (the common case).
+      const conds: FNode[] = (v.filters || []).map((sf) => {
+        const field = t.fields.find((f) => f.id === sf.fieldId) || t.fields[0];
+        return { kind: 'cond', field, op: sf.op, val: sf.val || '', val2: sf.val2 } as Cond;
+      });
+      const view: View = {
+        id: v.id, name: v.name, tableId: v.tableId, pinned: v.pinned, temporary: !v.pinned, groupId: v.groupId,
+        hiddenCols: new Set(v.hiddenFieldIds || []), filterTree: { kind: 'group', conjunction: 'and', children: conds },
+        sortField: v.sortFieldId || '', sortDir: v.sortDir || 1, query: v.query || '', showRecId: v.showRecordId || false, colOrder: v.colOrder ? v.colOrder.slice() : [],
+        commentFilter: v.commentFilter === 'with' || v.commentFilter === 'without' ? v.commentFilter : 'all',
+        saved: !!v.saved,
+      };
+      // Only a SAVED fixture view gets a baseline (its saved state — Discard reverts here). A
+      // never-saved view has nothing to diff against or revert to (a Draft).
+      if (view.saved) {
+        // A prior Save may have overwritten the fixture's baseline at runtime (`saved[id]`) — trust
+        // that over the fixture's own config when present, then layer any unsaved edits on top as
+        // the CURRENT config, so the dot + Save/Discard reappear exactly as the user left them (and
+        // Discard still returns to the baseline, not to the persisted edit).
+        let baseline: Baseline;
+        try { baseline = savedMap[v.id] ? deserializeConfig(savedMap[v.id], t) : snapConfig(view); }
+        catch { baseline = snapConfig(view); }
+        applyConfig(view, baseline);
+        view.baseline = baseline;
+        try {
+          const editRaw = editsMap[v.id];
+          if (editRaw) applyConfig(view, deserializeConfig(editRaw, t));
+        } catch { /* corrupt edits — keep the (already-applied) baseline as current */ }
+      }
+      return view;
+    };
+    let views: View[] = (snap.views || []).filter((v) => !deletedFixtureIds.has(v.id)).map(rehydrate);
+    const groups: Group[] = (snap.viewGroups || []).map((g) => ({ id: g.id, name: g.name, collapsed: false }));
+    // Runtime-only presets (never in the fixture) — rebuilt from `drafts[]`. A pure draft (never
+    // Saved) has no baseline; one the user Saved at least once carries its own baseline + live config,
+    // so a locked+saved runtime preset stays locked+saved (with its own dirty diff) across a reload.
+    for (const d of draftEntries) {
+      try {
+        if (!d || typeof d.id !== 'string' || fixtureIds.has(d.id) || views.some((v) => v.id === d.id)) continue;
+        const t = tableById.get(d.tableId) || snap.tables[0];
+        const cfg = deserializeConfig(d.config, t);
+        const view: View = {
+          id: d.id, name: typeof d.name === 'string' && d.name.trim() ? d.name : 'New preset',
+          tableId: cfg.tableId, pinned: !!d.pinned, temporary: !!d.temporary,
+          // Runtime-created groups are not persisted (fixture groups only) — a dangling groupId falls
+          // back to Ungrouped rather than pointing at a folder that no longer exists.
+          groupId: d.groupId && groups.some((g) => g.id === d.groupId) ? d.groupId : undefined,
+          hiddenCols: cfg.hiddenCols, filterTree: cfg.filterTree, sortField: cfg.sortField, sortDir: cfg.sortDir,
+          query: cfg.query, showRecId: cfg.showRecId, colOrder: cfg.colOrder, commentFilter: cfg.commentFilter, saved: !!d.saved,
+        };
+        if (d.baseline) { try { view.baseline = deserializeConfig(d.baseline, t); } catch { /* stays undefined */ } }
+        views.push(view);
+      } catch { /* one corrupt draft entry must not break the rest */ }
+    }
+    let viewSearch = '';
+    // Always have at least one view to browse in.
+    if (!views.length) {
+      const system = defaultRecordsPreset(snap.landing || snap.tables[0].id);
+      const v: View = {
+        id: system.id, name: system.name, tableId: system.tableId, pinned: system.pinned,
+        temporary: system.temporary, hiddenCols: new Set(), filterTree: emptyGroup(),
+        sortField: '', sortDir: 1, query: '', showRecId: false, colOrder: [],
+        commentFilter: 'all', saved: system.saved,
+      };
+      v.baseline = snapConfig(v);
+      views = [v];
+    }
+    // Landing table overrides the first view's table if provided (the `big` fixture).
+    let activeId = views[0].id;
+    // Runtime ids look like `v-new-<n>` off a shared counter — resume past whatever drafts came back
+    // so a fresh New/Duplicate can never collide with a restored one.
+    let idSeq = 1 + views.reduce((max, v) => { const m = /^v-new-(\d+)$/.exec(v.id); return m ? Math.max(max, +m[1]) : max; }, 0);
+    // ── Open preset tabs (Chrome-style): the ORDERED ids with a tab in the bar. A preset lives in the
+    // library whether open or not; opening = a tab; ✕ = close (the preset stays). Seeded from the
+    // fixture's pinned flag on first load, then persisted (survives reload) — no "temporary vanishes".
+    let openIds: string[] = views.filter((v) => v.pinned).map((v) => v.id);
+    if (!openIds.length && views.length) openIds = [views[0].id];
+    try {
+      // v2 carries its own openIds/activeId; only fall back to the pre-Part-2 key when v2 is absent,
+      // so an existing user's open tabs migrate over instead of resetting the first time this ships.
+      const legacy = persisted ? null : JSON.parse(localStorage.getItem('dg-open-presets') || 'null');
+      const src = persisted || legacy;
+      if (src && Array.isArray(src.openIds)) {
+        const valid = src.openIds.filter((id: string) => views.some((v) => v.id === id));
+        if (valid.length) { openIds = valid; if (src.activeId && valid.includes(src.activeId)) activeId = src.activeId; }
+      }
+    } catch { /* ignore */ }
+    if (!openIds.includes(activeId)) activeId = openIds[0] || views[0]?.id;
+    const active = () => views.find((v) => v.id === activeId)!;
+    const activeTable = () => tableById.get(active().tableId)!;
+    // Columns in the preset's order. A column is a real field OR the synthetic Record ID slot (`REC`,
+    // leads by default). NOTHING is pinned — the primary field and the id column reorder freely
+    // (Oleh 2026-07-21). `colOrder` holds column ids (may include REC); unlisted columns keep natural order.
+    const orderedColIds = (): string[] => {
+      const all = [REC, ...activeTable().fields.map((f) => f.id)];
+      const order = active().colOrder;
+      if (!order.length) return all;
+      const set = new Set(all); const out: string[] = []; const seen = new Set<string>();
+      for (const id of order) { if (set.has(id) && !seen.has(id)) { out.push(id); seen.add(id); } }
+      for (const id of all) { if (!seen.has(id)) { out.push(id); seen.add(id); } }
+      return out;
+    };
+    const fieldById = (id: string) => activeTable().fields.find((f) => f.id === id);
+    const primaryId = () => activeTable().fields[0]?.id;
+    const visibleFields = () => orderedColIds().map(fieldById).filter((f): f is Field => !!f && !active().hiddenCols.has(f.id));
+
+    // ── Filter-tree helpers (function declarations so rehydrate() can use them before this point) ──
+    function emptyGroup(): FGroup { return { kind: 'group', conjunction: 'and', children: [] }; }
+    function cloneNode(n: FNode): FNode {
+      return n.kind === 'group'
+        ? { kind: 'group', conjunction: n.conjunction, children: n.children.map(cloneNode) }
+        : { kind: 'cond', field: n.field, op: n.op, val: n.val, val2: n.val2 };
+    }
+    function cloneTree(g: FGroup): FGroup { return cloneNode(g) as FGroup; }
+
+    // Snapshot / restore a view's config — the baseline is the saved state we revert to on Discard.
+    function snapConfig(v: View): Baseline {
+      return {
+        tableId: v.tableId, hiddenCols: new Set(v.hiddenCols), filterTree: cloneTree(v.filterTree),
+        sortField: v.sortField, sortDir: v.sortDir, query: v.query, showRecId: v.showRecId, colOrder: v.colOrder.slice(),
+        commentFilter: v.commentFilter,
+      };
+    }
+    function applyConfig(v: View, b: Baseline) {
+      v.tableId = b.tableId; v.hiddenCols = new Set(b.hiddenCols); v.filterTree = cloneTree(b.filterTree);
+      v.sortField = b.sortField; v.sortDir = b.sortDir; v.query = b.query; v.showRecId = b.showRecId; v.colOrder = b.colOrder.slice();
+      v.commentFilter = b.commentFilter;
+    }
+
+    // ── Serialize / deserialize a filter tree + config for localStorage (see PERSISTENCE BLOCK
+    // above) ─────────────────────────────────────────────────────────────────────────────────────
+    // `Cond.field` is a Field OBJECT (not an id) — JSON.stringify-ing it directly would round-trip a
+    // detached object that no longer matches the table's real field instances. So a condition
+    // serializes its `fieldId` only, and deserializeNode re-resolves the live Field from the CURRENT
+    // table. If that field no longer exists (renamed/removed since), the leaf is DROPPED — never
+    // thrown, never flattened — while the rest of the tree (siblings, nesting, conjunction) survives
+    // intact. A group is never dropped, even if every child under it turns out stale.
+    function serializeNode(n: FNode): SerializedNode {
+      return n.kind === 'group'
+        ? { kind: 'group', conjunction: n.conjunction, children: n.children.map(serializeNode) }
+        : { kind: 'cond', fieldId: n.field.id, op: n.op, val: n.val, val2: n.val2 };
+    }
+    function deserializeNode(n: SerializedNode, t: Table): FNode | null {
+      if (n.kind === 'group') return { kind: 'group', conjunction: n.conjunction, children: n.children.map((c) => deserializeNode(c, t)).filter((c): c is FNode => c !== null) };
+      const field = t.fields.find((f) => f.id === n.fieldId);
+      return field ? { kind: 'cond', field, op: n.op, val: n.val, val2: n.val2 } : null; // stale fieldId — drop the leaf, keep the tree
+    }
+    function serializeConfig(b: Baseline): SerializedConfig {
+      return { tableId: b.tableId, hiddenCols: Array.from(b.hiddenCols), filterTree: serializeNode(b.filterTree) as SerializedGroup, sortField: b.sortField, sortDir: b.sortDir, query: b.query, showRecId: b.showRecId, colOrder: b.colOrder.slice(), commentFilter: b.commentFilter };
+    }
+    function deserializeConfig(sc: SerializedConfig, t: Table): Baseline {
+      // Same staleness guard applied to hiddenCols/colOrder — a field id from a since-changed table
+      // shape is silently dropped rather than left as a ghost entry.
+      const validIds = new Set<string>([REC, ...t.fields.map((f) => f.id)]);
+      return {
+        tableId: sc.tableId,
+        hiddenCols: new Set((sc.hiddenCols || []).filter((id) => validIds.has(id))),
+        filterTree: (deserializeNode(sc.filterTree, t) as FGroup) || emptyGroup(),
+        // Absent/malformed degrades to 'all' — the safe default (comments-explorer).
+        commentFilter: sc.commentFilter === 'with' || sc.commentFilter === 'without' ? sc.commentFilter : 'all',
+        sortField: sc.sortField && t.fields.some((f) => f.id === sc.sortField) ? sc.sortField : '',
+        sortDir: sc.sortDir === -1 ? -1 : 1,
+        query: sc.query || '',
+        showRecId: !!sc.showRecId,
+        colOrder: (sc.colOrder || []).filter((id) => validIds.has(id)),
+      };
+    }
+
+    // ── Dirty by DIFF, never a sticky boolean (Dan 2026-07-23) — typing a character into search and
+    // deleting it again must leave the preset CLEAN, because it once more equals what was saved.
+    function treeEq(a: FGroup, b: FGroup): boolean {
+      if (a.conjunction !== b.conjunction || a.children.length !== b.children.length) return false;
+      return a.children.every((ca, i) => {
+        const cb = b.children[i];
+        if (ca.kind !== cb.kind) return false;
+        if (ca.kind === 'group') return treeEq(ca, cb as FGroup);
+        const cbc = cb as Cond;
+        return ca.field.id === cbc.field.id && ca.op === cbc.op && ca.val === cbc.val && (ca.val2 || '') === (cbc.val2 || '');
+      });
+    }
+    // Hidden columns are a SET (order doesn't matter), not a sequence.
+    function setEq(a: Set<string>, b: Set<string>): boolean {
+      if (a.size !== b.size) return false;
+      for (const x of a) if (!b.has(x)) return false;
+      return true;
+    }
+    // Structural equality of two baseline snapshots — every field must match for the preset to read CLEAN.
+    //
+    // `join('\0')` MUST STAY THE ESCAPE, NEVER THE RAW BYTE (X-CENSUS-INSTRUMENT-NUL-BYTE, fixed
+    // 2026-08-14). Joining on a separator that cannot occur in a column id is the right idiom and is
+    // unchanged; what was wrong is that the separator had been TYPED as two literal NUL bytes. That
+    // made this file `binary` to every text tool: `git grep` without `-a` and `ugrep -I` (which this
+    // machine's `grep` is a shim for) skipped all 1,900 lines of it and exited 0. Measured in the same
+    // tree in the same second: `role="alert"` 78 vs 79, `toLocale` 46 vs 47 — and the audit's
+    // unexplained `<th` 23→24 and `.tbl-colhead` 17→18 drift was this file going missing. Runtime
+    // behaviour of the escape is byte-identical; only the source encoding changed.
+    function configEq(a: Baseline, b: Baseline): boolean {
+      return a.tableId === b.tableId && a.sortField === b.sortField && a.sortDir === b.sortDir &&
+        a.query === b.query && a.showRecId === b.showRecId && a.colOrder.join('\0') === b.colOrder.join('\0') &&
+        a.commentFilter === b.commentFilter &&
+        setEq(a.hiddenCols, b.hiddenCols) && treeEq(a.filterTree, b.filterTree);
+    }
+    // A preset is dirty iff its live config diverges from its saved baseline. A Draft (no baseline —
+    // never saved) has nothing to diverge FROM, so it is never "dirty" by this measure; its unsaved-ness
+    // is signalled by the Draft badge instead (see vrow()/renderViews()).
+    const isDirty = (v: View): boolean => !!v.baseline && !configEq(snapConfig(v), v.baseline);
+
+    // ── persistState() — the ONE writer for the PERSISTENCE BLOCK above (design-mirror stand-in for
+    // server-side persistence; see the block's own comment). Called from renderViews(), so it runs
+    // after every mutation that already triggers a re-render — no separate call sites to keep in sync.
+    // Always writes the FULL current derivation (never merges), so a deleted draft/fixture-preset
+    // simply isn't re-emitted and stays gone on the next reload.
+    function persistState() {
+      try {
+        const drafts: SerializedPreset[] = [];
+        const saved: Record<string, SerializedConfig> = {};
+        const edits: Record<string, SerializedConfig> = {};
+        for (const v of views) {
+          if (fixtureIds.has(v.id)) {
+            // Fixture preset: `saved` is always its current baseline (Save may have overwritten the
+            // fixture's own config); `edits` only appears while it's actually dirty.
+            if (v.baseline) saved[v.id] = serializeConfig(v.baseline);
+            if (isDirty(v)) edits[v.id] = serializeConfig(snapConfig(v));
+          } else {
+            // Runtime-only preset: persist its full state — a draft's persisted config IS its current
+            // config; a since-Saved one also carries its own baseline (so it stays locked + diffable).
+            drafts.push({
+              id: v.id, name: v.name, tableId: v.tableId, pinned: v.pinned, temporary: v.temporary, groupId: v.groupId,
+              saved: v.saved, config: serializeConfig(snapConfig(v)),
+              baseline: v.baseline ? serializeConfig(v.baseline) : undefined,
+            });
+          }
+        }
+        // Beyond the literal three-key contract: a fixture-seeded preset the user deleted must not
+        // reappear on reload either (a deleted preset "coming back" is a persistence bug the same as
+        // a lost edit would be) — recorded here as the ids from `fixtureIds` no longer present.
+        const deletedIds = [...fixtureIds].filter((id) => !views.some((v) => v.id === id));
+        const payload: PersistedStateV2 = { openIds, activeId, drafts, saved, edits, deletedFixtureIds: deletedIds };
+        localStorage.setItem('dg-presets-v2', JSON.stringify(payload));
+      } catch { /* ignore — persistence is best-effort, never blocks the UI */ }
+    }
+
+    // Every toolbar mutation calls this — dirty is now computed on read, so this is a plain re-render.
+    const touch = () => renderViews();
+
+    // ── Row predicates ─────────────────────────────────────────────────────────
+    const passFilter = (r: Rec, f: Cond): boolean => {
+      const c = r.cells[f.field.id]; const raw = c?.raw ?? ''; const fam = family(f.field.type);
+      const empty = !raw || c?.empty;
+      const anyof = () => f.val.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean).includes(raw.toLowerCase());
+      switch (f.op) {
+        case 'empty': return !!empty;
+        case 'notempty': return !empty;
+        case 'checked': return raw === 'Yes' || raw === 'true';
+        case 'unchecked': return raw !== 'Yes' && raw !== 'true';
+        case 'contains': return raw.toLowerCase().includes(f.val.toLowerCase());
+        case 'notcontains': return !raw.toLowerCase().includes(f.val.toLowerCase());
+        case 'is': return fam === 'select' || fam === 'text' ? raw.toLowerCase() === f.val.toLowerCase() : raw === f.val;
+        case 'isnot': return !(fam === 'select' || fam === 'text' ? raw.toLowerCase() === f.val.toLowerCase() : raw === f.val);
+        case 'anyof': return anyof();
+        case 'noneof': return !anyof();
+        case 'eq': return num(raw) === num(f.val);
+        case 'ne': return num(raw) !== num(f.val);
+        case 'gt': return num(raw) > num(f.val);
+        case 'lt': return num(raw) < num(f.val);
+        case 'gte': return num(raw) >= num(f.val);
+        case 'lte': return num(raw) <= num(f.val);
+        case 'between': {
+          if (fam === 'date') return raw >= f.val && raw <= (f.val2 || '');
+          return num(raw) >= num(f.val) && num(raw) <= num(f.val2 || '');
+        }
+        case 'on': return raw.startsWith(f.val);
+        case 'before': return raw < f.val;
+        case 'after': return raw > f.val;
+        case 'onbefore': return raw.slice(0, 10) <= f.val;
+        case 'onafter': return raw.slice(0, 10) >= f.val;
+        default: return true;
+      }
+    };
+    // A condition is "complete" once it has a value (or needs none) — incomplete rows don't filter,
+    // so a half-built condition never blanks the grid.
+    const condReady = (f: Cond): boolean => {
+      const fam = family(f.field.type);
+      const op = OPS[fam]?.find((o) => o.v === f.op);
+      if (!op) return false;
+      if (op.noval) return true;
+      if (op.two) return f.val.trim() !== '' && (f.val2 || '').trim() !== '';
+      return f.val.trim() !== '';
+    };
+    // Recursively evaluate a filter node against a record. A group with no ready conditions passes.
+    const evalNode = (r: Rec, n: FNode): boolean => {
+      if (n.kind === 'cond') return passFilter(r, n);
+      const ready = n.children.filter((c) => c.kind === 'group' ? groupHasReady(c) : condReady(c));
+      if (!ready.length) return true;
+      return n.conjunction === 'or' ? ready.some((c) => evalNode(r, c)) : ready.every((c) => evalNode(r, c));
+    };
+    const groupHasReady = (g: FGroup): boolean =>
+      g.children.some((c) => c.kind === 'group' ? groupHasReady(c) : condReady(c));
+    // Count of ready conditions anywhere in the tree — the trigger badge + "is filtering" flag.
+    const countConds = (g: FGroup): number =>
+      g.children.reduce((n, c) => n + (c.kind === 'group' ? countConds(c) : (condReady(c) ? 1 : 0)), 0);
+
+    const rowsForActive = () => {
+      const v = active();
+      let rs = snap.records.filter((r) => r.tableId === v.tableId);
+      if (groupHasReady(v.filterTree)) rs = rs.filter((r) => evalNode(r, v.filterTree));
+      // Comment-presence filter (comments-explorer) — a record's comment count is never invented: a
+      // record absent from the captured comments has none, that's a fact of the capture.
+      if (v.commentFilter === 'with') rs = rs.filter((r) => commentedIds.has(r.id));
+      else if (v.commentFilter === 'without') rs = rs.filter((r) => !commentedIds.has(r.id));
+      // Search matches cell text OR the record id (so pasting an id — rec… — jumps to the record; the
+      // engine does the real id resolution, this is the presentational affordance).
+      if (v.query) rs = rs.filter((r) => r.id.toLowerCase().includes(v.query) || Object.values(r.cells).some((c) => (c.raw || '').toLowerCase().includes(v.query)));
+      if (v.sortField) {
+        rs = rs.slice().sort((a, b) => {
+          const av = a.cells[v.sortField]?.raw || ''; const bv = b.cells[v.sortField]?.raw || '';
+          const an = num(av), bn = num(bv);
+          const cmp = !isNaN(an) && !isNaN(bn) && av.match(/\d/) ? an - bn : av.localeCompare(bv);
+          return cmp * v.sortDir;
+        });
+      }
+      return rs;
+    };
+
+    // ── Cell rendering ─────────────────────────────────────────────────────────
+    const renderCell = (r: Rec, f: Field): string => {
+      const c = r.cells[f.id]; const raw = c?.raw ?? ''; const fam = family(f.type);
+      if (!raw || c?.empty) return '<span class="dg-empty-cell">—</span>';
+      if (fam === 'link') {
+        // Show the linked record NAMES (clickable → drill into that record), not an opaque count.
+        // A linked field is often to just one record, where "1 linked" tells you nothing.
+        const count = c?.linkedCount ?? 0;
+        const ids = r.linked?.[f.id] || [];
+        const named = (ids.map((id) => { const lr = recById.get(id); return lr ? { id, name: lr.primary } : null; }).filter(Boolean) as { id: string; name: string }[]).slice(0, 2);
+        if (!named.length) return `<span class="dg-linkpill"><span class="iconify lucide--link size-3" aria-hidden="true"></span>${esc(raw)}</span>`; // no resolvable sample → keep the count pill
+        const chips = named.map((n) => `<button type="button" class="dg-linkchip" data-dg-openrec="${n.id}"><span class="iconify lucide--link size-3 dg-linkchip-ic" aria-hidden="true"></span>${esc(n.name)}</button>`).join('');
+        const rest = count - named.length;
+        return `<span class="dg-linkcell">${chips}${rest > 0 ? `<span class="dg-linkmore">+${rest.toLocaleString()}</span>` : ''}</span>`;
+      }
+      if (fam === 'number') return `<span class="dg-num">${esc(raw)}</span>`;
+      if (f.type === 'singleSelect' || f.type === 'multipleSelects') return `<span class="dg-selval">${esc(raw)}</span>`;
+      return esc(raw);
+    };
+
+    // ── Grid render ────────────────────────────────────────────────────────────
+    const thead = q('[data-dg-thead]');
+    const tbody = q('[data-dg-tbody]');
+    // The export control lives inside Browse; publish the tab's LOGICAL row count to it so "This tab"
+    // exports the real table size (unfiltered) / match count (filtered), not just the current page.
+    const xpRoot = root.querySelector<HTMLElement>('[data-export]');
+    const emptyEl = q('[data-dg-empty]');
+    const wrap = q<HTMLElement>('[data-dg-wrap]');
+
+    // Pager — acts on the FILTERED + SORTED set; the page window is applied last. `page` is
+    // ephemeral (not persisted — a reload starts at page 1); `pageSize` is a user preference
+    // persisted under its own key, deliberately kept OUT of the preset config/baseline/dirty diff.
+    const pagerEl = q<HTMLElement>('[data-pager="dg"]');
+    const pagerNextBtn = () => root.querySelector<HTMLButtonElement>('[data-pager="dg"] [data-pager-next]');
+    const pager = createPager({
+      root, name: 'dg', sizes: PAGE_SIZES, defaultSize: DEFAULT_PAGE_SIZE,
+      storageKey: PAGE_SIZE_KEY, onChange: () => { void onPagerChange(); },
+    });
+
+    // ── Async surface state — loading skeleton / load error with in-context Retry ──
+    const skeletonEl = q<HTMLElement>('[data-dg-skeleton]');
+    const errorPanel = q<HTMLElement>('[data-dg-error-panel]');
+    const errorEl = q<HTMLElement>('#dg-load-error');
+    let loadState = (root.dataset.dgLoadstate as 'ready' | 'loading' | 'error') || 'ready';
+    let fetchGen = 0;
+    function applyLoadState() {
+      const busy = loadState !== 'ready';
+      skeletonEl.hidden = loadState !== 'loading';
+      if (loadState === 'error') {
+        errorPanel.hidden = false;
+        showAlert(errorEl, "Couldn't load records.");
+      } else {
+        hideAlert(errorEl, true);
+        errorPanel.hidden = true;
+      }
+      if (busy) { wrap.hidden = true; emptyEl.hidden = true; pagerEl.hidden = true; }
+    }
+    function loadedCountFor(tid: string): number {
+      return snap.records.filter((r) => r.tableId === tid).length;
+    }
+    function mergeFetched(tid: string, added: Rec[], nextCursor: string | null) {
+      const seen = new Set(snap.records.filter((r) => r.tableId === tid).map((r) => r.id));
+      for (const r of added) {
+        if (seen.has(r.id)) continue;
+        snap.records.push(r);
+        recById.set(r.id, r);
+        seen.add(r.id);
+      }
+      cursors[tid] = nextCursor;
+    }
+    /** Fetch cursor pages until `needCount` rows for `tid` are loaded (or exhausted). */
+    async function ensureCoverage(tid: string, needCount: number, btn?: HTMLButtonElement | null): Promise<boolean> {
+      if (!spaceId) return true;
+      const loaded = loadedCountFor(tid);
+      if (loaded >= needCount) return true;
+      if (cursors[tid] === null && loaded > 0) return true;
+      const gen = ++fetchGen;
+      if (btn) setButtonLoading(btn, true);
+      loadState = 'loading';
+      applyLoadState();
+      try {
+        const res = await ensureRecordsCover({
+          spaceId,
+          tableId: tid,
+          needCount,
+          loadedCount: loadedCountFor(tid),
+          nextCursor: cursors[tid],
+          primaryFieldId: primaryByTable[tid],
+          pageLimit: 50,
+        });
+        if (gen !== fetchGen) return false;
+        if (!res.ok) {
+          loadState = 'error';
+          applyLoadState();
+          return false;
+        }
+        mergeFetched(tid, res.added as Rec[], res.nextCursor);
+        loadState = 'ready';
+        applyLoadState();
+        return true;
+      } catch {
+        if (gen !== fetchGen) return false;
+        loadState = 'error';
+        applyLoadState();
+        return false;
+      } finally {
+        if (btn) setButtonLoading(btn, false);
+      }
+    }
+    async function onPagerChange() {
+      const tid = active().tableId;
+      const need = pager.page * pager.pageSize;
+      const next = pagerNextBtn();
+      // Spinner on Next when this change advances past loaded rows.
+      const useBtn = loadedCountFor(tid) < need ? next : null;
+      const ok = await ensureCoverage(tid, need, useBtn);
+      if (ok) renderBody();
+    }
+    q('[data-dg-retry]').addEventListener('click', (ev) => {
+      const btn = ev.currentTarget as HTMLButtonElement;
+      void (async () => {
+        pager.reset();
+        const ok = await ensureCoverage(active().tableId, pager.pageSize, btn);
+        if (ok) renderGrid();
+      })();
+    });
+
+    // A built-in "Record ID" column (leading), toggled per preset — the id + a copy button.
+    const idHeadHtml = () => active().showRecId ? '<th scope="col" class="dg-idhead" aria-label="Record ID"><span class="iconify lucide--hash size-3 dg-th-ic" aria-hidden="true"></span>RECORD ID</th>' : '';
+    const idCellHtml = (r: Rec) => active().showRecId
+      ? `<td class="dg-idcell"><span class="dg-idval">${esc(r.id)}</span><button type="button" class="dg-copyid tooltip tooltip-right" data-dg-copyid="${esc(r.id)}" aria-label="Copy record ID" data-tip="Copy ID"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button></td>`
+      : '';
+    function renderHead() {
+      const v = active();
+      const cells = orderedColIds().map((id) => {
+        if (id === REC) return idHeadHtml();
+        const f = fieldById(id); if (!f || v.hiddenCols.has(id)) return '';
+        const ic = icons[f.type] ? `<span class="dg-th-ic">${icons[f.type]}</span>` : '';
+        const ind = v.sortField === f.id ? `<span class="dg-sortind" aria-hidden="true">${v.sortDir > 0 ? '▲' : '▼'}</span>` : '';
+        // `scope="col"` and a LIVE `aria-sort` — the two header facts `ui/Table.astro` guarantees
+        // that this runtime path can still honour, because they are attributes rather than
+        // structure. `aria-sort` is the state, not the caret: the ▲/▼ span is decorative and
+        // `aria-hidden`, so without this the direction was announced to nobody.
+        const srt = v.sortField === f.id ? (v.sortDir > 0 ? 'ascending' : 'descending') : 'none';
+        return `<th scope="col" aria-sort="${srt}" data-dg-sort="${f.id}">${ic}${esc(f.name)}${ind}</th>`;
+      }).join('');
+      // The trailing affordance column (the row chevron). `srLabel`'s equivalent for a runtime head.
+      thead.innerHTML = `<tr>${cells}<th scope="col"><span class="sr-only">Open</span></th></tr>`;
+    }
+    function renderBody() {
+      const v = active(); const pid = primaryId();
+      const colIds = orderedColIds();
+      const rows = rowsForActive();
+      // The shared pager clamps (a filter change can shrink the set under the current page) and
+      // repaints its own range/total/buttons — this surface only asks for the window.
+      const win = pager.window(rows);
+      tbody.innerHTML = win.map((r) => `<tr data-dg-open="${r.id}">${colIds.map((id) => {
+        if (id === REC) return idCellHtml(r);
+        const f = fieldById(id); if (!f || v.hiddenCols.has(id)) return '';
+        return `<td class="${f.id === pid ? 'dg-primary' : ''}">${renderCell(r, f)}</td>`;
+      }).join('')}<td class="dg-go"><span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span></td></tr>`).join('');
+
+      const t = activeTable();
+      const filtering = groupHasReady(v.filterTree) || !!v.query || v.commentFilter !== 'all';
+      const empty = rows.length === 0;
+
+      // When not filtering and more server pages may exist, prefer approx so Next stays enabled
+      // (createPager only sees loaded rows). Client filters stay on accumulated rows only.
+      if (!filtering && cursors[t.id] !== null && t.approx > rows.length) {
+        const total = t.approx;
+        const pages = Math.max(1, Math.ceil(total / pager.pageSize));
+        const start = (pager.page - 1) * pager.pageSize;
+        const rangeEl = root.querySelector('[data-pager="dg"] [data-pager-range]');
+        const totalEl = root.querySelector('[data-pager="dg"] [data-pager-total]');
+        const prevBtn = root.querySelector<HTMLButtonElement>('[data-pager="dg"] [data-pager-prev]');
+        const nextBtn = pagerNextBtn();
+        if (rangeEl) rangeEl.textContent = total === 0 ? '0' : `${start + 1}–${Math.min(start + pager.pageSize, total)}`;
+        if (totalEl) totalEl.textContent = total.toLocaleString();
+        if (prevBtn) prevBtn.disabled = pager.page <= 1;
+        if (nextBtn) nextBtn.disabled = pager.page >= pages;
+        if (pagerEl) pagerEl.hidden = false;
+      }
+
+      // Publish the logical count to the export control (unfiltered ⇒ the approx table size; filtered ⇒
+      // the full match count). Only re-announce when it changes, so re-renders don't spam.
+      const logical = filtering ? rows.length : t.approx;
+      if (xpRoot && xpRoot.dataset.exportLivecount !== String(logical)) {
+        xpRoot.dataset.exportLivecount = String(logical);
+        document.dispatchEvent(new CustomEvent('data:splitchange'));
+      }
+
+      emptyEl.hidden = !empty;
+      if (empty) {
+        // Distinguish a genuinely empty table from a filter that matched nothing — the "Clear filters"
+        // button is already hidden by the toolbar-clear rule below when nothing is active.
+        const msg = emptyEl.querySelector<HTMLElement>('[data-dg-empty-msg]');
+        const eic = emptyEl.querySelector<HTMLElement>('[data-dg-empty-ic]');
+        if (msg) msg.textContent = filtering ? 'No records match your filters.' : 'This table has no records in this backup.';
+        if (eic) eic.className = `iconify ${filtering ? 'lucide--search-x' : 'lucide--database'} size-6 opacity-40`;
+      }
+      wrap.hidden = empty;
+      root.querySelectorAll<HTMLElement>('[data-dg-clear]').forEach((c) => (c.hidden = !filtering && v.hiddenCols.size === 0));
+    }
+    function renderGrid() {
+      renderHead(); renderBody();
+      // Mirror the active view's state onto the root — the chat "Current Browse view" context chip reads it.
+      root.dataset.dgCtxTable = activeTable().name;
+      root.dataset.dgCtxFilters = String(countConds(active().filterTree));
+    }
+
+    // ── Fields picker (Names / Types / Categories) ─────────────────────────────
+    const fieldsPop = q('[data-dg-fieldspop]');
+    const fieldsList = q('[data-dg-fieldslist]');
+    const fieldsBadge = q('[data-dg-fieldsbadge]');
+    const fieldsSearch = q<HTMLInputElement>('[data-dg-fields-search]');
+    let fieldsTab: 'names' | 'types' | 'cats' = 'names';
+    const fieldsToggle = q('[data-dg-fields-toggle]');
+    const openFields = (o: boolean) => { fieldsPop.hidden = !o; fieldsToggle.setAttribute('aria-expanded', String(o)); if (o) renderFields(); };
+    fieldsToggle.addEventListener('click', (e) => { e.stopPropagation(); openFields(fieldsPop.hidden); });
+
+    function renderFields() {
+      const fs = activeTable().fields; const hidden = active().hiddenCols;
+      const search = fieldsSearch.value.trim().toLowerCase();
+      let html = '';
+      if (fieldsTab === 'names') {
+        // Reorderable list in the preset's column order — real fields AND the Record ID slot, ALL
+        // draggable (nothing pinned). Drag is off while a search query is active.
+        const canDrag = !search;
+        const grip = (label: string) => canDrag
+          ? `<span class="dg-fieldgrip" data-dg-fieldgrip draggable="true" aria-label="Drag to reorder ${esc(label)}"><span class="iconify lucide--grip-vertical size-3.5" aria-hidden="true"></span></span>`
+          : `<span class="dg-fieldgrip dg-fieldgrip-lock" aria-hidden="true"></span>`;
+        html = orderedColIds().map((id) => {
+          if (id === REC) {
+            if (search && !'record id'.includes(search)) return '';
+            return `<label class="ff-opt dg-fieldrow dg-recidrow" data-dg-fieldrow="${REC}">
+              ${grip('Record ID')}
+              <span class="ff-icon"><span class="iconify lucide--hash size-3.5" aria-hidden="true"></span></span>
+              <span class="ff-label">Record ID</span>
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-dg-recidtoggle ${active().showRecId ? 'checked' : ''} />
+            </label>`;
+          }
+          const f = fieldById(id);
+          if (!f || (search && !f.name.toLowerCase().includes(search))) return '';
+          return `<label class="ff-opt dg-fieldrow" data-dg-fieldrow="${f.id}">
+            ${grip(f.name)}
+            <span class="ff-icon">${icons[f.type] || ''}</span>
+            <span class="ff-label">${esc(f.name)}</span>
+            <input type="checkbox" class="toggle toggle-sm toggle-primary" data-dg-col="${f.id}" ${hidden.has(f.id) ? '' : 'checked'} />
+          </label>`;
+        }).join('');
+      } else {
+        // Group fields by type or category; one toggle per group flips ALL its fields.
+        const keyOf = (f: Field) => fieldsTab === 'types' ? f.type : family(f.type);
+        const labelOf = (k: string) => fieldsTab === 'types' ? typeLabel(k) : (CATEGORY[k as ReturnType<typeof family>] || k);
+        const groups = new Map<string, Field[]>();
+        fs.forEach((f) => { const k = keyOf(f); groups.set(k, [...(groups.get(k) || []), f]); });
+        html = Array.from(groups.entries())
+          .filter(([k]) => !search || labelOf(k).toLowerCase().includes(search))
+          .map(([k, gfs]) => {
+            const allVisible = gfs.every((f) => !hidden.has(f.id));
+            const sample = gfs[0];
+            return `<label class="ff-opt">
+              <span class="ff-icon">${icons[sample.type] || ''}</span>
+              <span class="ff-label">${esc(labelOf(k))} <span style="opacity:.5">· ${gfs.length}</span></span>
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-dg-coltype="${esc(k)}" ${allVisible ? 'checked' : ''} />
+            </label>`;
+          }).join('');
+      }
+      fieldsList.innerHTML = html || '<div style="padding:8px;font-size: var(--t-12);opacity:.5">No fields match.</div>';
+      const n = fs.length - hidden.size;
+      fieldsBadge.hidden = hidden.size === 0;
+      fieldsBadge.textContent = `${n}/${fs.length}`;
+      fieldsToggle.classList.toggle('ff-on', hidden.size > 0);
+    }
+    root.querySelectorAll<HTMLElement>('[data-dg-fieldstab]').forEach((b) => b.addEventListener('click', () => {
+      fieldsTab = b.dataset.dgFieldstab as typeof fieldsTab;
+      // `role="tab"` means `aria-selected` IS the state — it used to toggle a class only, so a
+      // screen reader was told "tab" and never which one was current (catalog a11y note).
+      root.querySelectorAll('[data-dg-fieldstab]').forEach((x) => {
+        x.classList.toggle('sb-seg-on', x === b);
+        x.setAttribute('aria-selected', String(x === b));
+      });
+      renderFields();
+    }));
+    fieldsSearch.addEventListener('input', renderFields);
+    fieldsList.addEventListener('change', (e) => {
+      const t = e.target as HTMLElement; const v = active();
+      const idt = t.closest<HTMLInputElement>('[data-dg-recidtoggle]');
+      if (idt) { v.showRecId = idt.checked; renderGrid(); touch(); return; }
+      const one = t.closest<HTMLInputElement>('[data-dg-col]');
+      if (one) { if (one.checked) v.hiddenCols.delete(one.dataset.dgCol!); else v.hiddenCols.add(one.dataset.dgCol!); renderFields(); renderGrid(); touch(); return; }
+      const grp = t.closest<HTMLInputElement>('[data-dg-coltype]');
+      if (grp) {
+        const key = grp.dataset.dgColtype!;
+        const match = (f: Field) => (fieldsTab === 'types' ? f.type : family(f.type)) === key;
+        activeTable().fields.forEach((f) => { if (match(f)) { if (grp.checked) v.hiddenCols.delete(f.id); else v.hiddenCols.add(f.id); } });
+        renderFields(); renderGrid(); touch();
+      }
+    });
+    // ── Column reorder — drag a field row by its grip in the Names tab (primary pinned first) ─────
+    // The grip lives inside the row's <label>, so a plain click would toggle the field — swallow it.
+    fieldsList.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-dg-fieldgrip]')) { e.preventDefault(); e.stopPropagation(); } });
+    let dragFieldId: string | null = null;
+    const clearDropHints = () => fieldsList.querySelectorAll('.dg-drop-before, .dg-drop-after').forEach((el) => el.classList.remove('dg-drop-before', 'dg-drop-after'));
+    fieldsList.addEventListener('dragstart', (e) => {
+      const grip = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-fieldgrip]');
+      if (!grip || !grip.hasAttribute('draggable')) { e.preventDefault(); return; }
+      const row = grip.closest<HTMLElement>('[data-dg-fieldrow]');
+      dragFieldId = row?.dataset.dgFieldrow || null;
+      e.dataTransfer!.effectAllowed = 'move';
+      row?.classList.add('dg-fieldrow-dragging');
+    });
+    fieldsList.addEventListener('dragover', (e) => {
+      if (dragFieldId == null) return;
+      clearDropHints();
+      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-fieldrow]');
+      if (!row || row.dataset.dgFieldrow === dragFieldId) return;
+      e.preventDefault();
+      const r = row.getBoundingClientRect();
+      const after = (e.clientY - r.top) > r.height / 2;
+      row.classList.add(after ? 'dg-drop-after' : 'dg-drop-before');
+    });
+    fieldsList.addEventListener('drop', (e) => {
+      if (dragFieldId == null) return;
+      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-fieldrow]');
+      if (!row) return;
+      e.preventDefault();
+      const targetId = row.dataset.dgFieldrow!;
+      if (targetId !== dragFieldId) {
+        const r = row.getBoundingClientRect();
+        const after = (e.clientY - r.top) > r.height / 2;
+        const ids = orderedColIds();
+        ids.splice(ids.indexOf(dragFieldId), 1);
+        const to = ids.indexOf(targetId) + (after ? 1 : 0);
+        ids.splice(to, 0, dragFieldId);
+        active().colOrder = ids;
+        renderFields(); renderGrid(); touch();
+      }
+      dragFieldId = null;
+    });
+    fieldsList.addEventListener('dragend', () => { dragFieldId = null; clearDropHints(); fieldsList.querySelectorAll('.dg-fieldrow-dragging').forEach((el) => el.classList.remove('dg-fieldrow-dragging')); });
+
+    // ── + Filter builder (nested condition tree, Airtable model) ─────────────────
+    const fdd = q('[data-dg-filterdd]');
+    const fpop = q('[data-dg-filterpop]');
+    const ftoggle = q('[data-dg-filter-toggle]');
+    const fbTree = q('[data-dg-fbtree]');
+    // 660px anchored at `left: 0`: wherever the toolbar puts this trigger within 660 of the column's
+    // right edge, the panel's far side is off-screen unless something clamps it. Same helper the
+    // collapsed Filter uses, so the two paths to this builder place it the same way.
+    const openFilter = (o: boolean) => { fpop.hidden = !o; ftoggle.setAttribute('aria-expanded', String(o)); if (o) { renderFilter(); clampBelow(fpop, fdd); } };
+    ftoggle.addEventListener('click', (e) => { e.stopPropagation(); openFilter(fpop.hidden); });
+    document.addEventListener('click', (e) => {
+      if (!fdd.contains(e.target as Node) && !openMenu?.contains(e.target as Node)) openFilter(false);
+      if (!root.querySelector('[data-dg-fieldsdd]')!.contains(e.target as Node)) openFields(false);
+    });
+    /**
+     * Escape for the two toolbar popovers (Filter builder · Fields picker), on the shared stack
+     * (`lib/escapeStack`) rather than a seventh `document` keydown of its own.
+     *
+     * THE RETURN VALUE IS THE WHOLE POINT, and it is easy to get wrong here because closing is
+     * idempotent: `openFilter(false)` on an already-closed popover is a no-op that still "succeeds".
+     * A handler that closed both unconditionally and returned `true` would swallow every Escape on
+     * this page for the panel stack and the record drawer underneath it — which is exactly the
+     * all-at-once dismissal the stack exists to end, just inverted. So the open state is READ FIRST
+     * (`hidden` is what `openFilter`/`openFields` actually toggle), and `false` is returned honestly
+     * when neither popover was open, letting the press fall through to whatever is below.
+     *
+     * Both are closed on one press when both are open: they are siblings in the same toolbar, not
+     * stacked over each other, so there is no "topmost" between them to prefer.
+     *
+     * Not `withinDialog`: these live in the Browse toolbar, under any modal, so a native
+     * `<dialog open>` correctly stands them down.
+     */
+    pushEscape({
+      label: 'DataBrowse: filter/fields popovers',
+      onEscape: () => {
+        const wasOpen = !fpop.hidden || !fieldsPop.hidden;
+        if (!wasOpen) return false;
+        openFilter(false);
+        openFields(false);
+        return true;
+      },
+    });
+
+    // Path = a dot-joined chain of child indices ('' = the root group, '2' = root child 2, '2.1' =
+    // child 1 of the group at root index 2). One level of nesting, so a path is 1–2 segments.
+    const treeRoot = (): FGroup => active().filterTree;
+    const parsePath = (s: string): number[] => (s === '' ? [] : s.split('.').map(Number));
+    const groupAtPath = (path: number[]): FGroup => { let g = treeRoot(); for (const i of path) g = g.children[i] as FGroup; return g; };
+    const parentGroup = (path: number[]): FGroup => groupAtPath(path.slice(0, -1));
+    const nodeAtPath = (path: number[]): FNode => parentGroup(path).children[path[path.length - 1]];
+    const newCond = (): Cond => { const f = activeTable().fields[0]; return { kind: 'cond', field: f, op: OPS[family(f.type)][0].v, val: '', val2: undefined }; };
+    const commit = () => { pager.reset(); renderFilter(); renderGrid(); touch(); };
+
+    const conjCell = (groupPath: string, i: number, conj: 'and' | 'or') => {
+      if (i === 0) return `<span class="dg-fb-conj dg-fb-where">Where</span>`;
+      if (i === 1) return `<select class="select select-sm dg-fb-conjsel" data-dg-fbconj data-dg-path="${groupPath}" aria-label="Conjunction"><option value="and" ${conj === 'and' ? 'selected' : ''}>and</option><option value="or" ${conj === 'or' ? 'selected' : ''}>or</option></select>`;
+      return `<span class="dg-fb-conj">${conj}</span>`;
+    };
+    const actsCell = (path: string, label: string) => `<div class="dg-fb-acts">
+        <button type="button" class="dg-fb-iconbtn tooltip tooltip-left" data-tip="Duplicate ${label}" data-dg-fbdup data-dg-path="${path}" aria-label="Duplicate ${label}"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>
+        <button type="button" class="dg-fb-iconbtn tooltip tooltip-left" data-tip="Delete ${label}" data-dg-fbdel data-dg-path="${path}" aria-label="Delete ${label}"><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span></button>
+        <button type="button" class="dg-fb-grip tooltip tooltip-left" data-tip="Drag to reorder" data-dg-fbgrip data-dg-path="${path}" draggable="true" aria-label="Reorder ${label}"><span class="iconify lucide--grip-vertical size-3.5" aria-hidden="true"></span></button>
+      </div>`;
+    const condRow = (cond: Cond, path: string, conj: string) => {
+      const fields = activeTable().fields;
+      const fam = family(cond.field.type);
+      const ops = OPS[fam];
+      const op = ops.find((o) => o.v === cond.op) || ops[0];
+      const fieldSel = `<select class="select select-sm dg-fb-field" data-dg-fbfield data-dg-path="${path}" aria-label="Field">${fields.map((f) => `<option value="${f.id}" ${f.id === cond.field.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>`;
+      const opSel = `<select class="select select-sm dg-fb-op" data-dg-fbop data-dg-path="${path}" aria-label="Operator">${ops.map((o) => `<option value="${o.v}" ${o.v === cond.op ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
+      let valHtml = `<span class="dg-fb-val dg-fb-val-none"></span>`;
+      if (!op.noval) {
+        const type = fam === 'date' ? 'date' : fam === 'number' ? 'number' : 'text';
+        const ph = fam === 'select' && (op.v === 'anyof' || op.v === 'noneof') ? 'value1, value2' : 'Enter a value';
+        valHtml = `<input class="input input-sm dg-fb-val" data-dg-fbval data-dg-path="${path}" type="${type}" value="${esc(cond.val)}" placeholder="${ph}" aria-label="Value" />`;
+        if (op.two) valHtml += `<span class="dg-fb-and">and</span><input class="input input-sm dg-fb-val" data-dg-fbval2 data-dg-path="${path}" type="${type}" value="${esc(cond.val2 || '')}" placeholder="Enter a value" aria-label="Second value" />`;
+      }
+      return `<div class="dg-fb-row" data-dg-path="${path}">${conj}<div class="dg-fb-inputs">${fieldSel}${opSel}${valHtml}</div>${actsCell(path, 'condition')}</div>`;
+    };
+    const groupBody = (group: FGroup, groupPath: string): string => {
+      if (!group.children.length) return `<div class="dg-fb-empty">No conditions yet — add one below.</div>`;
+      return group.children.map((child, i) => {
+        const childPath = groupPath === '' ? String(i) : `${groupPath}.${i}`;
+        const conj = conjCell(groupPath, i, group.conjunction);
+        if (child.kind === 'cond') return condRow(child, childPath, conj);
+        return `<div class="dg-fb-grouprow" data-dg-path="${childPath}">${conj}<div class="dg-fb-group">${groupBody(child, childPath)}<div class="dg-fb-groupfoot"><button type="button" class="btn btn-sm btn-ghost gap-1.5 dg-fb-addin" data-dg-fbaddin data-dg-path="${childPath}"><span class="iconify lucide--plus size-3.5" aria-hidden="true"></span>Add condition</button></div></div>${actsCell(childPath, 'group')}</div>`;
+      }).join('');
+    };
+    function renderFilter() {
+      const tree = treeRoot();
+      fbTree.innerHTML = groupBody(tree, '');
+      const n = countConds(tree);
+      ftoggle.classList.toggle('ff-on', n > 0);
+      const fbadge = root.querySelector<HTMLElement>('[data-dg-filterbadge]');
+      if (fbadge) { fbadge.hidden = n === 0; fbadge.textContent = String(n); }
+    }
+
+    // Structural mutations (re-render the whole tree). Value typing is handled separately so it
+    // never re-renders mid-keystroke and loses focus.
+    fbTree.addEventListener('change', (e) => {
+      const t = e.target as HTMLElement;
+      const fieldSel = t.closest<HTMLSelectElement>('[data-dg-fbfield]');
+      if (fieldSel) {
+        const cond = nodeAtPath(parsePath(fieldSel.dataset.dgPath!)) as Cond;
+        const nf = activeTable().fields.find((f) => f.id === fieldSel.value)!;
+        const changedFam = family(nf.type) !== family(cond.field.type);
+        cond.field = nf;
+        if (changedFam) { cond.op = OPS[family(nf.type)][0].v; cond.val = ''; cond.val2 = undefined; }
+        commit(); return;
+      }
+      const opSel = t.closest<HTMLSelectElement>('[data-dg-fbop]');
+      if (opSel) { (nodeAtPath(parsePath(opSel.dataset.dgPath!)) as Cond).op = opSel.value; commit(); return; }
+      const conjSel = t.closest<HTMLSelectElement>('[data-dg-fbconj]');
+      if (conjSel) { groupAtPath(parsePath(conjSel.dataset.dgPath!)).conjunction = conjSel.value as 'and' | 'or'; commit(); return; }
+    });
+    // Value typing — update the model + grid without re-rendering the tree (keep focus).
+    fbTree.addEventListener('input', (e) => {
+      const t = e.target as HTMLElement;
+      const v1 = t.closest<HTMLInputElement>('[data-dg-fbval]');
+      if (v1) { (nodeAtPath(parsePath(v1.dataset.dgPath!)) as Cond).val = v1.value; pager.reset(); renderGrid(); touch(); return; }
+      const v2 = t.closest<HTMLInputElement>('[data-dg-fbval2]');
+      if (v2) { (nodeAtPath(parsePath(v2.dataset.dgPath!)) as Cond).val2 = v2.value; pager.reset(); renderGrid(); touch(); return; }
+    });
+    fbTree.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const dup = t.closest<HTMLElement>('[data-dg-fbdup]');
+      if (dup) { const p = parsePath(dup.dataset.dgPath!); const par = parentGroup(p); const idx = p[p.length - 1]; par.children.splice(idx + 1, 0, cloneNode(par.children[idx])); commit(); return; }
+      const del = t.closest<HTMLElement>('[data-dg-fbdel]');
+      if (del) {
+        const p = parsePath(del.dataset.dgPath!); const par = parentGroup(p); par.children.splice(p[p.length - 1], 1);
+        // A nested group emptied of its last condition disappears (it can't be re-populated by hand).
+        if (par !== treeRoot() && !par.children.length) { const idx = treeRoot().children.indexOf(par); if (idx >= 0) treeRoot().children.splice(idx, 1); }
+        commit(); return;
+      }
+      const addin = t.closest<HTMLElement>('[data-dg-fbaddin]');
+      if (addin) { groupAtPath(parsePath(addin.dataset.dgPath!)).children.push(newCond()); commit(); return; }
+    });
+
+    // Drag-reorder within the same parent group (grip handle).
+    let dragPath: string | null = null;
+    fbTree.addEventListener('dragstart', (e) => {
+      const grip = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-fbgrip]');
+      if (!grip) { e.preventDefault(); return; }
+      dragPath = grip.dataset.dgPath!;
+      e.dataTransfer!.effectAllowed = 'move';
+      grip.closest('.dg-fb-row, .dg-fb-grouprow')?.classList.add('dg-fb-dragging');
+    });
+    fbTree.addEventListener('dragend', () => { dragPath = null; fbTree.querySelectorAll('.dg-fb-dragging').forEach((r) => r.classList.remove('dg-fb-dragging')); });
+    fbTree.addEventListener('dragover', (e) => { if (dragPath != null) e.preventDefault(); });
+    fbTree.addEventListener('drop', (e) => {
+      if (dragPath == null) return;
+      e.preventDefault();
+      const row = (e.target as HTMLElement).closest<HTMLElement>('.dg-fb-row, .dg-fb-grouprow');
+      if (!row) return;
+      const src = parsePath(dragPath); const tgt = parsePath(row.dataset.dgPath!);
+      if (src.slice(0, -1).join('.') !== tgt.slice(0, -1).join('.')) return; // same parent only
+      const par = parentGroup(src); const from = src[src.length - 1]; let to = tgt[tgt.length - 1];
+      if (from === to) return;
+      const [moved] = par.children.splice(from, 1); if (from < to) to -= 1; par.children.splice(to, 0, moved);
+      commit();
+    });
+
+    // Footer actions.
+    q('[data-dg-fbaddcond]').addEventListener('click', () => { treeRoot().children.push(newCond()); commit(); });
+    q('[data-dg-fbaddgroup]').addEventListener('click', () => { treeRoot().children.push({ kind: 'group', conjunction: 'or', children: [newCond()] }); commit(); });
+
+    // ── Sort (header click) ──────────────────────────────────────────────────────
+    thead.addEventListener('click', (e) => {
+      const th = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-sort]');
+      if (!th) return;
+      const fid = th.dataset.dgSort!; const v = active();
+      if (v.sortField === fid) v.sortDir *= -1; else { v.sortField = fid; v.sortDir = 1; }
+      pager.reset(); renderGrid(); touch();
+    });
+
+    // ── Row open → record sidebar ───────────────────────────────────────────────
+    root.addEventListener('click', (e) => {
+      // Copy a record id (id column) — don't open the record; flash a check-mark.
+      const copyBtn = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-copyid]');
+      if (copyBtn) {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(copyBtn.dataset.dgCopyid!);
+        flashCopied(copyBtn);
+        return;
+      }
+      // A clicked linked-record name opens THAT record (drill), not the row's own record.
+      // `beside` carries the modifier through to the host. Without it the event said only WHICH
+      // record, so every open reused the anchor and ⌘-click silently replaced the panel you were
+      // reading (founder, 2026-08-04). Changelog and Attachments already read the modifier at the
+      // source; Browse was the one grid that did not.
+      const beside = (ev: MouseEvent) => ev.metaKey || ev.ctrlKey;
+      const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-openrec]');
+      if (chip) { e.stopPropagation(); document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id: chip.dataset.dgOpenrec, beside: beside(e as MouseEvent) } })); return; }
+      const tr = (e.target as HTMLElement).closest<HTMLElement>('[data-dg-open]');
+      if (!tr) return;
+      document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id: tr.dataset.dgOpen, tableId: active().tableId, beside: beside(e as MouseEvent) } }));
+    });
+
+    // Middle-click opens beside too — the same gesture Changelog and Attachments rows already
+    // honour. Browse lacking it was a gap, not a decision.
+    root.addEventListener('auxclick', (e) => {
+      const me = e as MouseEvent;
+      if (me.button !== 1) return;
+      const tr = (me.target as HTMLElement).closest<HTMLElement>('[data-dg-open]');
+      if (!tr) return;
+      me.preventDefault();
+      document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id: tr.dataset.dgOpen, tableId: active().tableId, beside: true } }));
+    });
+
+    // ── Table switching (facet pickers) ─────────────────────────────────────────
+    const tableBase = new Map(snap.tables.map((t) => [t.id, t.baseId]));
+    const baseFirstTable = new Map<string, string>();
+    snap.tables.forEach((t) => { if (!baseFirstTable.has(t.baseId)) baseFirstTable.set(t.baseId, t.id); });
+    const narrowTableFacet = (baseId: string) => {
+      root.querySelectorAll<HTMLElement>('[data-facet="dbtable"] .ff-opt').forEach((row) => {
+        const val = row.querySelector<HTMLInputElement>('[data-facet-opt]')?.value || '';
+        row.style.display = tableBase.get(val) === baseId ? '' : 'none';
+      });
+      const baseName = snap.baseName[baseId];
+      root.querySelectorAll<HTMLElement>('[data-facet="dbtable"] .ff-group').forEach((g) => {
+        g.style.display = (g.textContent || '') === baseName ? '' : 'none';
+      });
+    };
+    const setFacetLabel = (name: string, text: string) => {
+      const lbl = root.querySelector<HTMLElement>(`[data-facet="${name}"] [data-facet-label]`);
+      if (lbl) lbl.textContent = text;
+    };
+    const setFacetRadio = (name: string, val: string) => {
+      root.querySelectorAll<HTMLInputElement>(`[data-facet="${name}"] [data-facet-opt]`).forEach((o) => (o.checked = o.value === val));
+    };
+    // In-place table switching is FORBIDDEN on a saved preset (Dan 2026-07-23) — the Base/Table
+    // pickers render LOCKED the moment a preset is saved (setFacetLocked, below), so this handler
+    // only ever runs against a Draft: it re-points THIS preset's base/table in place and resets the
+    // table-bound config, since filters/sort/hidden-cols/colOrder cannot survive a table change.
+    // (Switching table via a NEW tab — ＋ New blank preset / Duplicate current — is unaffected; those
+    // just open a fresh Draft with its own scope, handled by newView().)
+    function repointDraftTable(tid: string) {
+      const v = active();
+      if (v.saved || v.tableId === tid) return; // defensive: the picker is disabled once saved
+      v.tableId = tid;
+      v.filterTree = emptyGroup(); v.sortField = ''; v.sortDir = 1; v.hiddenCols = new Set(); v.colOrder = [];
+      // `commentFilter` resets too. It is the one item here that could NOT dangle — all/with/without
+      // is table-agnostic, unlike the field ids above — so this is about consistency rather than
+      // safety: every other lens the toolbar carries starts fresh on a table change, and a filter
+      // silently surviving into a different table is a state the user did not ask for.
+      v.commentFilter = 'all';
+      loadActiveView(); renderViews();
+    }
+    // Reflect a scope picker's lock state onto its trigger — a bubbling `facetlock` event that
+    // FacetFilter itself owns the visual treatment for (disabled + lock glyph + tooltip reason).
+    function setFacetLocked(name: string, locked: boolean) {
+      root.querySelector(`[data-facet="${name}"]`)?.dispatchEvent(
+        new CustomEvent('facetlock', { detail: { locked, reason: LOCK_REASON } }),
+      );
+    }
+    // Comment-presence facet (comments-explorer) — unlike Base/Table this is a per-PRESET value that
+    // is never locked (only scope locks on Save), so its trigger visual is synced directly here
+    // rather than through setFacetRadio + a separate label call.
+    function setCommentFacet(val: CommentFilter) {
+      setFacetRadio('dgcomments', val);
+      const ff = root.querySelector<HTMLElement>('[data-facet="dgcomments"]');
+      if (!ff) return;
+      const badge = ff.querySelector<HTMLElement>('[data-facet-selbadge]');
+      if (badge) badge.hidden = val === 'all';
+      ff.querySelector('[role="button"]')?.classList.toggle('ff-on', val !== 'all');
+    }
+    function syncFacetsToActive() {
+      const t = activeTable(); const v = active();
+      setFacetRadio('dbbase', t.baseId); setFacetLabel('dbbase', snap.baseName[t.baseId]); narrowTableFacet(t.baseId);
+      setFacetRadio('dbtable', t.id); setFacetLabel('dbtable', t.name);
+      setFacetLocked('dbbase', v.saved); setFacetLocked('dbtable', v.saved);
+      setCommentFacet(v.commentFilter);
+      renderFilter();
+    }
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail;
+      // Comment presence stays editable on a SAVED preset — only Base/Table lock on save.
+      if (d.name === 'dgcomments') {
+        active().commentFilter = d.value === 'with' || d.value === 'without' ? d.value : 'all';
+        pager.reset(); renderBody(); touch();
+        return;
+      }
+      if (active().saved) return; // locked scope — the trigger is disabled, this is a defensive no-op
+      if (d.name === 'dbbase') {
+        const baseId = d.value; narrowTableFacet(baseId);
+        repointDraftTable(baseFirstTable.get(baseId)!);
+      } else if (d.name === 'dbtable') {
+        repointDraftTable(d.value);
+      }
+    });
+
+    // ── Search (in-table only; cross-table master-search is a deferred later modal) ──────
+    const searchInput = root.querySelector<HTMLInputElement>('[data-dg-search]')!;
+    searchInput.addEventListener('input', () => {
+      active().query = searchInput.value.trim().toLowerCase();
+      pager.reset(); renderBody(); touch();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== '/') return;
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+      if (searchInput.offsetParent !== null) { e.preventDefault(); searchInput.focus(); }
+    });
+
+    // ── Clear ────────────────────────────────────────────────────────────────────
+    root.querySelectorAll<HTMLElement>('[data-dg-clear]').forEach((b) => b.addEventListener('click', () => {
+      const v = active();
+      v.filterTree = emptyGroup(); v.hiddenCols = new Set(); v.query = ''; searchInput.value = ''; v.sortField = ''; v.commentFilter = 'all'; pager.reset();
+      // facetreset (not a plain value set) so the radio + selbadge repaint through the component's
+      // own logic, same as every other facet Clear resets.
+      root.querySelector('[data-facet="dgcomments"]')?.dispatchEvent(new CustomEvent('facetreset'));
+      renderFields(); renderFilter(); renderGrid(); touch();
+    }));
+
+    // ── Save / Discard — real toolbar markup (server-rendered, `hidden` by default); wired once,
+    // toggled every render (see renderViews()). saveView/revertView are function declarations
+    // (hoisted), so referencing them here ahead of their own definitions is safe.
+    const saveBtn = q<HTMLButtonElement>('[data-dv-save]');
+    const discardBtn = q<HTMLButtonElement>('[data-dv-discard]');
+    saveBtn.addEventListener('click', () => saveView(active()));
+    discardBtn.addEventListener('click', () => revertView(active()));
+
+    // ── Views: load / switch / lifecycle ─────────────────────────────────────────
+    // Load the active view's config into the toolbar + grid.
+    async function loadActiveView() {
+      const v = active();
+      searchInput.value = v.query;
+      pager.reset();
+      syncFacetsToActive();
+      renderFilter();
+      // Table switch / preset open: fetch page-1 when this table has no/few SSR rows.
+      const ok = await ensureCoverage(v.tableId, pager.pageSize);
+      if (ok) renderGrid();
+    }
+    // Open a preset as a tab (or just re-activate it if already open) — a library-row click and a tab
+    // click both route here. Opening pushes it onto the tab bar; the preset always lives in the library.
+    function openPreset(id: string) {
+      if (!views.some((v) => v.id === id)) return;
+      if (!openIds.includes(id)) openIds.push(id);
+      if (id === activeId) return;
+      activeId = id; loadActiveView(); renderViews();
+    }
+    // Close a tab (✕) — the preset stays in the library. Activate a neighbour; if none remain open,
+    // spin up a fresh blank preset so the grid always has an active config (never a blank grid).
+    function closeTab(id: string) {
+      const i = openIds.indexOf(id); if (i < 0) return;
+      openIds.splice(i, 1);
+      if (activeId !== id) { renderViews(); return; }
+      const next = openIds[i] || openIds[i - 1];
+      if (next) { activeId = next; loadActiveView(); renderViews(); return; }
+      // Last tab closed → re-open a library preset so the grid stays alive (never blank, and no pile of
+      // throwaway blanks). Only spin up a fresh one if the library is somehow empty.
+      const fallback = views.find((v) => v.id !== id) || views[0];
+      if (fallback) openPreset(fallback.id); else newView(false);
+    }
+    // ＋ New blank preset / Duplicate current — the ONLY ways to reach another table (Dan 2026-07-23).
+    // Both arrive UNSAVED, with no baseline: a Draft, scope open, so base+table can be set right in
+    // the (unlocked) toolbar pickers before the first Save.
+    function newView(fromActive = false) {
+      const src = fromActive ? active() : null;
+      const id = `v-new-${idSeq++}`;
+      // A new/duplicated preset is ungrouped by default; a duplicate keeps its source's group.
+      const v: View = src ? {
+        id, name: `${src.name} copy`, tableId: src.tableId, pinned: false, temporary: false, groupId: src.groupId,
+        hiddenCols: new Set(src.hiddenCols), filterTree: cloneTree(src.filterTree),
+        sortField: src.sortField, sortDir: src.sortDir, query: src.query, showRecId: src.showRecId, colOrder: src.colOrder.slice(),
+        commentFilter: src.commentFilter, saved: false,
+      } : {
+        id, name: 'New preset', tableId: active().tableId, pinned: false, temporary: false, groupId: undefined,
+        hiddenCols: new Set(), filterTree: emptyGroup(), sortField: '', sortDir: 1, query: '', showRecId: false, colOrder: [],
+        commentFilter: 'all', saved: false,
+      };
+      views.push(v); openIds.push(id); activeId = id; loadActiveView(); renderViews();
+    }
+    // The first Save LOCKS the preset's base + table (see setFacetLocked/syncFacetsToActive) — after
+    // this, only filters/fields/sort/search stay editable.
+    function saveView(v: View) {
+      v.baseline = snapConfig(v); v.saved = true;
+      if (v.id === activeId) { setFacetLocked('dbbase', true); setFacetLocked('dbtable', true); }
+      renderViews();
+    }
+    // Discard edits — restore the preset's config from its saved baseline and reload the grid. Not
+    // offered on a never-saved Draft (no baseline to return to) — the kebab's Delete is the way out.
+    function revertView(v: View) {
+      if (!v.baseline) return;
+      applyConfig(v, v.baseline);
+      if (v.id === activeId) loadActiveView();
+      renderViews();
+    }
+    function deleteView(id: string) {
+      const oi = openIds.indexOf(id); if (oi >= 0) openIds.splice(oi, 1);
+      const idx = views.findIndex((v) => v.id === id);
+      if (idx < 0) return;
+      views.splice(idx, 1);
+      if (!views.length) { newView(); return; }
+      if (activeId === id) {
+        if (!openIds.length) openIds = [views[Math.max(0, idx - 1)].id];
+        activeId = openIds[0]; loadActiveView();
+      }
+      renderViews();
+    }
+    function renameView(id: string, name: string) { const v = views.find((x) => x.id === id); if (v && name.trim()) { v.name = name.trim(); renderViews(); } }
+
+    // ── Groups (folders) lifecycle ───────────────────────────────────────────────
+    function newGroup(name = 'New group'): Group { const g = { id: `grp-new-${idSeq++}`, name, collapsed: false }; groups.push(g); return g; }
+    function renameGroup(id: string, name: string) { const g = groups.find((x) => x.id === id); if (g && name.trim()) { g.name = name.trim(); renderViews(); } }
+    // Deleting a group NEVER deletes its views — they fall back to Ungrouped.
+    function deleteGroup(id: string) { views.forEach((v) => { if (v.groupId === id) v.groupId = undefined; }); const i = groups.findIndex((g) => g.id === id); if (i >= 0) groups.splice(i, 1); renderViews(); }
+    function toggleCollapse(id: string) { const g = groups.find((x) => x.id === id); if (g) { g.collapsed = !g.collapsed; renderViews(); } }
+    function moveViewToGroup(viewId: string, groupId: string | null) {
+      const v = views.find((x) => x.id === viewId); if (!v) return;
+      if (groupId === 'new') { const g = newGroup(); v.groupId = g.id; renderViews(); startRenameGroup(g.id); return; }
+      v.groupId = groupId || undefined; renderViews();
+    }
+
+    // ── Views rendering (both layouts) ───────────────────────────────────────────
+    const railEl = q('[data-dv-raillist]');
+    const pinbarEl = q('[data-dv-pinbar]');
+    // The row's width changes without the WINDOW changing — opening the preset library takes 240px,
+    // and split view takes several hundred more. A resize listener would miss both, so observe the
+    // element itself. `requestAnimationFrame` keeps the re-fit off the observer's own callback, which
+    // is what ResizeObserver loops complain about.
+    let fitQueued = 0;
+    new ResizeObserver(() => {
+      if (fitQueued) return;
+      fitQueued = requestAnimationFrame(() => { fitQueued = 0; fitPinbar(); });
+    }).observe(pinbarEl);
+
+    // ── Library drag-and-drop — drag a preset row onto a group (or Ungrouped) to re-file it ─────────
+    let dragViewId: string | null = null;
+    railEl.addEventListener('dragstart', (e) => {
+      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-dv-viewrow]');
+      if (!row) { e.preventDefault(); return; }
+      dragViewId = row.dataset.dvViewrow!;
+      e.dataTransfer!.effectAllowed = 'move';
+      row.classList.add('dv-vrow-dragging');
+      railEl.classList.add('dv-rail-dragging');
+    });
+    railEl.addEventListener('dragend', () => {
+      dragViewId = null;
+      railEl.classList.remove('dv-rail-dragging');
+      railEl.querySelectorAll('.dv-vrow-dragging, .dv-dropactive').forEach((el) => el.classList.remove('dv-vrow-dragging', 'dv-dropactive'));
+    });
+    railEl.addEventListener('dragover', (e) => {
+      if (dragViewId == null) return;
+      const zone = (e.target as HTMLElement).closest<HTMLElement>('[data-dv-groupzone]');
+      if (!zone) return;
+      e.preventDefault();
+      if (!zone.classList.contains('dv-dropactive')) { railEl.querySelectorAll('.dv-dropactive').forEach((el) => el.classList.remove('dv-dropactive')); zone.classList.add('dv-dropactive'); }
+    });
+    railEl.addEventListener('drop', (e) => {
+      if (dragViewId == null) return;
+      const zone = (e.target as HTMLElement).closest<HTMLElement>('[data-dv-groupzone]');
+      if (!zone) return;
+      e.preventDefault();
+      const gid = zone.dataset.dvGroupzone!;
+      const v = views.find((x) => x.id === dragViewId);
+      dragViewId = null;
+      if (v && (v.groupId || undefined) !== (gid === 'none' ? undefined : gid)) moveViewToGroup(v.id, gid === 'none' ? null : gid);
+    });
+    // The unsaved indicator shared by a library row and its tab: a Draft (never saved) gets the
+    // ghost "Draft" badge; a SAVED preset with edits pending gets the quieter unsaved status dot.
+    // The two never show together — a Draft's whole existence is "unsaved", the badge already says so.
+    const unsavedMark = (v: View) =>
+      !v.saved ? '<span class="badge badge-soft badge-warning badge-sm">Draft</span>' : isDirty(v) ? '<span class="status status-primary status-sm" aria-hidden="true"></span>' : '';
+    // One row shape used by the library rail sections.
+    const vrow = (v: View) => `
+      <div class="dv-vrow ${v.id === activeId ? 'dv-active' : ''} ${openIds.includes(v.id) ? 'dv-open' : ''}" data-dv-tab="${v.id}" data-dv-viewrow="${v.id}" role="tab" draggable="true">
+        <span class="dv-vrow-grip" aria-hidden="true"><span class="iconify lucide--grip-vertical size-3.5"></span></span>
+        <span class="dv-vrow-ic"><span class="iconify ${v.saved ? 'lucide--bookmark' : 'lucide--file-pen-line'} size-3.5" aria-hidden="true"></span></span>
+        <span class="dv-vrow-name">${esc(v.name)}</span>${unsavedMark(v)}
+        <span class="dv-tab-kebab" data-dv-kebab="${v.id}" role="button" aria-label="Preset actions"><span class="iconify lucide--ellipsis size-4" aria-hidden="true"></span></span>
+      </div>`;
+    // The library list: each group (collapsible) · Ungrouped. Shows ALL presets (open or not); the tab
+    // bar shows the open ones. `s` filters by name.
+    function buildViewList(s: string): string {
+      const query = s.trim().toLowerCase();
+      const match = (v: View) => !query || v.name.toLowerCase().includes(query);
+      let html = '';
+      groups.forEach((g) => {
+        const gv = views.filter((v) => v.groupId === g.id);
+        const shown = gv.filter(match);
+        if (query && !shown.length) return; // under an active search, hide groups with no matches
+        // The whole group (head + body) is one drop zone — dropping a dragged view anywhere on it
+        // files the view into this group.
+        html += `<div class="dv-groupzone" data-dv-groupzone="${g.id}">
+          <div class="dv-grouphead" data-dv-group="${g.id}">
+            <button type="button" class="dv-groupcaret" data-dv-collapse="${g.id}" aria-label="Collapse group"><span class="iconify ${g.collapsed ? 'lucide--chevron-right' : 'lucide--chevron-down'} size-3.5" aria-hidden="true"></span></button>
+            <span class="dv-groupname">${esc(g.name)}</span><span class="dv-groupcount">${gv.length}</span>
+            <span class="dv-tab-kebab" data-dv-groupkebab="${g.id}" role="button" aria-label="Group actions"><span class="iconify lucide--ellipsis size-4" aria-hidden="true"></span></span>
+          </div>
+          <div class="dv-groupbody" ${g.collapsed ? 'hidden' : ''}>${shown.length ? shown.map(vrow).join('') : '<div class="dv-groupempty">Empty — drag a preset here or use its ⋯ menu.</div>'}</div>
+        </div>`;
+      });
+      // Ungrouped = loose presets with no group. Always a drop zone so a preset can be dragged OUT of a
+      // group (the hint is revealed while dragging if empty).
+      const ungrouped = views.filter((v) => !v.groupId && match(v));
+      html += `<div class="dv-groupzone dv-ungroupzone ${ungrouped.length ? '' : 'dv-ungroupzone-empty'}" data-dv-groupzone="none">
+        <div class="dv-seclabel">Ungrouped</div>
+        ${ungrouped.length ? ungrouped.map(vrow).join('') : '<div class="dv-groupempty dv-ungroup-hint">Drop here to remove from a group.</div>'}
+      </div>`;
+      return html || '<div class="dv-groupempty">No presets match.</div>';
+    }
+    // The preset toggle's two vocabularies: a column you hide/show, or a chooser you open.
+    const PRESET_SHEET_LABELS = { hide: 'Hide presets', show: 'Show presets', choose: 'Choose a preset', close: 'Close the preset list' };
+
+    function renderViews() {
+      // Single writer: every state-changing action already re-renders, so persisting here covers all
+      // of them (Save/Discard/Delete/new tab/close tab/rename/move-to-group/…) without a separate
+      // call site to remember. Also runs on the very first render, migrating a legacy `dg-open-presets`
+      // value into the v2 shape immediately.
+      persistState();
+      // Library rail — all presets by group + Ungrouped (open or not).
+      railEl.innerHTML = buildViewList(viewSearch);
+      // Tab bar — a "Presets" panel toggle ALWAYS leads the row (same position collapsed or expanded,
+      // so nothing jumps), then the OPEN preset tabs (Chrome-style, ✕ to close) + a "+".
+      const barViews = openIds.map((id) => views.find((v) => v.id === id)).filter(Boolean) as View[];
+      // Icon only. The word "Presets" cost ~56px of a row whose whole problem is width, and the thing
+      // it labelled is the panel BESIDE it — which, when open, says "Presets" in its own heading.
+      // The toggle is ONE button with TWO jobs — hide/show a column when the section is wide, open a
+      // chooser SHEET when it is not — so lib/listSheet.ts owns which words it carries. This console
+      // re-renders its pin-bar, so it asks for the label instead of having attributes set on a node
+      // that is about to be replaced.
+      const tgl = listSheetToggleLabel(root, PRESET_SHEET_LABELS, root.dataset.collapsed === '1');
+      const toggle = `<button type="button" class="dv-pinreopen tooltip tooltip-bottom" data-dv-panel-toggle aria-label="${esc(tgl.label)}" data-tip="${esc(tgl.label)}" aria-expanded="${tgl.showing}"><span class="iconify ${tgl.showing ? 'lucide--panel-left-close' : 'lucide--panel-left-open'} size-4" aria-hidden="true"></span></button>`;
+      // The ＋ lives OUTSIDE the scroller: a scroll container clips its descendants' tooltips no matter
+      // what z-index they carry (overflow-x:auto forces overflow-y to auto too — you cannot have one
+      // axis scroll and the other visible), so a tooltip inside .dv-tabscroll can never escape it.
+      // Keeping ＋ out both frees its tooltip and stops it scrolling away when tabs overflow.
+      pinbarEl.innerHTML = `<div class="dv-tabscroll">` + toggle + barViews.map((v) => `
+        <button type="button" class="dv-tab ${v.id === activeId ? 'dv-active' : ''}" data-dv-tab="${v.id}" role="tab">
+          <span class="dv-tab-name">${esc(v.name)}</span>${unsavedMark(v)}
+          <span class="dv-tab-close" data-dv-close="${v.id}" role="button" aria-label="Close tab"><span class="iconify lucide--x size-3.5" aria-hidden="true"></span></span>
+        </button>`).join('') + `</div>
+        <button type="button" class="dv-pinmore tooltip tooltip-bottom" data-dv-pinmore hidden aria-label="Show presets that do not fit" data-tip="Open presets that do not fit"><span class="iconify lucide--chevron-down size-3.5" aria-hidden="true"></span><span data-dv-pinmore-n>0</span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square text-primary dv-addbtn tooltip tooltip-bottom" data-dv-addbtn aria-label="Add preset" data-tip="New / duplicate preset"><span class="iconify lucide--plus size-4" aria-hidden="true"></span></button>`;
+      fitPinbar();
+      // Save / Discard — real toolbar buttons (server-rendered, `hidden` by default; see saveBtn/
+      // discardBtn above), just toggled here. A never-saved Draft always offers Save (there is no
+      // baseline yet to be "dirty" against); Discard needs a baseline to revert to, so it only shows
+      // once the preset has been saved at least once AND has since diverged.
+      const av = active();
+      const avDirty = isDirty(av);
+      saveBtn.hidden = av.saved && !avDirty;
+      discardBtn.hidden = !av.baseline || !avDirty;
+      // Point the toolbar kebab at whichever preset is active, so the delegated [data-dv-kebab] handler
+      // opens the very same popMenu() the library row opens — one menu, one source of truth.
+      const tbKebab = q<HTMLElement>('[data-dv-tbkebab]');
+      if (tbKebab) tbKebab.dataset.dvKebab = av.id;
+      // The export control's "All open tabs" scope depends on how many tabs are open — opening/closing
+      // one fires no input/change, so tell it explicitly (EXPORT-1).
+      document.dispatchEvent(new CustomEvent('data:tabschange', { detail: { count: openIds.length } }));
+    }
+
+    // A tiny action menu popped next to a kebab (view or group).
+    let openMenu: HTMLElement | null = null;
+    const closeMenu = () => { openMenu?.remove(); openMenu = null; };
+    const placeMenu = (m: HTMLElement, anchor: HTMLElement) => {
+      document.body.appendChild(m); const r = anchor.getBoundingClientRect();
+      m.style.top = `${r.bottom + 4}px`; m.style.left = `${Math.min(r.left, window.innerWidth - 200)}px`; openMenu = m;
+    };
+    // ── Pin-bar overflow (replaces a horizontal scrollbar) ──────────────────────────────────────
+    // A scrolled tab row hides its own overflow: nothing on screen says there are three more presets
+    // to the right, and finding one means dragging a 4px scrollbar. Show what fits and collapse the
+    // rest behind a counted chip whose menu carries FULL NAMES.
+    //
+    // Deliberately NOT Chrome's shrink-to-icon (Oleh proposed it, argued down 2026-08-05): Chrome can
+    // do that because every tab has a favicon — a distinct mark per tab. Presets have no mark and are
+    // all one kind of thing, so five shrunk tabs are five identical grey chips and "hover to see"
+    // means five hovers to find one. The name IS the preset; it is the last thing to give up.
+    //
+    // The window is CONTIGUOUS and always contains the active preset. Reserving the active's width and
+    // otherwise filling left-to-right was the first attempt and it read as broken — tabs 1,2,3 shown,
+    // 4,5 gone, 6 shown, a hole in the middle of a row that is supposed to be an order.
+    const PIN_GAP = 2;
+    function fitPinbar() {
+      const scroll = pinbarEl.querySelector<HTMLElement>('.dv-tabscroll');
+      const more = pinbarEl.querySelector<HTMLElement>('[data-dv-pinmore]');
+      if (!scroll || !more) return;
+      const tabs = [...scroll.querySelectorAll<HTMLElement>('.dv-tab')];
+      tabs.forEach((t) => { t.hidden = false; });
+      more.hidden = true;
+      if (!tabs.length) return;
+      const toggleEl = scroll.querySelector<HTMLElement>('.dv-pinreopen');
+      const addEl = pinbarEl.querySelector<HTMLElement>('[data-dv-addbtn]');
+      /**
+       * MARGINS COUNT. `offsetWidth` is the border box; a margin sits outside it and still takes
+       * space on a flex line. The reopen toggle carries `margin-right: 4px`, so `offsetWidth +
+       * PIN_GAP` reserved 35px for something that occupies 37.
+       *
+       * Two pixels here, and it is the same mistake that cost the SECTION tab bar eighteen — there
+       * `.sch-tabdiv` was a 0-width hairline with `margin-inline: 9.6px` that the fit counted as
+       * zero (see `lib/sectionNavFit.ts`). Both are one question asked too narrowly: "how wide is
+       * this element" when the layout is answering "how much of the row does it consume". The tabs
+       * themselves have no margins and their 2px gap is the real `gap`, so they were always right;
+       * only the chrome around them was short.
+       */
+      const occupies = (el: HTMLElement | null) => {
+        if (!el) return 0;
+        const cs = getComputedStyle(el);
+        return el.offsetWidth + (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0) + PIN_GAP;
+      };
+      const chrome = occupies(toggleEl) + occupies(addEl);
+      const avail = pinbarEl.clientWidth - chrome;
+      const w = tabs.map((t) => t.offsetWidth + PIN_GAP);
+      if (w.reduce((a, b) => a + b, 0) <= avail) return;   // everything fits — no chip, no menu
+
+      // Measure the chip while it is still laid out, so the reserve is the real thing and not a guess.
+      more.hidden = false;
+      const reserve = occupies(more);
+      let budget = avail - reserve;
+      const activeIdx = Math.max(0, tabs.findIndex((t) => t.classList.contains('dv-active')));
+
+      // Grow outward from the active one: right first (later presets are the ones just opened), then
+      // left. Whatever the window cannot hold goes to the chip.
+      let lo = activeIdx, hi = activeIdx;
+      budget -= w[activeIdx];
+      for (;;) {
+        const canR = hi + 1 < tabs.length && budget - w[hi + 1] >= 0;
+        const canL = lo - 1 >= 0 && budget - w[lo - 1] >= 0;
+        if (canR) { hi += 1; budget -= w[hi]; }
+        else if (canL) { lo -= 1; budget -= w[lo]; }
+        else break;
+      }
+      tabs.forEach((t, i) => { t.hidden = i < lo || i > hi; });
+      const n = tabs.length - (hi - lo + 1);
+      more.hidden = n <= 0;
+      const nEl = more.querySelector<HTMLElement>('[data-dv-pinmore-n]');
+      if (nEl) nEl.textContent = String(n);
+    }
+
+    /** The hidden tabs, by name, in their bar order. Reuses the library's own menu shell. */
+    function popPinOverflow(anchorEl: HTMLElement) {
+      closeMenu();
+      const hidden = [...pinbarEl.querySelectorAll<HTMLElement>('.dv-tab')].filter((t) => t.hidden);
+      if (!hidden.length) return;
+      const m = document.createElement('div');
+      m.className = 'dv-menu'; m.style.position = 'fixed';
+      m.innerHTML = hidden.map((t) => {
+        const id = t.dataset.dvTab!;
+        const v = views.find((x) => x.id === id);
+        return `<button type="button" data-m="${id}"><span class="iconify lucide--layout-list size-3.5" aria-hidden="true"></span>${esc(v ? v.name : id)}</button>`;
+      }).join('');
+      placeMenu(m, anchorEl);
+      m.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('[data-m]'); if (!b) return;
+        closeMenu();
+        openPreset(b.dataset.m!);
+      });
+    }
+
+    function popMenu(anchor: HTMLElement, id: string) {
+      closeMenu();
+      const v = views.find((x) => x.id === id)!;
+      const m = document.createElement('div');
+      m.className = 'dv-menu'; m.style.position = 'fixed';
+      const groupBtns = groups.map((g) => `<button type="button" data-m="grp:${g.id}"><span class="iconify lucide--folder size-3.5" aria-hidden="true"></span>${esc(g.name)}${v.groupId === g.id ? '<span class="dv-check iconify lucide--check size-3.5" aria-hidden="true"></span>' : ''}</button>`).join('');
+      m.innerHTML = `
+        <button type="button" data-m="rename"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Rename</button>
+        <button type="button" data-m="dup"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span>Duplicate</button>
+        <div class="dv-menu-sep"></div>
+        <div class="dv-menu-label">Move to group</div>
+        ${groupBtns}
+        ${v.groupId ? '<button type="button" data-m="grp:none"><span class="iconify lucide--folder-minus size-3.5" aria-hidden="true"></span>Remove from group</button>' : ''}
+        <button type="button" data-m="grp:new"><span class="iconify lucide--folder-plus size-3.5" aria-hidden="true"></span>New group…</button>
+        <div class="dv-menu-sep"></div>
+        <button type="button" class="dv-menu-danger" data-m="del"><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>`;
+      placeMenu(m, anchor);
+      m.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('[data-m]'); if (!b) return;
+        const act = b.dataset.m!;
+        if (act === 'rename') startRename(id);
+        else if (act === 'dup') { activeId = id; newView(true); }
+        else if (act === 'del') deleteView(id);
+        else if (act.startsWith('grp:')) { const g = act.slice(4); moveViewToGroup(id, g === 'none' ? null : g); }
+        closeMenu();
+      });
+    }
+    function popGroupMenu(anchor: HTMLElement, id: string) {
+      closeMenu();
+      const m = document.createElement('div');
+      m.className = 'dv-menu'; m.style.position = 'fixed';
+      m.innerHTML = `
+        <button type="button" data-m="rename"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Rename group</button>
+        <div class="dv-menu-sep"></div>
+        <button type="button" class="dv-menu-danger" data-m="del"><span class="iconify lucide--folder-x size-3.5" aria-hidden="true"></span>Delete group</button>`;
+      placeMenu(m, anchor);
+      m.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('[data-m]'); if (!b) return;
+        if (b.dataset.m === 'rename') startRenameGroup(id);
+        else if (b.dataset.m === 'del') deleteGroup(id);
+        closeMenu();
+      });
+    }
+    // The tab-bar "+" menu — New blank preset / Duplicate current, then (below a separator) the user's
+    // existing presets that aren't open yet, grouped, so you can add one as a tab. JS-popped so the
+    // bar's overflow can't clip it.
+    function popAddMenu(anchor: HTMLElement) {
+      closeMenu();
+      const m = document.createElement('div');
+      m.className = 'dv-menu dv-addmenu'; m.style.position = 'fixed';
+      const openRow = (v: View) => `<button type="button" data-m="open:${v.id}"><span class="iconify lucide--bookmark size-3.5" aria-hidden="true"></span>${esc(v.name)}</button>`;
+      // The existing (not-open) presets, grouped + filtered by the search query. Presets can be many,
+      // so the list is searchable + scrollable.
+      const listHtml = (q: string) => {
+        const query = q.trim().toLowerCase();
+        const match = (v: View) => !query || v.name.toLowerCase().includes(query);
+        const closed = views.filter((v) => !openIds.includes(v.id));
+        let html = '';
+        groups.forEach((g) => { const gv = closed.filter((v) => v.groupId === g.id && match(v)); if (gv.length) html += `<div class="dv-menu-label">${esc(g.name)}</div>` + gv.map(openRow).join(''); });
+        const ung = closed.filter((v) => !v.groupId && match(v));
+        if (ung.length) html += `<div class="dv-menu-label">Ungrouped</div>` + ung.map(openRow).join('');
+        return html || '<div class="dv-menu-empty">No presets match.</div>';
+      };
+      let html = `
+        <button type="button" data-m="new"><span class="iconify lucide--file-plus size-3.5" aria-hidden="true"></span>New blank preset</button>
+        <button type="button" data-m="dup"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span>Duplicate current</button>`;
+      const hasClosed = views.some((v) => !openIds.includes(v.id));
+      if (hasClosed) {
+        html += '<div class="dv-menu-sep"></div>';
+        html += `<label class="input input-sm dv-addsearch"><span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span><input type="search" data-dv-addsearch placeholder="Find a preset…" aria-label="Find a preset to open" autocomplete="off" /></label>`;
+        html += `<div class="dv-addlist" data-dv-addlist>${listHtml('')}</div>`;
+      }
+      m.innerHTML = html;
+      placeMenu(m, anchor);
+      const search = m.querySelector<HTMLInputElement>('[data-dv-addsearch]');
+      const listEl = m.querySelector<HTMLElement>('[data-dv-addlist]');
+      if (search && listEl) {
+        search.addEventListener('input', () => { listEl.innerHTML = listHtml(search.value); });
+        setTimeout(() => search.focus(), 0);
+      }
+      m.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('[data-m]'); if (!b) return; // clicks in the search field keep the menu open
+        const act = b.dataset.m!;
+        if (act === 'new') newView(false);
+        else if (act === 'dup') newView(true);
+        else if (act.startsWith('open:')) openPreset(act.slice(5));
+        closeMenu();
+      });
+    }
+    function startRename(id: string) {
+      const v = views.find((x) => x.id === id)!;
+      const tabEl = root.querySelector<HTMLElement>(`[data-dv-tab="${id}"]`);
+      if (!tabEl) return;
+      const input = document.createElement('input');
+      input.className = 'dv-renameinput'; input.value = v.name;
+      // A pin-bar pill is a <button>; an <input> nested in a button won't accept typing, so replace
+      // the whole pill. Library rows are <div>, so swap just the name span to keep the row chrome.
+      if (tabEl.tagName === 'BUTTON') tabEl.replaceWith(input);
+      else { const nameEl = tabEl.querySelector<HTMLElement>('.dv-vrow-name, .dv-tab-name'); if (!nameEl) return; nameEl.replaceWith(input); }
+      input.focus(); input.select();
+      let done = false;
+      const commit = () => { if (done) return; done = true; renameView(id, input.value); };
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { done = true; renderViews(); } });
+      input.addEventListener('blur', commit);
+    }
+    function startRenameGroup(id: string) {
+      const g = groups.find((x) => x.id === id)!;
+      const nameEl = root.querySelector<HTMLElement>(`[data-dv-group="${id}"] .dv-groupname`);
+      if (!nameEl) return;
+      const input = document.createElement('input');
+      input.className = 'dv-renameinput'; input.value = g.name;
+      nameEl.replaceWith(input); input.focus(); input.select();
+      const commit = () => renameGroup(id, input.value);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') renderViews(); });
+      input.addEventListener('blur', commit);
+    }
+
+    // Folded refinements — the shared control (lib/refineCollapse.ts). NOT the two scope pickers:
+    // `Sales CRM` and `Orders` say what this page is showing and the preset is locked to them.
+    // `always`: on Data the fold is the DESIGN, not a fallback for a squeezed row (Oleh 2026-08-05
+    // — the row was "loaded" and the filters awkward at every width). One Filter button opens the
+    // drill; the chips underneath carry what is applied, so nothing is hidden by collapsing it.
+    mountRefineCollapse({
+      toolbar: q<HTMLElement>('.sch-tb'),
+      selectors: ['[data-dg-filterdd]', '[data-facet="dgcomments"]', '[data-dg-fieldsdd]'],
+      always: true,
+    });
+
+    // View + group interactions (delegated on the shell — bar/rail are re-rendered).
+    const shell = root.querySelector<HTMLElement>('[data-dv-shell]')!;
+    shell.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const gkebab = t.closest<HTMLElement>('[data-dv-groupkebab]');
+      if (gkebab) { e.stopPropagation(); popGroupMenu(gkebab, gkebab.dataset.dvGroupkebab!); return; }
+      const kebab = t.closest<HTMLElement>('[data-dv-kebab]');
+      if (kebab) { e.stopPropagation(); popMenu(kebab, kebab.dataset.dvKebab!); return; }
+      const addbtn = t.closest<HTMLElement>('[data-dv-addbtn]');
+      if (addbtn) { e.stopPropagation(); popAddMenu(addbtn); return; }
+      const gcollapse = t.closest<HTMLElement>('[data-dv-collapse]');
+      if (gcollapse) { toggleCollapse(gcollapse.dataset.dvCollapse!); return; }
+      // The panel toggle and the sheet's dim are owned by lib/listSheet.ts (wired below).
+      if (t.closest('[data-dv-newgroup]')) { const g = newGroup(); renderViews(); startRenameGroup(g.id); return; }
+      if (t.closest('[data-dv-new]')) { newView(false); (document.activeElement as HTMLElement)?.blur(); return; }
+      if (t.closest('[data-dv-dup]')) { newView(true); (document.activeElement as HTMLElement)?.blur(); return; }
+      // ✕ on a tab closes it (must be checked before the tab click below, since it lives inside the tab).
+      const close = t.closest<HTMLElement>('[data-dv-close]');
+      if (close) { e.stopPropagation(); closeTab(close.dataset.dvClose!); (document.activeElement as HTMLElement)?.blur(); return; }
+      // A tab click OR a library-row click opens/activates the preset (openPreset adds the tab if absent).
+      // `stopPropagation` like every other menu opener above it: a document-level listener closes the
+      // open menu on any outside click, and without this the very click that opens it closes it again.
+      const moreBtn = t.closest<HTMLElement>('[data-dv-pinmore]');
+      if (moreBtn) { e.stopPropagation(); popPinOverflow(moreBtn); return; }
+      const tab = t.closest<HTMLElement>('[data-dv-tab]');
+      if (tab) { openPreset(tab.dataset.dvTab!); (document.activeElement as HTMLElement)?.blur(); return; }
+    });
+    // Double-click a tab (or a library row) to rename it in place. The kebab item still works, but a
+    // rename reachable only through a menu is one most people never find — and the inline input it
+    // opens is easy to miss, which is exactly how it read as "nothing happens" (Oleh 2026-07-24).
+    shell.addEventListener('dblclick', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-dv-close]') || t.closest('[data-dv-kebab]')) return;
+      const tab = t.closest<HTMLElement>('[data-dv-tab]');
+      if (!tab) return;
+      e.preventDefault();
+      startRename(tab.dataset.dvTab!);
+    });
+
+    // "Find a preset" search (rail library).
+    shell.addEventListener('input', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.matches('[data-dv-search]')) { viewSearch = (t as HTMLInputElement).value; railEl.innerHTML = buildViewList(viewSearch); }
+    });
+    document.addEventListener('click', (e) => { if (openMenu && !openMenu.contains(e.target as Node)) closeMenu(); });
+
+    // ── Collapse state (persisted) — the library collapses fully; the pin-bar keeps the working set. ──
+    // It only records the preference; the repaint is renderViews(), which listSheet calls as the
+    // toggle-sync step. Two callers painting the same bar twice per click is how a pin-bar flickers.
+    const setCollapsed = (c: boolean) => { root.dataset.collapsed = c ? '1' : '0'; try { localStorage.setItem('dv-collapsed', c ? '1' : '0'); } catch { /* ignore */ } };
+    let savedCollapsed: string | null = null;
+    try { savedCollapsed = localStorage.getItem('dv-collapsed'); } catch { /* ignore */ }
+    root.dataset.collapsed = savedCollapsed === '1' ? '1' : '0';
+
+    // ── The preset library: a column when the section is wide, a SHEET when it is not ──────────
+    // The same mechanism Docs and Chat use (lib/listSheet.ts); this console only declares its own
+    // selectors and words. Closing on a PICK matters more here than there: choosing a preset rewrites
+    // the grid AND the toolbar beside it (Save preset / Discard / Clear all read the active preset),
+    // and all of that lives behind the dim — leaving the sheet open would show the user a dimmed
+    // result of their own action with the controls that answer it out of reach. Group collapse,
+    // rename and the kebabs are deliberately NOT picks: they are list housekeeping, and closing the
+    // sheet under them would throw the user out mid-errand.
+    wireListSheet({
+      root,
+      toggle: '[data-dv-panel-toggle]',
+      dim: '[data-dv-raildim]',
+      pick: '[data-dv-viewrow], [data-dv-new], [data-dv-dup]',
+      // The library rows are role=tab divs with no tabindex, so focus goes to the thing that IS
+      // focusable and is what you want next in a chooser: "Find a preset".
+      firstItem: '[data-dv-search]',
+      // The reading surface — see the note in `lib/listSheet.ts`: naming it makes this console's
+      // own chrome measured rather than assumed, so the threshold cannot go stale silently.
+      content: '.dv-main',
+      wideHidden: () => root.dataset.collapsed === '1',
+      setWideHidden: setCollapsed,
+      labels: PRESET_SHEET_LABELS,
+      syncToggle: renderViews,
+    });
+
+    // ── Initial paint ─────────────────────────────────────────────────────────
+    renderViews();
+    applyLoadState();
+    void loadActiveView();
+  }
+  wireDataBrowse();
+  document.addEventListener('astro:after-swap', wireDataBrowse);
+</script>
+

@@ -1,0 +1,141 @@
+---
+/**
+ * SourceDetailView — a source's own management/health page (skeleton).
+ *
+ * Identity (which Airtable account, auth type, bases available) + status/reconnect
+ * INDEPENDENT of any Space (one reconnect heals every Space using it) + the
+ * founder's key ask: a TABLE of the Spaces using this source with per-Space meta
+ * (# bases, destinations, schedule, last backup). Remove is guarded while in use.
+ *
+ * Status is "last-known-good" (no Airtable revoke webhook) — tied to "last checked".
+ */
+import Button from '../components/ui/Button.astro';
+import Alert from '../components/ui/Alert.astro';
+import SectionPanel from '../components/ui/SectionPanel.astro';
+import DefinitionList from '../components/patterns/DefinitionList.astro';
+import EntityDetailHeader from '../components/patterns/EntityDetailHeader.astro';
+import type { SourceSummary } from '../stores/sources';
+
+interface Props {
+  source: SourceSummary;
+  /** harness: simulate a successful (re)connect */
+  reconnected?: boolean;
+}
+const { source: s, reconnected = false } = Astro.props;
+
+const status = reconnected ? 'connected' : s.status;
+const needsReconnect = status === 'reconnect';
+const needsConnect = status === 'needs_connection';
+const inUseCount = s.inUseBy.length;
+const authLabel = s.auth === 'pat' ? 'Personal access token' : 'OAuth';
+const statusBadge =
+  status === 'connected' ? { variant: 'success' as const, label: 'Connected', dot: true }
+  : status === 'needs_connection' ? { variant: 'warning' as const, label: 'Needs connection', dot: false }
+  : { variant: 'warning' as const, label: 'Reconnect required', dot: false };
+
+const usageStatus: Record<string, { cls: string; label: string }> = {
+  ok: { cls: 'is-ok', label: 'OK' },
+  failed: { cls: 'is-err', label: 'Failed' },
+  paused: { cls: 'is-warn', label: 'Paused' },
+};
+const connectionItems = [
+  { term: 'Authorized as', description: `${s.account} (${authLabel})` },
+  { term: 'Bases available', description: `${s.basesAvailable} bases this connection can see` },
+  { term: 'Status checked', description: `${s.lastChecked ?? '—'} · status reflects the last successful check, not live` },
+];
+---
+
+<div class="mx-auto max-w-4xl space-y-6">
+  {reconnected && (
+    <Alert variant="success">{s.status === 'needs_connection' ? 'Connected. This source is ready to use in your Spaces.' : 'Reconnected. Backups from this source will resume on their next scheduled run.'}</Alert>
+  )}
+
+  <EntityDetailHeader
+    title={s.name}
+    description={`Airtable · ${authLabel} · ${s.account} · added ${s.addedAt}`}
+    backHref="/sources"
+    backLabel="Back to sources"
+    statusLabel={statusBadge.label}
+    statusVariant={statusBadge.variant}
+    statusDot={statusBadge.dot}
+  >
+    {(needsReconnect || needsConnect) && (
+      <form slot="actions" method="POST" action="/api/connections/airtable/start" data-astro-reload>
+        <input type="hidden" name="returnTo" value={`/sources/detail?id=${s.id}`} />
+        <Button type="submit" variant="primary">{needsConnect ? 'Connect' : 'Reconnect'}</Button>
+      </form>
+    )}
+    <Button slot="actions" href={`/sources/new?method=${s.auth}`} variant="secondary">Edit</Button>
+  </EntityDetailHeader>
+
+  {(needsReconnect || needsConnect) && (
+    <Alert variant="warning">
+      {needsConnect
+        ? 'This source isn’t connected yet. Authorize Airtable, then use it in a Space.'
+        : `Airtable access was lost. Backups from this source are paused for ${inUseCount === 1 ? 'the Space' : `all ${inUseCount} Spaces`} below. Reconnect once to restore ${inUseCount === 1 ? 'it' : 'them all'}.`}
+    </Alert>
+  )}
+
+  <SectionPanel title="Connection">
+    <Button slot="actions" type="button" variant="ghost" size="sm" class="gap-1" data-refresh-bases><span class="iconify lucide--refresh-cw"></span> Refresh bases</Button>
+    <DefinitionList items={connectionItems} />
+    <p class="src-refresh-note hidden" data-refresh-note role="status"></p>
+  </SectionPanel>
+
+  <SectionPanel title={`In use by ${inUseCount} Space${inUseCount === 1 ? '' : 's'}`} class="overflow-hidden p-0">
+    {inUseCount > 0 ? (
+      <div role="table">
+        <div class="grid items-center gap-2 border-b border-base-300 bg-base-200/40 px-5 py-2.5 text-[0.68rem] font-bold uppercase tracking-wider text-base-content/50" style="grid-template-columns: minmax(0,1.3fr) 4rem minmax(0,1.3fr) 6rem 6rem 5rem;" role="row">
+          <span>Space</span><span class="text-right">Bases</span><span>Destination</span><span>Schedule</span><span>Last backup</span><span>Status</span>
+        </div>
+        {s.inUseBy.map((u) => (
+          <a href={`/integrations?space=${u.spaceId}`} class="grid items-center gap-2 border-t border-base-300/50 px-5 py-2.5 text-sm text-base-content no-underline transition-colors hover:bg-base-200/50" style="grid-template-columns: minmax(0,1.3fr) 4rem minmax(0,1.3fr) 6rem 6rem 5rem;" role="row">
+            <span class="truncate font-semibold">{u.spaceName}</span>
+            <span class="text-right font-mono tabular-nums text-base-content/75">{u.baseCount}</span>
+            <span class="truncate text-base-content/65">{u.destinations}</span>
+            <span class="truncate text-base-content/65">{u.schedule}</span>
+            <span class="truncate text-base-content/65">{u.lastBackup ?? '—'}</span>
+            <span><span class={`rounded-full px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide ${usageStatus[u.status].cls === 'is-ok' ? 'bg-success/15 text-success' : usageStatus[u.status].cls === 'is-err' ? 'bg-error/15 text-error' : 'bg-warning/15 text-warning'}`}>{usageStatus[u.status].label}</span></span>
+          </a>
+        ))}
+      </div>
+    ) : (
+      <p class="px-5 py-4 text-sm text-base-content/55">No Spaces use this source yet.</p>
+    )}
+    <p class="border-t border-base-300 px-5 py-3 text-xs text-base-content/55">{needsReconnect ? 'Reconnecting restores backups for every Space listed here.' : 'Each Space includes its own set of bases from this source.'}</p>
+  </SectionPanel>
+
+  <SectionPanel title="Remove source" class="src-danger">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+      <div class="min-w-0">
+        <p class="text-sm text-base-content/60 mt-1">
+          {inUseCount > 0
+            ? `Remove is disabled while ${inUseCount} Space${inUseCount === 1 ? '' : 's'} use${inUseCount === 1 ? 's' : ''} this source. Move ${inUseCount === 1 ? 'it' : 'them'} to another source first.`
+            : 'No Spaces use this source, so it can be removed.'}
+        </p>
+      </div>
+      <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error" disabled={inUseCount > 0}>Remove</Button>
+    </div>
+  </SectionPanel>
+</div>
+
+<style>
+  .src-refresh-note { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .7rem; }
+  .src-danger { border-color: oklch(from var(--color-error) l c h / .3); }
+</style>
+
+<script>
+  function wireSourceDetail() {
+    const btn = document.querySelector<HTMLButtonElement>('[data-refresh-bases]');
+    const note = document.querySelector<HTMLElement>('[data-refresh-note]');
+    if (btn && btn.dataset.wired !== '1') {
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', () => {
+        // Harness: new-base detection is poll-only (no Airtable event); fake a re-check.
+        if (note) { note.textContent = 'Re-checked Airtable — no new bases since the last check.'; note.classList.remove('hidden'); }
+      });
+    }
+  }
+  wireSourceDetail();
+  document.addEventListener('astro:after-swap', wireSourceDetail);
+</script>

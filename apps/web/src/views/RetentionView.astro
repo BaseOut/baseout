@@ -64,10 +64,7 @@ const {
 
   <SectionPanel title="What's kept" description={policyDescription} class="mb-6">
     {monthlyIndefinite && (
-      <Alert variant="info" title="Monthly snapshots are kept indefinitely">
-        Beyond the weekly window, one snapshot per calendar month is retained for
-        the life of the subscription.
-      </Alert>
+      <Alert severity="info" trigger="static" title="Monthly snapshots are kept indefinitely" message="Beyond the weekly window, one snapshot per calendar month is retained for the life of the subscription." />
     )}
   </SectionPanel>
 

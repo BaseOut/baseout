@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createHomeLiveRender, runsSignature } from './home-live'
+import { createHomeLiveRender, recordCountDelta, runsSignature } from './home-live'
 import type { BackupRunSummary } from '../backup-runs/types'
 
 function run(id: string, status: BackupRunSummary['status']): BackupRunSummary {
@@ -76,5 +76,20 @@ describe('createHomeLiveRender', () => {
     render([])
     render([run('r1', 'queued')])
     expect(reload).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('recordCountDelta', () => {
+  it('treats a flat zero as neither up nor down', () => {
+    expect(recordCountDelta(0)).toEqual({ dir: 'flat', amount: 0 })
+    expect(recordCountDelta(12, 12)).toEqual({ dir: 'flat', amount: 0 })
+  })
+
+  it('is up only when the count actually grew', () => {
+    expect(recordCountDelta(10)).toEqual({ dir: 'up', amount: 10 })
+  })
+
+  it('is down when the count fell', () => {
+    expect(recordCountDelta(-4)).toEqual({ dir: 'down', amount: 4 })
   })
 })

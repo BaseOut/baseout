@@ -1,0 +1,76 @@
+---
+// A report DEFINITION page (Reports v2) at /reports/[id]: Most Recent · History · Settings.
+// /reports/new opens the create screen. A single run's rendered document lives at /reports/run/[runId].
+// Harness fixture.
+import type { ReportDefinition } from '@web/lib/reports/types';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import ReportDefinitionView from '@web/views/ReportDefinitionView.astro';
+import NotFoundView from '@web/views/NotFoundView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import { buildEntityIndex } from '../../components/schema/schemaEntities';
+import { reportDefinitions, reportMembers, reportDetails } from '../../fixtures/reports';
+import {
+  schemaBases, multiTables, schemaDocs, changelog, automations, interfaces, chatThreads,
+} from '../../fixtures/schema-lab';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const breadcrumbs = getBreadcrumbs('/reports');
+const baseNames = Object.fromEntries(schemaBases.map((b) => [b.id, b.name]));
+const isNew = id === 'new';
+
+// Create mode → a blank definition with the client's defaults (all sections, on each data backup).
+const blankDef: ReportDefinition = {
+  id: 'new', name: '', sections: ['backups', 'connections', 'schema', 'docs'],
+  baseScope: null, window: { kind: 'since_last' },
+  schedule: { cadence: 'data_backup', recipients: [], formats: ['pdf'], suppressEmpty: true, enabled: true, lastDelivery: null },
+  runs: [],
+};
+const found = isNew ? blankDef : reportDefinitions.find((d) => d.id === id);
+
+// ?fixture=norun — a SAVED definition that has never generated a run. ADDED 2026-08-14 (D33).
+// This route read no `?fixture=` at all, so the gate walked it only through ids that all carry
+// runs, and `ReportDefinitionView`'s `hasRuns === false` path — the "Not run yet" panel on Most
+// Recent plus the History tab's own empty state — was requested by nothing. It stopped being
+// reachable the day `def-adhoc` gained its rolling-window run (see fixtures/reports.ts:337), and
+// the branch has had no preview since. It is a real product state: every report looks like this
+// between being saved and its first schedule firing.
+const norun = Astro.url.searchParams.get('fixture') === 'norun';
+const def = found && norun ? { ...found, runs: [] } : found;
+
+// Most Recent tab = the latest run's rendered document (if we have a fixture for it).
+const latest = def && def.runs.length ? (reportDetails[def.runs[0].id] ?? null) : null;
+// Settings live preview = a "current data" snapshot (richReport stands in as the current state).
+const current = reportDetails['r-2026-07-13'] ?? null;
+// Shared entity index for the mounted parity EntityPanel (Most Recent's schema references).
+const index = buildEntityIndex(schemaBases, multiTables, schemaDocs);
+---
+
+{def ? (
+  <SidebarLayout pageTitle="Report" breadcrumbs={breadcrumbs} spaceScoped={true}>
+    <ReportDefinitionView
+      def={def}
+      isNew={isNew}
+      baseNames={baseNames}
+      members={reportMembers}
+      latest={latest}
+      current={current}
+      schemaIndex={index}
+      docs={schemaDocs}
+      changelog={changelog}
+      automations={automations}
+      interfaces={interfaces}
+      chatThreads={chatThreads}
+    />
+  </SidebarLayout>
+) : (
+  <SidebarLayout pageTitle="Report not found" breadcrumbs={breadcrumbs} spaceScoped={true}>
+    <NotFoundView
+      entity="Report"
+      reason="Deleting a report takes its whole run history with it, so a link to one stops resolving the moment it is deleted. This link is either out of date, or the report behind it is gone."
+      backLabel="Back to Reports"
+      backHref="/reports"
+    />
+  </SidebarLayout>
+)}

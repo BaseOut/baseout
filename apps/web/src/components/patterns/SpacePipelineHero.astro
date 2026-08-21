@@ -19,9 +19,15 @@
 import Button from '../ui/Button.astro';
 
 interface Props {
-  spaceName: string;
+  /**
+   * The Space's name, when it HAS one. Null is a real state (a Space created but
+   * not yet named, and the pre-onboarding trial context), and the diagram simply
+   * leaves the hub uncaptioned rather than captioning it "this Space" — a
+   * placeholder sitting where a name belongs is the claim D01 removes.
+   */
+  spaceName?: string | null;
 }
-const { spaceName } = Astro.props;
+const { spaceName = null } = Astro.props;
 
 // Coordinates in the 760×420 viewBox; HTML tiles reuse the same numbers as
 // percentages (the stage keeps the 760/420 aspect) so curves + tiles scale together.
@@ -41,7 +47,7 @@ const leftPath = `M ${SRC.x + 52} ${SRC.y} H ${HUB.x - 52}`;
 const rightPath = (y: number) => `M ${HUB.x + 52} ${HUB.y} C 525 ${HUB.y}, 560 ${y}, ${DEST_X - 34} ${y}`;
 ---
 
-<section class="sph" aria-label={`Set up ${spaceName}'s backup`}>
+<section class="sph" aria-label={spaceName ? `Set up ${spaceName}'s backup` : 'Set up this Space’s backup'}>
   <h2 class="sph-title">Set up this Space&rsquo;s backup</h2>
   <p class="sph-sub">Connect Airtable to storage you control.</p>
 
@@ -67,7 +73,7 @@ const rightPath = (y: number) => `M ${HUB.x + 52} ${HUB.y} C 525 ${HUB.y}, 560 $
       <img src="/images/logo/icon-dark.svg" alt="" class="brand-logo-cyan" />
       <img src="/images/logo/icon-light.svg" alt="" class="brand-logo-blue" />
     </span>
-    <span class="sph-hub-name" style={`left:${xp(HUB.x)};top:${yp(HUB.y + 64)}`}>{spaceName}</span>
+    {spaceName && <span class="sph-hub-name" style={`left:${xp(HUB.x)};top:${yp(HUB.y + 64)}`}>{spaceName}</span>}
 
     {/* Destination tiles */}
     {DESTS.map((d) => (

@@ -1,0 +1,103 @@
+---
+/**
+ * Drawer — a slide-over panel built on daisyUI's drawer primitive.
+ *
+ * A catalog component (see /styleguide → Drawer). It renders daisyUI's
+ * `drawer drawer-end` + `drawer-toggle` checkbox + `drawer-side` + `drawer-overlay`,
+ * so opening/closing is pure CSS: a host can drive it with a plain
+ * `<label for={id}>` or from JS via `document.getElementById(id).checked = true`.
+ * The overlay and the built-in × close it natively (no JS). Esc-to-close is wired
+ * once here. The panel surface uses theme tokens; the body/footer are slots, so the
+ * host keeps its own content + scoped CSS.
+ *
+ * A11y (audit X06-F2 / D45): this drawer does NOT implement a focus trap, `inert`, or
+ * restore — so it must not claim `aria-modal="true"`. The honest attribute is `false`
+ * until a real trap lands (rejected cheaper path: drop the claim rather than build one).
+ *
+ * PROMOTION NOTE (ui-only → apps/web): the fork ships the `.sb-drawer*` / `.sb-bottom-*`
+ * rules in a scoped block here. Tracked components carry no scoped style
+ * (component-classification governance), so those rules live in styles/global.css instead.
+ */interface Props {
+  /** Unique id; the matching checkbox the open/close triggers toggle. */
+  id: string;
+  /** Heading shown in the panel header. */
+  title: string;
+  /** Optional supporting line under the title. */
+  subtitle?: string;
+  /** Which edge it slides from. `bottom` is a fly-out sheet (full width, slides up). */
+  side?: 'end' | 'start' | 'bottom';
+  /** Tailwind width class for the end/start panel. */
+  width?: string;
+  /** Panel height for the bottom sheet variant. */
+  height?: string;
+}
+const { id, title, subtitle, side = 'end', width = 'w-[min(92vw,28rem)]', height = '82dvh' } = Astro.props;
+const hasFooter = Astro.slots.has('footer');
+---
+
+{side === 'bottom' ? (
+  <div class="sb-drawer sb-drawer-bottom">
+    <input id={id} type="checkbox" class="drawer-toggle sb-bottom-toggle" data-sb-drawer-toggle />
+    <label for={id} class="sb-bottom-scrim" aria-label="Close"></label>
+    <aside class="sb-bottom-panel" role="dialog" aria-label={title} aria-modal="false" style={`height:${height}`}>
+      <header class="sb-drawer-head">
+        <div class="sb-drawer-headrow">
+          <span class="sb-drawer-titleic" data-sb-drawer-titleic hidden></span>
+          <div class="min-w-0">
+            <h3 class="sb-drawer-title" data-sb-drawer-title>{title}</h3>
+            {subtitle && <p class="sb-drawer-sub">{subtitle}</p>}
+          </div>
+          <label for={id} class="btn btn-sm btn-ghost btn-square sb-drawer-x" aria-label="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></label>
+        </div>
+        <nav class="sb-drawer-crumbs sb-crumb-row" data-sb-drawer-crumbs aria-label="Breadcrumb" hidden></nav>
+      </header>
+      <div class="sb-drawer-body"><slot /></div>
+      {hasFooter && <footer class="sb-drawer-foot"><slot name="footer" /></footer>}
+    </aside>
+  </div>
+) : (
+  <div class={`drawer drawer-${side} sb-drawer`}>
+    <input id={id} type="checkbox" class="drawer-toggle" data-sb-drawer-toggle />
+    <div class="drawer-side">
+      <label for={id} aria-label="Close" class="drawer-overlay"></label>
+      <aside class={`sb-drawer-panel ${width}`} role="dialog" aria-label={title} aria-modal="false">
+        <header class="sb-drawer-head">
+          <div class="sb-drawer-headrow">
+            <span class="sb-drawer-titleic" data-sb-drawer-titleic hidden></span>
+            <div class="min-w-0">
+              <h3 class="sb-drawer-title" data-sb-drawer-title>{title}</h3>
+              {subtitle && <p class="sb-drawer-sub">{subtitle}</p>}
+            </div>
+            <label for={id} class="btn btn-sm btn-ghost btn-square sb-drawer-x" aria-label="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></label>
+          </div>
+          <nav class="sb-drawer-crumbs sb-crumb-row" data-sb-drawer-crumbs aria-label="Breadcrumb" hidden></nav>
+        </header>
+        <div class="sb-drawer-body"><slot /></div>
+        {hasFooter && <footer class="sb-drawer-foot"><slot name="footer" /></footer>}
+      </aside>
+    </div>
+  </div>
+)}
+
+<script>
+  // Esc closes any open drawer via the shared escape stack (item 29) — daisyUI's
+  // checkbox drawer has no native Esc. Return false when none are open so panels /
+  // other stack owners still get the key.
+  import { pushEscape } from '../../lib/escapeStack';
+
+  let drawerEscPushed = false;
+  function wireDrawerEsc() {
+    if (drawerEscPushed) return;
+    drawerEscPushed = true;
+    pushEscape({
+      label: 'drawer',
+      onEscape: () => {
+        const open = document.querySelectorAll<HTMLInputElement>('.sb-drawer .drawer-toggle:checked');
+        if (!open.length) return false;
+        open.forEach((cb) => { cb.checked = false; });
+        return true;
+      },
+    });
+  }
+  wireDrawerEsc();
+</script>

@@ -1,0 +1,409 @@
+---
+/**
+ * SecurityPanel — the 2FA lifecycle and the linked Airtable identity.
+ * Spec: openspec/changes/login-methods (Decisions 4 and 5, tasks 3.1 / 3.2).
+ *
+ * Baseout is PASSWORDLESS. There is no password field, no "change password" and no
+ * "current password to confirm" anywhere on this surface, on purpose — the thing a
+ * security panel usually opens with does not exist here.
+ *
+ * Why enrolment is its own category rather than a row in Account: it is a
+ * three-step flow that ends by handing the user ten codes they have to store.
+ * That is a task, not a field, and it needs the width of the pane.
+ *
+ * Every stage below is server-rendered and toggled by lib/auth/securityPanel.ts —
+ * nothing is injected as HTML, so these scoped styles reach all of it. The two
+ * rules the controller enforces (verify-to-activate; the codes are shown once
+ * behind a confirmation gate) are documented there.
+ */
+import Card from '../components/ui/Card.astro';
+import Button from '../components/ui/Button.astro';
+import Badge from '../components/ui/Badge.astro';
+import Checkbox from '../components/ui/Checkbox.astro';
+import CodeInput from '../components/ui/CodeInput.astro';
+import type { SecurityPanelProps } from '../lib/auth/types';
+
+interface Props extends SecurityPanelProps {}
+
+const {
+  twoFactorEnabled,
+  twoFactorEnrolledAt,
+  enrollment,
+  backupCodes,
+  regeneratedCodes = [],
+  backupCodesRemaining,
+  identity,
+  previewStage = 'idle',
+} = Astro.props;
+
+const codeSlots = Array.from({ length: Math.max(backupCodes.length, 10) }, (_, i) => i);
+const remaining = backupCodesRemaining ?? backupCodes.length;
+const linkedOn = identity.linked;
+---
+
+<div
+  class="sec"
+  data-security-root
+  data-sec-on={twoFactorEnabled ? 'true' : 'false'}
+  data-sec-stage2={previewStage}
+  data-sec-codes={JSON.stringify(backupCodes)}
+  data-sec-regen-codes={JSON.stringify(regeneratedCodes)}
+>
+  <Card variant="outlined" class="sec-card">
+    <div class="sec-head">
+      <div class="sec-headtext">
+        <h3 class="sec-title">Two-factor authentication</h3>
+        <p class="sec-help">
+          A 6-digit code from your authenticator app, on top of your magic link.
+        </p>
+      </div>
+      <span class="sec-status sec-when-on"><Badge variant="success" size="sm">On</Badge></span>
+      <span class="sec-status sec-when-off"><Badge size="sm">Off</Badge></span>
+    </div>
+
+    <div data-sec-stage="idle" class:list={[previewStage !== 'idle' && 'hidden']}>
+      <div class="sec-rest sec-when-off">
+        <p class="sec-body">
+          Your account is protected by a magic link alone. Turning on two-factor adds a code
+          only your phone can produce.
+        </p>
+        <div class="sec-actions">
+          <Button variant="primary" size="sm" data-sec-go="scan">Turn on two-factor</Button>
+        </div>
+      </div>
+
+      <div class="sec-rest sec-when-on">
+        <dl class="sec-facts">
+          <div class="sec-fact">
+            <dt class="sec-factlabel">Turned on</dt>
+            <dd class="sec-factvalue" data-sec-enrolled-at>{twoFactorEnrolledAt ?? '—'}</dd>
+          </div>
+          <div class="sec-fact">
+            <dt class="sec-factlabel">Backup codes left</dt>
+            <dd class="sec-factvalue">{remaining} of {backupCodes.length}</dd>
+          </div>
+        </dl>
+        <div class="sec-actions">
+          <Button variant="secondary" size="sm" data-sec-go="regenerate">
+            <span class="iconify lucide--refresh-cw size-4" aria-hidden="true"></span>
+            Regenerate backup codes
+          </Button>
+          <Button variant="danger-ghost" size="sm" data-sec-go="disable">Turn off two-factor</Button>
+        </div>
+        <p class="sec-note">
+          Signed-in devices and <strong>Sign out everywhere</strong> live under Account &rsaquo;
+          Sessions.
+        </p>
+      </div>
+    </div>
+
+    <div data-sec-stage="scan" class:list={['sec-stage', previewStage !== 'scan' && 'hidden']}>
+      <ol class="stepper sec-steps">
+        <li class="step is-current">
+          <span class="step-dot"><span class="step-num">1</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Scan</span>
+        </li>
+        <li class="step">
+          <span class="step-dot"><span class="step-num">2</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Verify</span>
+        </li>
+        <li class="step">
+          <span class="step-dot"><span class="step-num">3</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Save codes</span>
+        </li>
+      </ol>
+
+      <p class="sec-body">
+        Open your authenticator app and scan this. Nothing changes on your account until you
+        enter a code on the next step.
+      </p>
+
+      <div class="sec-scan">
+        <img class="sec-qr" data-sec-qr src={enrollment.qrSrc} alt="Two-factor setup QR code" width="176" height="176" hidden={!enrollment.qrSrc} />
+        <div class="sec-manual">
+          <p class="sec-manuallabel">Can't scan? Enter this key by hand</p>
+          <code class="sec-secret" data-sec-secret>{enrollment.manualSecret || '—'}</code>
+          <p class="sec-note">It will be saved in your app as {enrollment.accountLabel}.</p>
+        </div>
+      </div>
+      <p class="sec-note sec-error" data-sec-error hidden></p>
+
+      <div class="sec-actions">
+        <Button variant="primary" size="sm" data-sec-go="verify">Next</Button>
+        <Button variant="ghost" size="sm" data-sec-go="idle">Cancel</Button>
+      </div>
+    </div>
+
+    <div data-sec-stage="verify" class:list={['sec-stage', previewStage !== 'verify' && 'hidden']}>
+      <ol class="stepper sec-steps">
+        <li class="step is-done">
+          <span class="step-dot"><span class="step-num">1</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Scan</span>
+        </li>
+        <li class="step is-current">
+          <span class="step-dot"><span class="step-num">2</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Verify</span>
+        </li>
+        <li class="step">
+          <span class="step-dot"><span class="step-num">3</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Save codes</span>
+        </li>
+      </ol>
+
+      <p class="sec-body">
+        Enter the 6-digit code your app is showing now. This is the step that turns two-factor
+        on — leave before it and nothing changes.
+      </p>
+
+      <form class="sec-form" data-sec-verify-form novalidate>
+        <CodeInput
+          name="enrolCode"
+          id="sec-enrol-code"
+          label="Six-digit code from your authenticator app"
+          hint="Codes refresh every 30 seconds. If one is rejected, wait for the next."
+        />
+        <div class="sec-actions">
+          <Button variant="primary" size="sm" type="submit" data-sec-verify-submit disabled>
+            Verify and turn on
+          </Button>
+          <Button variant="ghost" size="sm" data-sec-go="scan">Back</Button>
+          <Button variant="ghost" size="sm" data-sec-go="idle">Cancel</Button>
+        </div>
+      </form>
+    </div>
+
+    <div data-sec-stage="save" class:list={['sec-stage', previewStage !== 'save' && 'hidden']}>
+      <ol class="stepper sec-steps">
+        <li class="step is-done">
+          <span class="step-dot"><span class="step-num">1</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Scan</span>
+        </li>
+        <li class="step is-done">
+          <span class="step-dot"><span class="step-num">2</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Verify</span>
+        </li>
+        <li class="step is-current">
+          <span class="step-dot"><span class="step-num">3</span><span class="iconify lucide--check step-check" aria-hidden="true"></span></span>
+          <span class="step-label">Save codes</span>
+        </li>
+      </ol>
+
+      <h4 class="sec-subtitle" data-sec-codes-title>Save your backup codes</h4>
+      <p class="sec-body" data-sec-codes-lede>
+        Each code signs you in once if you lose your phone. This is the only time they are shown.
+      </p>
+
+      {/* Only true on the regeneration path, so it starts hidden and the controller
+          reveals it — a first enrolment has no previous codes to have killed. */}
+      <div role="alert" class="alert alert-soft alert-warning sec-alert hidden" data-sec-codes-regen-note>
+        <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+        <span>Your previous backup codes stopped working the moment these were issued.</span>
+      </div>
+
+      <ol class="sec-codes">
+        {codeSlots.map((i) => <li class="sec-code" data-sec-code={i}></li>)}
+      </ol>
+
+      <div class="sec-actions">
+        <Button variant="secondary" size="sm" data-sec-copy>
+          <span class="iconify lucide--copy size-4" aria-hidden="true"></span>
+          <span data-sec-copy-label>Copy</span>
+        </Button>
+        <Button variant="secondary" size="sm" data-sec-download>
+          <span class="iconify lucide--download size-4" aria-hidden="true"></span>
+          Download
+        </Button>
+      </div>
+
+      <div class="sec-gate">
+        {/* The hook sits on this wrapper, not on Checkbox: the primitive takes a fixed
+            prop list and drops unknown attributes, so a data- attr on it never lands. */}
+        <div data-sec-save-gate>
+          <Checkbox
+            name="secSaved"
+            id="sec-save-gate"
+            label="I saved these codes somewhere I can reach without my phone"
+          />
+        </div>
+        <p class="sec-note">
+          There is no second chance to read them. If you close this without saving, regenerate a
+          new set from this panel.
+        </p>
+        <div class="sec-actions">
+          <Button variant="primary" size="sm" data-sec-save-done disabled>Done</Button>
+        </div>
+      </div>
+    </div>
+
+    <div data-sec-stage="disable" class:list={['sec-stage', previewStage !== 'disable' && 'hidden']}>
+      <h4 class="sec-subtitle">Turn off two-factor</h4>
+
+      <div role="alert" class="alert alert-soft alert-warning sec-alert">
+        <span class="iconify lucide--shield-off size-4" aria-hidden="true"></span>
+        <span>
+          Your account goes back to magic link alone, and your backup codes stop working.
+        </span>
+      </div>
+
+      <p class="sec-body">
+        Enter a current code to confirm it is you. Switching protection off is not something a
+        stray click should be able to do.
+      </p>
+
+      <form class="sec-form" data-sec-disable-form novalidate>
+        <CodeInput
+          name="disableCode"
+          id="sec-disable-code"
+          label="Six-digit code to confirm turning two-factor off"
+          hint="Lost your phone? A backup code works here too — sign out and use one to get back in."
+        />
+        <div class="sec-actions">
+          <Button variant="danger" size="sm" type="submit" data-sec-disable-submit disabled>
+            Turn off two-factor
+          </Button>
+          <Button variant="ghost" size="sm" data-sec-go="idle">Cancel</Button>
+        </div>
+      </form>
+    </div>
+
+    <div
+      data-sec-stage="regenerate"
+      class:list={['sec-stage', previewStage !== 'regenerate' && 'hidden']}
+    >
+      <h4 class="sec-subtitle">Regenerate backup codes</h4>
+
+      <div role="alert" class="alert alert-soft alert-warning sec-alert">
+        <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+        <span>
+          All {backupCodes.length} of your current codes stop working immediately. Any copy you
+          printed or saved becomes useless.
+        </span>
+      </div>
+
+      <p class="sec-body">
+        Do this if you have used most of your codes, or if you think the list has been seen by
+        someone else. The new set is shown once, the same way.
+      </p>
+
+      <div class="sec-actions">
+        <Button variant="primary" size="sm" data-sec-regen-confirm>Generate new codes</Button>
+        <Button variant="ghost" size="sm" data-sec-go="idle">Cancel</Button>
+      </div>
+    </div>
+  </Card>
+
+  <Card variant="outlined" class="sec-card">
+    <div class="sec-head">
+      <div class="sec-headtext">
+        <h3 class="sec-title">Linked accounts</h3>
+        <p class="sec-help">
+          Identities you can sign in with. Linking is for sign-in only — it does not connect your
+          Airtable data.
+        </p>
+      </div>
+    </div>
+
+    <div class="sec-row">
+      <div class="sec-rowtext">
+        <span class="sec-rowlabel">
+          Airtable
+          {linkedOn ? <Badge variant="success" size="sm">Linked</Badge> : <Badge size="sm">Not linked</Badge>}
+        </span>
+        <span class="sec-rowdesc">
+          {linkedOn
+            ? `${identity.accountEmail} · linked ${identity.linkedAt}`
+            : 'Link it to sign in with one click instead of waiting for a magic link.'}
+        </span>
+      </div>
+      <div class="sec-rowctl">
+        {linkedOn ? (
+          <Button variant="ghost" size="sm">
+            <span class="iconify lucide--unlink size-4" aria-hidden="true"></span>
+            Unlink
+          </Button>
+        ) : (
+          <Button variant="secondary" size="sm">
+            <span class="iconify lucide--link size-4" aria-hidden="true"></span>
+            Link Airtable
+          </Button>
+        )}
+      </div>
+    </div>
+
+    {linkedOn && (
+      <p class="sec-note">
+        You can still sign in with a magic link at any time, so unlinking never locks you out.
+      </p>
+    )}
+  </Card>
+</div>
+
+<style>
+  .sec { display: flex; flex-direction: column; gap: 16px; }
+  .sec-card { padding: 20px; }
+
+  .sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .sec-headtext { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .sec-title { font-size: var(--t-16); font-weight: 600; margin: 0; }
+  .sec-help { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .55); margin: 0; }
+  .sec-status { flex: none; }
+
+  .sec-subtitle { font-size: var(--t-14); font-weight: 600; margin: 0; }
+  .sec-body { font-size: var(--t-13); line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .85); margin: 0; }
+  .sec-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); margin: 0; }
+  .sec-error { color: var(--color-error); }
+  .sec-alert { font-size: var(--t-13); }
+
+  .sec-rest { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
+  .sec-stage { display: flex; flex-direction: column; gap: 16px; padding-top: 16px; }
+  .sec-form { display: flex; flex-direction: column; gap: 16px; }
+  .sec-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+  /* No max-width: the shared stepper is a horizontal trail WITH labels, and 360px (sized for
+     daisyUI's label-only steps) wrapped "Save codes" onto its own line. `flex-wrap: wrap` in the
+     shared rule is the narrow-viewport fallback, not the desktop state. */
+  .sec-steps { margin-bottom: 4px; }
+
+  .sec-facts { display: flex; flex-wrap: wrap; gap: 24px; margin: 0; }
+  .sec-fact { display: flex; flex-direction: column; gap: 2px; }
+  .sec-factlabel { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); }
+  .sec-factvalue { font-size: var(--t-14); font-weight: 500; margin: 0; }
+
+  .sec-scan { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; }
+  .sec-qr { width: 176px; height: 176px; flex: none; border: 1px solid var(--color-base-300); border-radius: 8px; background: var(--color-base-100); padding: 8px; }
+  .sec-manual { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .sec-manuallabel { font-size: var(--t-13); font-weight: 500; margin: 0; }
+  .sec-secret { font-size: var(--t-14); letter-spacing: .08em; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-base-300); background: var(--color-base-200); word-break: break-all; }
+
+  .sec-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .sec-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--t-14); letter-spacing: .06em; text-align: center; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--color-base-300); background: var(--color-base-200); }
+
+  .sec-gate { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--color-base-300); }
+
+  .sec-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px 0; margin-top: 12px; border-top: 1px solid var(--color-base-300); }
+  .sec-rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .sec-rowlabel { display: flex; align-items: center; gap: 8px; font-size: var(--t-14); font-weight: 500; }
+  .sec-rowdesc { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .55); }
+  .sec-rowctl { flex: none; }
+
+  .sec[data-sec-on='true'] .sec-when-off { display: none; }
+  .sec[data-sec-on='false'] .sec-when-on { display: none; }
+
+  /* Tailwind's `hidden` is ONE class; once Astro scopes `.sec-stage` it is two, so
+     the display:flex above silently beat it and every stage rendered at once. Both
+     gates stayed green — only a screenshot showed it. Restate it, more specifically. */
+  .sec [data-sec-stage].hidden,
+  .sec .hidden { display: none; }
+
+  @media (max-width: 639.98px) {
+    .sec-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .sec-codes { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+
+<script>
+  import { initSecurityPanel } from '../lib/auth/securityPanel';
+
+  initSecurityPanel();
+  document.addEventListener('astro:after-swap', () => initSecurityPanel());
+</script>

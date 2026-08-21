@@ -1,0 +1,78 @@
+---
+import { cn } from '../../lib/ui';
+
+/**
+ * CodeInput — a short numeric code (2FA challenge, code-gated disable).
+ * Catalog: /styleguide → Primitives → "Code input (6-digit)".
+ *
+ * One real input carries the value; the cells are aria-hidden decoration painted
+ * from it by lib/auth/codeInput.ts. Paste / backspace / auto-advance are native.
+ */
+interface Props {
+  name?: string;
+  id?: string;
+  length?: number;
+  label?: string;
+  invalid?: boolean;
+  disabled?: boolean;
+  autofocus?: boolean;
+  /** Helper or failure line under the field. */
+  hint?: string;
+  hintTone?: 'muted' | 'error';
+  class?: string;
+}
+
+const {
+  name = 'code',
+  id,
+  length = 6,
+  label = 'Verification code',
+  invalid = false,
+  disabled = false,
+  autofocus = false,
+  hint,
+  hintTone = 'muted',
+  class: className = '',
+} = Astro.props;
+
+const elId = id ?? `code-input-${name}`;
+const cells = Array.from({ length }, (_, i) => i);
+---
+
+<div class={cn('code-input-wrap', className)}>
+  <div
+    class={cn('code-input', invalid && 'code-input-invalid', disabled && 'code-input-disabled')}
+    data-code-input
+  >
+    <input
+      id={elId}
+      name={name}
+      class="code-input-field"
+      type="text"
+      inputmode="numeric"
+      pattern="[0-9]*"
+      maxlength={length}
+      autocomplete="one-time-code"
+      aria-label={label}
+      aria-invalid={invalid ? 'true' : undefined}
+      aria-describedby={hint ? `${elId}-hint` : undefined}
+      disabled={disabled}
+      autofocus={autofocus}
+      data-code-field
+    />
+    {cells.map((i) => <span class="code-cell" aria-hidden="true" data-code-cell={i}></span>)}
+  </div>
+
+  {hint && (
+    <p id={`${elId}-hint`} class={cn('fieldset-label mt-2', hintTone === 'error' && 'text-error')}>
+      {hint}
+    </p>
+  )}
+</div>
+
+<script>
+  import { initCodeInputs } from '../../lib/auth/codeInput';
+
+  initCodeInputs();
+  document.addEventListener('astro:after-swap', () => initCodeInputs());
+</script>

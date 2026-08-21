@@ -1,0 +1,23 @@
+---
+/**
+ * LockedTab — an in-place locked capability state (pattern-locked-tab). Used on the Data page
+ * for the dynamic-only tabs (Changelog / record History / Chat) in a static-only Space: the
+ * feature is shown where it would live, explaining what it does and why it needs a dynamic
+ * backup, with the standard enable affordance. A data-capability constraint, not a price tier.
+ *
+ * Body is the catalog EmptyState primitive (apps/web API: description + default slot — not the
+ * fork's condition/message/action-slot EmptyState).
+ */
+import EmptyState from '../ui/EmptyState.astro';
+
+interface Props {
+  title: string;
+  what: string;
+  cta?: string;
+}
+const { title, what, cta = 'Enable dynamic backups' } = Astro.props;
+---
+
+<EmptyState icon="lucide--lock" title={title} description={what}>
+  <button type="button" class="btn btn-primary btn-sm">{cta}</button>
+</EmptyState>

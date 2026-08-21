@@ -28,8 +28,14 @@ import type {
   HealthScoreBasePayload,
   incrementalBackupTask,
   IncrementalBackupTaskPayload,
+  renderReportTask,
+  RenderReportPayload,
 } from "@baseout/workflows";
 import type { BackupBaseTaskPayload } from "./runs/start";
+
+// Re-export the canonical render payload type (owned by apps/workflows'
+// render-report.task.ts) so server-side consumers import it from here.
+export type { RenderReportPayload } from "@baseout/workflows";
 
 // Re-export the canonical restore payload type (owned by apps/workflows'
 // restore-base.task.ts) so server-side consumers keep importing it from here.
@@ -159,6 +165,24 @@ export async function enqueueChatRespond(
   configureFromEnv(env);
   const handle = await tasks.trigger<typeof chatRespondTask>(
     "chat-respond",
+    payload,
+  );
+  return { id: handle.id };
+}
+
+/**
+ * Enqueue the report render task (server-reports design pipeline; task body in
+ * workflows-reports). The engine passes the assembled ReportDetail INLINE in the
+ * payload; the Node task renders HTML + PDF, writes the artifacts, and POSTs
+ * /api/internal/reports/runs/:runId/rendered with the artifact locations.
+ */
+export async function enqueueRenderReport(
+  env: Env,
+  payload: RenderReportPayload,
+): Promise<TriggerHandle> {
+  configureFromEnv(env);
+  const handle = await tasks.trigger<typeof renderReportTask>(
+    "render-report",
     payload,
   );
   return { id: handle.id };

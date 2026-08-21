@@ -15,7 +15,7 @@ export default defineConfig({
   integrations: [react()],
   server: { port: 4331 },
   prefetch: {
-    prefetchAll: false,
+    prefetchAll: true,
     defaultStrategy: 'hover',
   },
   // Disabled because `wrangler dev --remote` dispatches requests through CF's

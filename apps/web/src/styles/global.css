@@ -52,6 +52,7 @@
 @import "./components/space-pipeline-hero.css";
 @import "./components/base-selection.css";
 @import "./components/auth.css";
+@import "./components/code-input.css";
 @import "./components/brand-logo.css";
 /* facet-filter before export-control: .xp-panel overrides .ff-panel at equal specificity. */
 @import "./components/facet-filter.css";
@@ -313,11 +314,19 @@ html:has([data-schema][data-chat="drawer"]) {
 
 /* ── Schema shell layout (.sch-*) — clustered tab bar, freshness stamp, panels ── */
   .sch { display: flex; flex-direction: column; gap: 1rem; }
+  /* Asked of the CONTENT COLUMN (fork SchemaView): split view changes width without the viewport. */
+  .sch-headwrap { container: schhead / inline-size; }
+  @container schhead (max-width: 960px) {
+    .sch-headsub { display: none; }
+  }
   .sch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
   /* Section-wide freshness stamp — quiet, right-aligned. */
-  .sch-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-stampwrap { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 320px; text-align: right; }
+  .sch-stamp-run { display: none; }
+  .sch-stamp-sub { margin: 0 0 8px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .55); }
   .sch-head-r { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; }
-  /* the chat launcher (top-right) is now the catalog Ghost Button (btn btn-ghost) — no custom CSS */
+  /* the chat launcher (top-right) is now the catalog Soft Button — no custom CSS */
 
   /* grouped tab bar (approved Variant A) — cluster label ABOVE each group's tabs, thin dividers */
   .sch-tabbar { display: flex; align-items: stretch; gap: .1rem; flex-wrap: wrap; border-bottom: 1px solid var(--color-base-300); }
@@ -347,6 +356,8 @@ html:has([data-schema][data-chat="drawer"]) {
   .sch-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
   .sch-empty-title { font-size: 1rem; font-weight: 650; }
   .sch-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 44ch; }
+  /* D17 — wholesale degrade when the section has no snapshot. */
+  .sch-degrade { min-height: 360px; border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); }
 
   .sch-soon { min-height: 300px; border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); }
   .sch-soon p { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .66); max-width: 56ch; }
@@ -668,3 +679,259 @@ html:has([data-schema][data-chat="drawer"]) {
   .es-empty { padding: 16px; text-align: center; font-size: 12.5px; color: oklch(from var(--color-base-content) l c h / .5); }
   .es-foot { display: flex; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--color-base-300); font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); }
   .es-foot span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ── THE 390 FLOOR GATE (S36-F3 / D35) ──────────────────────────────────────────────────────────
+   Rendered in `layouts/Layout.astro` (inherited by AuthLayout + SidebarLayout). Shown by CSS alone
+   below MIN_WIDTH from `lib/mobileNav.ts` (390). NOT drawn inside Airtable's extension panel: the
+   Blocks SDK takes a declared `ViewportConstraint minSize` and shows its own. */
+#too-narrow { display: none; }
+@media (max-width: 389.98px) {
+  #too-narrow {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px;
+    text-align: center;
+    background: var(--color-base-100);
+    color: var(--color-base-content);
+  }
+}
+
+/* ── restore promotion (views/RestoreView.astro + views/RestoreHistoryView.astro, promoted from
+   ui-only@5572f8f 2026-08-12) — the shared tokens/classes those views + components/ui/TablePager
+   + components/backups/LiveRefresh reference. Global per catalog governance (same convention as the
+   base-picker/entity-typeahead promoted blocks above). The fork's app-wide 1279.98px type-scale
+   rung-shift is deliberately NOT brought over — it would restyle every surface, out of scope. ── */
+:root {
+  --t-11: 11px;
+  --t-12: 12px;
+  --t-13: 13px;
+  --t-14: 14px;
+  --t-16: 16px;
+  --t-18: 18px;
+  --t-20: 20px;
+  --t-24: 24px;
+  --t-32: 32px;
+}
+
+/* The column-label band's TYPE — the small-caps uppercase table head shared by both restore tables
+   and the audit tables (pattern-audit-table). */
+.tbl-colhead > span,
+.tbl-colhead th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: oklch(from var(--color-base-content) l c h / .55);
+  white-space: nowrap;
+}
+/* A sortable header wraps its label in a <button>; the UA reset drops font/case, so inherit it back. */
+.tbl-colhead th :is(button, a, span) {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+
+/* The numbered-step marker (pattern-numbered-form-steps), from styles/components/step-number.css. */
+.step-n {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 999px;
+  background: oklch(from var(--color-primary) l c h / 0.16);
+  border: 1px solid oklch(from var(--color-primary) l c h / 0.35);
+  color: var(--color-primary);
+  font-size: var(--t-12);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Clickable audit-log rows (RestoreHistoryView) — cursor, hover tint, focus ring, and the
+   hover-revealed trailing chevron affordance. */
+.row-clickable { cursor: pointer; }
+.row-clickable:hover { background: oklch(from var(--color-base-200) l c h / .55); }
+.row-clickable:focus-visible { outline: 2px solid oklch(from var(--color-primary) l c h / .55); outline-offset: -2px; }
+.row-end { display: inline-flex; align-items: center; justify-content: flex-end; }
+.row-go { display: inline-grid; place-items: center; opacity: 0; color: oklch(from var(--color-base-content) l c h / .55); transition: opacity .12s ease; }
+.row-clickable:hover .row-go, .row-clickable:focus-visible .row-go { opacity: .7; }
+
+/* LiveRefresh (components/backups/LiveRefresh.astro) — moved out of the fork's scoped <style>
+   (catalog components carry no scoped style; global per governance). */
+.lr { display: inline-flex; align-items: center; gap: 8px; }
+.lr-stamp { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; }
+
+/* ── Registry surfaces (web-sources promotion, ui-only@7c7202d7) ─────────────────────────────
+   Shared global classes the Sources views (and their Destinations twins) key off. Copied from the
+   fork's styles/global.css so the promoted views render as designed; the fork's per-view `.reg-*`
+   vocabulary stays scoped inside each view's own <style> block. */
+
+/* .tbl-frame — the bordered table card (12px radius, base-100, 1px base-300). */
+.tbl-frame {
+  border: 1px solid var(--color-base-300);
+  border-radius: 12px;
+  background: var(--color-base-100);
+}
+/* Edge-to-edge grid inside the frame: `clip` (not `hidden`) so a sticky header keeps sticking. */
+.tbl-frame-flush { overflow: clip; }
+
+/* .page-head — the page title + description + one short right-hung CTA (Oleh, 2026-08-13). One
+   rule, no @media: the description's `flex: 1 1 11rem` basis makes the row break from content. */
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.page-head-txt { flex: 1 1 11rem; min-width: 0; }
+.page-head > .btn { flex: none; align-self: flex-start; width: auto; }
+
+/* .sch-slot / .sch-slot-in — the read value and its edit input as the SAME box, so a mode flip
+   never changes row height (catalog `pattern-panel-edit-mode`). Only fields Baseout OWNS get a
+   slot; captured Airtable facts render identically in both modes and never grey out. */
+.sch-slot {
+  display: block; box-sizing: border-box;
+  font-size: var(--t-13); line-height: 1.5; white-space: pre-wrap;
+  padding: 4px 8px; margin: 0 -8px; width: calc(100% + 16px);
+  border: 1px solid transparent; border-radius: 8px;
+  min-height: 32px;
+}
+.sch-slot.is-multi { min-height: 76px; }
+.sch-slot.is-empty { color: oklch(from var(--color-base-content) l c h / .45); }
+.sch-slot-in {
+  display: block; box-sizing: border-box;
+  font-size: var(--t-13); line-height: 1.5;
+  padding: 4px 8px; margin: 0 -8px; width: calc(100% + 16px);
+  border-radius: 8px; min-height: 32px; height: auto;
+}
+textarea.sch-slot-in { min-height: 76px; resize: vertical; }
+/* "from capture" — a quiet marker on a section LABEL, never a disabled control. */
+.sch-cap-mark {
+  margin-left: auto; font-size: var(--t-12); font-weight: 600; letter-spacing: .03em;
+  text-transform: none; padding: 0 8px; border-radius: 999px;
+  color: oklch(from var(--color-base-content) l c h / .55);
+  background: oklch(from var(--color-base-content) l c h / .08);
+}
+
+/* .sch-modeswitch / .sch-mode-active — the canonical Read/Edit segmented control (the fork's
+   legacy aliases target surfaces not yet in apps/web and are omitted). */
+.sch-modeswitch .btn {
+  background: var(--color-base-100);
+  border-color: var(--color-base-300);
+  font-weight: 500;
+  box-shadow: none;
+}
+.sch-modeswitch .btn:hover { background: var(--color-base-200); }
+.sch-modeswitch .sch-mode-active {
+  background: color-mix(in oklch, var(--color-primary) 14%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in oklch, var(--color-primary) 30%, var(--color-base-100));
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+}
+.sch-modeswitch .sch-mode-active:hover {
+  background: color-mix(in oklch, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
+}
+
+/* AccessScopeNote (components/integrations/AccessScopeNote.astro) — moved out of the fork's scoped
+   <style> (tracked components carry no scoped style; global per governance). */
+.asn code { font-size: var(--t-11); }
+.asn-mark { display: inline-flex; align-items: center; gap: .25rem; }
+.asn-glyph svg { width: 12px; height: 12px; opacity: .7; vertical-align: -1px; }
+.asn-glyph { display: inline-flex; align-items: center; }
+
+/* ── Segmented control, TRACK density — `.sb-segtrack` / `.sb-seg` / `.sb-seg-on` ──────────────
+   Catalog `pattern-segmented-control` track density (ui-only tip; SourceAddView). Soft-primary
+   selected paint — do not reintroduce local `.reg-seg` / `.method-tab` copies. */
+.sb-segtrack {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--r-12, 12px);
+  background: var(--color-base-200);
+}
+.sb-segtrack > * { flex: 1 1 0; min-width: 0; }
+.sb-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--r-8, 8px);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-13);
+  font-weight: 600;
+  line-height: 1.25;
+  color: oklch(from var(--color-base-content) l c h / .65);
+  white-space: nowrap;
+  transition: background .12s ease, color .12s ease;
+}
+.sb-seg:hover { color: var(--color-base-content); }
+.sb-seg.sb-seg-on,
+.sb-seg[aria-selected="true"],
+.sb-seg:has(input:checked) {
+  background: var(--soft-primary-bg, oklch(from var(--color-primary) l c h / .16));
+  color: var(--soft-primary-fg, var(--color-primary));
+}
+.sb-seg.sb-seg-on:hover,
+.sb-seg[aria-selected="true"]:hover,
+.sb-seg:has(input:checked):hover {
+  background: var(--soft-primary-bg-hover, oklch(from var(--color-primary) l c h / .22));
+  color: var(--soft-primary-fg, var(--color-primary));
+}
+.sb-seg:focus-visible,
+.sb-seg:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.sb-segtrack-sm .sb-seg { padding: 4px 8px; border-radius: var(--r-6, 6px); font-size: var(--t-12); gap: 4px; }
+/* Drawer (components/ui/Drawer.astro) — daisyUI drawer slide-over. Moved out of the component's
+   scoped style block: tracked components carry no scoped style (component-classification governance),
+   so these prefixed `.sb-drawer*` / `.sb-bottom-*` rules live global. Promoted from ui-only for the
+   backup run-detail / base-detail failed-attachment slide-overs (web-backups-redesign). */
+.sb-drawer { position: fixed; z-index: 400; }
+.sb-drawer .drawer-side { z-index: 400; }
+/* Darker scrim than daisyUI's default (oklch(0 0 0 / .4)) so the panel reads with
+   stronger contrast against the dimmed content behind it. */
+.sb-drawer .drawer-overlay { background-color: oklch(0 0 0 / 0.55); }
+.sb-drawer-panel {
+  height: 100dvh;
+  background: var(--color-base-100);
+  border-left: 1px solid var(--color-base-300);
+  display: flex;
+  flex-direction: column;
+}
+.drawer-start .sb-drawer-panel {
+  border-left: 0;
+  border-right: 1px solid var(--color-base-300);
+}
+.sb-drawer-head { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-base-300); }
+.sb-drawer-headrow { display: flex; align-items: center; gap: .75rem; }
+/* Optional location crumbs sub-row (canon drawer identity). Hidden until a host populates it. */
+.sb-drawer-crumbs { display: flex; align-items: center; gap: 2px; overflow: hidden; font-size: var(--t-12); }
+.sb-drawer-crumbs[hidden] { display: none; }
+/* Optional leading concept-icon tile (canon drawer header). Hidden until a host populates it. */
+.sb-drawer-titleic { width: 2rem; height: 2rem; border-radius: .55rem; flex: none; display: grid; place-items: center; background: var(--color-base-200); }
+.sb-drawer-titleic[hidden] { display: none; }
+.sb-drawer-titleic .iconify { font-size: var(--t-16); opacity: .8; }
+.sb-drawer-titleic svg { width: 17px; height: 17px; opacity: .8; }
+.sb-drawer-title { font-size: var(--t-16); font-weight: 650; letter-spacing: -0.15px; line-height: 1.2; }
+.sb-drawer-sub { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: 4px; }
+.sb-drawer-x { margin-left: auto; flex: none; }
+.sb-drawer-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.sb-drawer-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: 16px 20px; border-top: 1px solid var(--color-base-300); }
+
+/* Bottom fly-out sheet (side="bottom") — checkbox-driven, custom (daisyUI's drawer is horizontal).
+   Slides up from the bottom edge, full width; keeps the host's content visible above it. */
+.sb-drawer-bottom { position: fixed; inset: 0; z-index: 400; pointer-events: none; }
+.sb-bottom-toggle { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+.sb-bottom-scrim { position: fixed; inset: 0; background: oklch(0 0 0 / 0.55); opacity: 0; visibility: hidden; transition: opacity .2s ease; }
+.sb-bottom-panel { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; background: var(--color-base-100); border-top: 1px solid var(--color-base-300); border-radius: 16px 16px 0 0; box-shadow: 0 -12px 40px oklch(0 0 0 / .22); display: flex; flex-direction: column; transform: translateY(100%); transition: transform .26s cubic-bezier(.22,1,.36,1); pointer-events: auto; }
+.sb-bottom-toggle:checked ~ .sb-bottom-scrim { opacity: 1; visibility: visible; pointer-events: auto; }
+.sb-bottom-toggle:checked ~ .sb-bottom-panel { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) { .sb-bottom-panel, .sb-bottom-scrim { transition: none; } }

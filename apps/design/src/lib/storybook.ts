@@ -982,6 +982,100 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'code-input',
+    group: 'Primitives',
+    name: 'Code input (6-digit)',
+    summary: 'One input, painted as six boxes — for a 2FA code the user types or pastes.',
+    description:
+      'A short numeric code (TOTP, email OTP) needs to <em>look</em> like N boxes and <em>behave</em> like one field. This is exactly what it is: a single <code>&lt;input&gt;</code> that carries the whole value, laid over N presentational cells that mirror its characters. Auto-advance, backspace and paste are therefore the browser\'s own behaviour, not re-implemented keyboard handling — a user who pastes all six digits out of their authenticator gets them, and a screen reader announces <strong>one</strong> labelled field, not six unlabelled ones. Add <code>autocomplete="one-time-code"</code> so iOS/Android offer the SMS/authenticator code. The second call site promised here now exists, unchanged and unforked: Settings &rsaquo; Security uses it twice — to VERIFY an enrolment (the step that turns 2FA on) and to confirm the code-gated disable.',
+    reference: 'components/ui/CodeInput.astro · lib/auth/codeInput.ts',
+    props: [
+      { name: 'name', type: 'string', default: "'code'", description: 'Form field name of the real input.' },
+      { name: 'length', type: 'number', default: '6', description: 'Number of cells; the input maxlength follows it.' },
+      { name: 'label', type: 'string', default: "'Verification code'", description: 'Accessible label for the single control.' },
+      { name: 'invalid', type: 'boolean', default: 'false', description: 'Paints every cell with the error border; pair with the reason below the field.' },
+      { name: 'disabled', type: 'boolean', default: 'false', description: 'Lockout / submitting — cells dim and the input stops accepting.' },
+      { name: 'autofocus', type: 'boolean', default: 'false', description: 'Focus on mount — true on the challenge screen, where typing the code is the only job.' },
+      { name: 'hint', type: 'string', default: '—', description: 'Helper or error line under the field (fieldset-label).' },
+    ],
+    guides: [
+      {
+        title: 'Behaviour it must keep',
+        note: 'These are not optional polish — each one is a support ticket if it is missing. Because the control is one native input, you get most of them for free; the only bespoke part is painting the cells.',
+        rows: [
+          { token: 'Auto-advance', use: 'Typing a digit moves the highlight to the next cell.', why: 'Falls out of a single input: the caret moves, the active cell is derived from its position.' },
+          { token: 'Paste-tolerant', use: 'Pasting "482913" fills all six cells.', why: 'The commonest real interaction — people copy the code out of the authenticator. Six separate inputs would drop five digits.' },
+          { token: 'Backspace', use: 'Deletes the last digit and moves back one cell; it never gets stuck on an empty box.', why: 'Native deletion on one value; six inputs need bespoke focus juggling that always has an edge case.' },
+          { token: 'Numeric only', use: 'inputmode="numeric" + non-digits stripped on input.', why: 'Mobile shows the number pad, and a stray letter cannot silently break the submit.' },
+          { token: 'One control to AT', use: 'One labelled input; the cells are aria-hidden decoration.', why: 'A screen reader says "Verification code, edit" once, instead of six anonymous fields.' },
+        ],
+      },
+      {
+        title: 'Sizing',
+        default: 'Cell 40×44px',
+        note: 'The cell is a display surface, not a control the pointer aims at — the real target is the whole field. 40×44px keeps the digit at 18px (well clear of the 12px floor) and the six cells inside a 360px auth card at a 12px gap. Do not shrink below it to fit more cells; drop to a shorter code instead.',
+        rows: [
+          { token: 'Cell · 40×44px, 12px gap', use: 'The only size. Six cells fit the 360px auth card with room to breathe.', why: 'On the 4px grid, and the digit stays large enough to proofread before submitting.' },
+        ],
+      },
+    ],
+    usageDo: [
+      'Autofocus it when entering the code is the screen\'s only job (the 2FA challenge).',
+      'Put the failure reason under the field as a fieldset-label, and say what to do — "That code didn\'t work — codes refresh every 30 seconds".',
+      'Give the user a way out beside it (a backup code) — a code field with no escape hatch strands anyone whose phone is gone.',
+      'Disable it during a lockout and show the wait, never a dead end.',
+    ],
+    usageDont: [
+      "Don't build it as N separate inputs — paste and backspace break, and AT hears six anonymous fields.",
+      "Don't auto-submit on the last digit without showing what happened; the user must see the result of their own typing.",
+      "Don't use it for anything longer than a short code — that's a plain input.",
+    ],
+    examples: [
+      {
+        label: 'Resting, partly filled',
+        html: `
+<div class="code-input" aria-hidden="true">
+  <span class="code-cell code-cell-filled">4</span>
+  <span class="code-cell code-cell-filled">8</span>
+  <span class="code-cell code-cell-filled">2</span>
+  <span class="code-cell code-cell-active"></span>
+  <span class="code-cell"></span>
+  <span class="code-cell"></span>
+</div>`,
+      },
+      {
+        label: 'Invalid — with the human reason',
+        html: `
+<div>
+  <div class="code-input code-input-invalid" aria-hidden="true">
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+  </div>
+  <p class="fieldset-label text-error mt-2">That code didn't work — codes refresh every 30 seconds.</p>
+</div>`,
+      },
+      {
+        label: 'Locked out — disabled, with the wait',
+        html: `
+<div>
+  <div class="code-input code-input-disabled" aria-hidden="true">
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+  </div>
+  <p class="fieldset-label mt-2">Try again in 4:38. You can use a backup code now.</p>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'card',
     group: 'Primitives',
     name: 'Card',
@@ -1159,6 +1253,7 @@ export const SB_ENTRIES: SBEntry[] = [
     group: 'Primitives',
     name: 'Table',
     summary: 'daisyUI table — dense, scannable rows of records.',
+    reference: 'components/ui/Table.astro',
     description:
       'The workhorse for run history and audit data. Use <code>table</code>; headers in a small uppercase label; IDs and counts in <code>font-mono tabular-nums</code> so columns align; status via a soft badge; a row’s drill-in action as a primary-coloured ghost (<code>btn-ghost btn-sm text-sm text-primary</code> — btn-sm keeps the compact height, text-sm matches the 14px rows, text-primary reads as the interactive drill-in). Add <code>table-zebra</code> only when row scanning needs the help.',
     usageDo: [
@@ -1781,7 +1876,7 @@ export const SB_ENTRIES: SBEntry[] = [
     summary: 'The one anatomy every right-side detail panel/drawer follows.',
     description:
       'The canonical shape for the Schema detail panels (EntityPanel, RelationshipPanel, the Automations/Interfaces read-drawers, Changelog detail). <strong>Drawer canon v2 (2026-07-06):</strong> all five share <strong>ONE width</strong> — <code>min(94vw, 30rem)</code> (480px; EntityPanel keeps an optional 900px expand) — so they never feel like different components. The <strong>header carries the identity</strong>: a single row of <code>[back, only where the panel drills] · concept-icon tile (2rem, radius .55rem, base-200) · dynamic entity name · [expand, EntityPanel only] · close (btn btn-sm btn-ghost btn-square + lucide--x)</code>, with a <strong>crumbs sub-row</strong> below it (Base ▸ Table ▸ …, one shared small muted style) shown only where the entity has a location — the leaf is the header title, so crumbs show ancestors only. The <strong>first body element is the identity meta line</strong>: <code>kind · STATUS soft-semantic chip · health chip · base chip</code>. Then a scroll-owning body of ordered, present-only sections → optional footer: read-only by default (no action bar; Changelog keeps a "Detected &lt;date&gt;" meta line), but Automations + Interfaces keep Edit/Delete through ONE standardized footer bar (see the drawer-footer note). Same slot order everywhere: absent → absent; present → the same fixed position. Sections are separated by generous whitespace, not a divider line; the count is a small catalog badge (badge-sm, solid neutral — soft is too faint on dark) pressed right after the section name. <strong>Every data-row list (and short chip set) sits inside ONE shared container</strong> — a <code>1px base-300</code> border + a faint <code>base-200/45%</code> fill + an ~11px radius (the same container language as the <code>.ep-stats</code> metric strip and the description box), with rows touching and split by a subtle <code>1px base-200</code> hairline (no per-row cards, no per-row radius) and the box clipping the first/last row hover — so a lone 1–2-row list reads as a grouped surface, never floating text. Every list caps at 5 rows then a <code>+N more</code> inline disclosure (<code>&lt;details&gt;</code> — expands in place, never a floating popover that escapes the panel); long free-text grows to a max height then scrolls inside its own box; the panel owns its scroll and locks the page scroll behind it. On a <strong>long panel (≥ 4 sections)</strong> a <a href="#panel-section-nav">progressive section-nav</a> chip-strip sits as the third header row (above the header border, part of the fixed header) for jump-to-section navigation with scroll-spy (shorter panels render none). Icon vocabulary: <code>lucide--globe</code> public-info · <code>lucide--lock</code> internal · <code>lucide--triangle-alert</code> real warning ONLY · <code>lucide--circle-check</code> success · <code>lucide--sparkles</code> AI. Spec: overview/schema/panel-anatomy-canonical.md. Live: <a href="/panels">Panel Lab</a>.',
-    reference: 'views/schema/BrowseTab.astro (detail panel)',
+    reference: 'components/schema/EntityPanel.astro (detail panel)',
     showCode: false,
     usageDo: [
       'Keep the slot order fixed across every panel; omit a section entirely when absent.',
@@ -3483,7 +3578,7 @@ export const SB_ENTRIES: SBEntry[] = [
     summary: 'The in-panel banner for an entity that no longer exists in the source — a catalog warning Alert, not a hand-rolled grey box.',
     description:
       'When a detail panel shows an entity that was deleted in Airtable (kept only from the last backup), it leads with a <a href="#alert">soft warning Alert</a> — <code>alert alert-soft alert-warning</code> + <code>lucide--trash-2</code> + "This {field/table} no longer exists in Airtable (deleted {date}). Showing the last backup." <strong>Amber (warning)</strong> is used for consistency: every other "Removed" signal in the app is warning-toned (the Removed <a href="#badge">badges</a> on Automations / Interfaces / Relationships). It is the catalog <a href="#alert">Alert</a> primitive, never a bespoke banner, so it reads the same everywhere a removed/deleted entity surfaces (EntityPanel, and the invalid-relationship notice). A one-token swap to <code>alert-error</code> (red) is possible if the product decides deletion should read as destructive rather than advisory. Live: <a href="/panels">Panel Lab</a> → EntityPanel → "Field — removed".',
-    reference: 'views/schema/BrowseTab.astro (removed notice)',
+    reference: 'components/schema/EntityPanel.astro (removed notice)',
     showCode: false,
     usageDo: [
       'Use the catalog Alert (alert alert-soft alert-warning) — never a hand-rolled grey box.',

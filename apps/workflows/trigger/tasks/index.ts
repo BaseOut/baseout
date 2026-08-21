@@ -40,3 +40,12 @@ export type {
   IncrementalBackupResult,
   IncrementalBackupInput,
 } from "./incremental-backup";
+export type {
+  renderReportTask,
+  RenderReportPayload,
+  RenderReportCallbackBody,
+} from "./render-report.task";
+export type {
+  RenderReportInput,
+  RenderReportResult,
+} from "./render-report";

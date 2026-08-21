@@ -57,7 +57,7 @@ const hasCustomConfirm = Astro.slots.has('confirm');
           {confirmLabel}
         </a>
       ) : (
-        <button type="submit" class={`btn ${confirmClass}`}>
+        <button type="submit" value="confirm" class={`btn ${confirmClass}`}>
           {confirmIcon && <span class={`iconify ${confirmIcon} size-4`} aria-hidden="true"></span>}
           {confirmLabel}
         </button>

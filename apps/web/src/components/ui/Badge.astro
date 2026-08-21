@@ -7,6 +7,7 @@ interface Props {
   outline?: boolean;
   dot?: boolean;
   class?: string;
+  [key: string]: unknown;
 }
 
 const {
@@ -15,6 +16,7 @@ const {
   outline = false,
   dot = false,
   class: className = '',
+  ...rest
 } = Astro.props;
 
 const variantMap: Record<string, string> = {
@@ -40,7 +42,7 @@ const classes = cn(
 );
 ---
 
-<span class={classes}>
+<span class={classes} {...rest}>
   {dot && <span class="w-1.5 h-1.5 rounded-full bg-current"></span>}
   <slot />
 </span>

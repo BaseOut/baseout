@@ -9,9 +9,9 @@
     "pnpm": ">=9"
   },
   "scripts": {
-    "build": "pnpm -r --parallel run build",
+    "build": "pnpm -r --workspace-concurrency=1 run build",
     "test": "pnpm -r --parallel run test",
-    "typecheck": "pnpm -r --parallel run typecheck",
+    "typecheck": "pnpm -r --workspace-concurrency=1 run typecheck",
     "lint": "pnpm -r --parallel run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml,astro}\"",
     "openspec:changes": "node scripts/openspec-changes.mjs",
@@ -30,6 +30,7 @@
     "dev:hooks": "pnpm --filter @baseout/hooks dev",
     "dev:workflows": "pnpm --filter @baseout/workflows dev",
     "dev:design": "pnpm --filter @baseout/design dev",
+    "dev:support": "pnpm --filter @baseout/support dev",
     "design": "pnpm --filter @baseout/design dev",
     "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev"
   },

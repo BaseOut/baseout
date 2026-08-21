@@ -2,6 +2,13 @@
  * Shared UI utilities — keeps component scripts DRY.
  */
 
+/**
+ * The one destructive-confirm button emphasis (ui-only promotion). The quieter
+ * outline destructive `decision-button-system` still sanctions — see the catalog
+ * `confirm-modal` entry. Used by ConfirmModal call sites for a Remove/Delete action.
+ */
+export const CONFIRM_DESTRUCTIVE = 'btn-outline btn-error'; /* ds-ok: the one sanctioned outline destructive */
+
 /** Join class tokens, dropping falsy values (replaces `.filter(Boolean).join(' ')` everywhere). */
 export function cn(...classes: (string | false | null | undefined | 0)[]): string {
   return classes.filter(Boolean).join(' ');

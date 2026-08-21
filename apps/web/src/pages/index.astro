@@ -22,31 +22,28 @@ const { account, db } = Astro.locals;
 
 const orgId = account?.organization?.id ?? null;
 const spaceId = account?.space?.id ?? null;
-const integrations: IntegrationsState =
-  orgId && spaceId
-    ? await getIntegrationsState(db, orgId, spaceId)
-    : {
-        connections: [],
-        bases: [],
-        tierBasesPerSpace: 5,
-        availableFrequencies: ['monthly'],
-        hasBackupConfig: false,
-        policy: {
-          frequency: 'monthly',
-          scope: 'schema_and_data',
-          schemaFrequency: null,
-          schemaNextScheduledAt: null,
-          storageType: 'r2_managed',
-          nextScheduledAt: null,
-          autoAddFutureBases: false,
-        },
-        storageDestinations: [],
-        unreadEvents: [],
-      };
+const emptyIntegrations: IntegrationsState = {
+  connections: [],
+  bases: [],
+  tierBasesPerSpace: 5,
+  availableFrequencies: ['monthly'],
+  hasBackupConfig: false,
+  policy: {
+    frequency: 'monthly',
+    scope: 'schema_and_data',
+    schemaFrequency: null,
+    schemaNextScheduledAt: null,
+    storageType: 'r2_managed',
+    nextScheduledAt: null,
+    autoAddFutureBases: false,
+  },
+  storageDestinations: [],
+  unreadEvents: [],
+};
 
-const initialRuns: BackupRunSummary[] =
+const listHomeRuns = () =>
   spaceId && db
-    ? await listRecentRuns(spaceId, 10, {
+    ? listRecentRuns(spaceId, 10, {
         fetchRuns: async (sid, lim) => {
           const rows = await db
             .select({
@@ -103,7 +100,14 @@ const initialRuns: BackupRunSummary[] =
           return rows as IncludedBase[];
         },
       })
-    : [];
+    : Promise.resolve([] as BackupRunSummary[]);
+
+const [integrations, initialRuns] = await Promise.all([
+  orgId && spaceId
+    ? getIntegrationsState(db, orgId, spaceId)
+    : Promise.resolve(emptyIntegrations),
+  listHomeRuns(),
+]);
 
 // Space Home (folds in the old Overview). Map the per-Space state into the
 // account-level source/destination shapes the view renders; ?status=running|saved

@@ -53,7 +53,7 @@ describe('statusMetaFor', () => {
     ['succeeded', 'Succeeded', 'success'],
     ['trial_complete', 'Trial run', 'success'],
     ['trial_truncated', 'Trial run', 'warning'],
-    ['running', 'Running', 'warning'],
+    ['running', 'Running', 'primary'],
     ['queued', 'Queued', 'default'],
     ['failed', 'Failed', 'error'],
     ['cancelled', 'Cancelled', 'default'],
@@ -139,7 +139,7 @@ describe('backupRowHtml', () => {
     const html = backupRowHtml(makeRun({ id: 'r_run', status: 'running', completedAt: null }))
     expect(html).toContain('data-status="running"')
     expect(html).toContain('loading loading-spinner loading-xs')
-    expect(html).toContain('badge-soft badge-warning')
+    expect(html).toContain('badge-soft badge-primary')
     expect(html).toContain('Running')
     expect(html).toContain('in progress')
     // records / attachments / duration are placeholders while in flight

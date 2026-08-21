@@ -25,6 +25,15 @@ Middleware runs before every request via the file-based [src/middleware.ts](../s
 
 The same shape (`AccountContext`) is hydrated into [[state-management]]'s `$account` store on page load so client islands get the same data without a second fetch.
 
+## App Shell Chrome
+
+[src/layouts/SidebarLayout.astro](../src/layouts/SidebarLayout.astro) wraps every authenticated page. Two chrome loads used to run **before** the page HTML could leave the Worker:
+
+- Connection-health banner — one master-DB read of Airtable connection status. Cheap; stays in layout SSR.
+- Overlay inbox — `fetchInboxItems` fans `getNotifications` across every Space with a 3s timeout. That blocked every click (and viewport-prefetch of every sidebar link multiplied it).
+
+The overlay now renders via [src/layouts/InboxOverlay.astro](../src/layouts/InboxOverlay.astro) with Astro `server:defer`, so the page body is not held hostage. The `/inbox` page still SSR-fetches the feed for its body and passes `inboxItems` into the layout for the badge. Sidebar nav uses hover prefetch (`lib/shell-chrome.ts`), not viewport.
+
 ## Drizzle and DB
 
 [src/db/](../src/db/) holds the Drizzle schema and per-request client. `apps/web` is the **canonical owner** of the master-DB schema — migrations live in [drizzle/](../drizzle/) and are applied via drizzle-kit.
@@ -44,5 +53,6 @@ Pointers to source and per-app rules.
 - Per-app frontend rules: [.claude/CLAUDE.md](../.claude/CLAUDE.md)
 - Middleware: [src/middleware.ts](../src/middleware.ts)
 - Account context: [src/lib/account.ts](../src/lib/account.ts)
+- App shell chrome: [src/layouts/SidebarLayout.astro](../src/layouts/SidebarLayout.astro) + [src/lib/shell-chrome.ts](../src/lib/shell-chrome.ts)
 - Schema: [src/db/](../src/db/) + [drizzle/](../drizzle/)
 - Root architecture rules: [root engineering-principles](../../../lat.md/engineering-principles.md)

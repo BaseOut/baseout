@@ -13,6 +13,7 @@
  *   boolean    → integer mode:'boolean'
  *   integer    → integer
  */
+import { sql } from 'drizzle-orm'
 import {
   sqliteTable, text, integer, primaryKey, index, uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
@@ -277,9 +278,15 @@ export const automations = sqliteTable('bo_at_automations', {
   submittedVia: text('submitted_via'),
   firstSeenAt: text('first_seen_at'),
   lastSeenAt: text('last_seen_at'),
-}, (t) => ({ byBase: index('bo_at_automations_base_idx').on(t.baseId) }))
+}, (t) => ({
+  byBase: index('bo_at_automations_base_idx').on(t.baseId),
+  uniqEntity: uniqueIndex('bo_at_automations_base_entity_uq')
+    .on(t.baseId, t.airtableEntityId)
+    .where(sql`${t.airtableEntityId} IS NOT NULL`),
+}))
 
 // Interface apps only (pbd… containers) — server-interfaces-normalize. Mirror of pg.ts.
+// Page→parent lives on bo_at_pages.interface_id (not a parent_id on this table).
 export const interfaces = sqliteTable('bo_at_interfaces', {
   id: text('id').primaryKey(),
   baseId: text('base_id').notNull(),
@@ -288,7 +295,12 @@ export const interfaces = sqliteTable('bo_at_interfaces', {
   definition: text('definition', { mode: 'json' }),
   submittedVia: text('submitted_via'),
   ...lifecycle,
-}, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+}, (t) => ({
+  byBase: index('bo_at_interfaces_base_idx').on(t.baseId),
+  uniqEntity: uniqueIndex('bo_at_interfaces_base_entity_uq')
+    .on(t.baseId, t.airtableEntityId)
+    .where(sql`${t.airtableEntityId} IS NOT NULL`),
+}))
 
 // Interface pages (pag…) — non-form pages. Mirror of pg.ts.
 export const pages = sqliteTable('bo_at_pages', {
@@ -305,6 +317,24 @@ export const pages = sqliteTable('bo_at_pages', {
 }, (t) => ({
   byBase: index('bo_at_pages_base_idx').on(t.baseId),
   byInterface: index('bo_at_pages_interface_idx').on(t.interfaceId),
+  uniqEntity: uniqueIndex('bo_at_pages_base_entity_uq')
+    .on(t.baseId, t.airtableEntityId)
+    .where(sql`${t.airtableEntityId} IS NOT NULL`),
+}))
+
+// Tagged Tables/Fields on Automations & Interfaces. Mirror of pg.ts.
+export const entityTags = sqliteTable('bo_at_entity_tags', {
+  id: text('id').primaryKey(),
+  entityKind: text('entity_kind').notNull(),
+  entityId: text('entity_id').notNull(),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  source: text('source').notNull().default('manual'),
+  addedAt: text('added_at'),
+}, (t) => ({
+  byEntity: index('bo_at_entity_tags_entity_idx').on(t.entityKind, t.entityId),
+  byTarget: index('bo_at_entity_tags_target_idx').on(t.targetType, t.targetId),
+  uniq: uniqueIndex('bo_at_entity_tags_uq').on(t.entityKind, t.entityId, t.targetType, t.targetId),
 }))
 
 // Forms (pag…, pageType='form') — standalone or interface-owned. Mirror of pg.ts.

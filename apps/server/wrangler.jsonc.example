@@ -62,6 +62,21 @@
     { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
   ],
 
+  // Transactional email (server-reports task 5) — the SAME Cloudflare Email
+  // Service rail apps/web uses for magic links. Used ONLY to deliver generated
+  // reports to recipients. send_email is NON-INHERITABLE — it is redeclared in
+  // env.dev below. Sending to external recipients requires the verified sender
+  // domain (mail.baseout.com, DKIM per PRD §20/§30); absent binding degrades
+  // delivery to per-recipient "failed" (re-sendable), never crashes generation.
+  "send_email": [{ "name": "EMAIL" }],
+
+  // Non-secret report config. EMAIL_FROM must be on the verified domain;
+  // PUBLIC_APP_URL is apps/web's origin, used for report view + manage links.
+  "vars": {
+    "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
+    "PUBLIC_APP_URL": "https://baseout.local:4331"
+  },
+
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -121,6 +136,12 @@
       "r2_buckets": [
         { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
       ],
+      // Redeclared (send_email + vars are non-inheritable into env blocks).
+      "send_email": [{ "name": "EMAIL" }],
+      "vars": {
+        "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
+        "PUBLIC_APP_URL": "https://baseout.local:4331"
+      },
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",

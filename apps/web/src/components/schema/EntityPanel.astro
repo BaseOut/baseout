@@ -1,0 +1,999 @@
+---
+/**
+ * EntityPanel — the shared stacking entity detail panel (Browse row-click + Docs
+ * chip-click). A right-anchored drawer over a scrim. Selecting a child / related
+ * entity swaps the panel to that entity and PUSHES a crumb onto a sticky breadcrumb
+ * trail (Base ▸ Table ▸ Field); back / a crumb pops. Drilling a different branch
+ * truncates the trail past the branch point (Miller-columns rule). Descriptions use two
+ * source tabs (Airtable · Internal), and the split is the whole point (pattern-annotation-field):
+ * the Airtable copy is a READ MIRROR of the last backup — marked with the Airtable glyph,
+ * read-only everywhere, with one tooltip pointing forward to Actions — while the Internal note is
+ * Baseout's own and the only editable half. AI "Generate" seeds the Internal note ONLY. Baseout
+ * never writes to Airtable (pattern-access-scope), so no write-back lifecycle exists here.
+ *
+ * Driven by one entity index (JSON) + the Space's docs (for the Documentation
+ * section). Open from anywhere: `[data-entity-open="<id>"]` clicks, or
+ * document.dispatchEvent(new CustomEvent('schema:openEntity', {detail:{id}})).
+ *
+ * ALWAYS HOSTED (2026-08-06). This component owns no drawer of its own any more: it contributes the
+ * `entity:` KIND to the ONE `PanelHost` its page mounts (`components/ui/PanelHost.astro`) and renders
+ * only its sheet TEMPLATE + its data. The standalone `createPanelStack` that used to live at the
+ * bottom of this file — with its own root, control column, ＋ popover and undo toast — is gone; it
+ * survived the Schema move solely because the two Reports views mounted no host, and they do now.
+ * That deletes the last second stack in the app (`decision-one-stack-one-entity-one-drawer`), and
+ * with it the founder's A/B type-dropdown picker, which only that stack ever opened.
+ */
+import EntitySearch from './EntitySearch.astro';
+import type { SchemaEntity, SchemaDoc } from './schemaEntities';
+import type { SchemaAutomation } from './SchemaAutomations.astro';
+import type { SchemaInterface } from './SchemaInterfaces.astro';
+import type { ChatThread } from './schemaChatTypes';
+
+/** Minimal changelog shape for the per-entity Changelog section (C4). `aiSummary` / `warning` came
+ *  with the Changelog tab's deleted detail drawer (T6); `base` / `table` / `field` / `entityName`
+ *  are what the ATTRIBUTION LADDER below needs to place a change that names no entity id. */
+type ClEntry = {
+  id: string; at: string; type: string; summary: string; before?: string; after?: string; entityId?: string;
+  aiSummary?: string; warning?: string; base?: string; table?: string; field?: string; entityName?: string;
+};
+interface Props {
+  index: SchemaEntity[];
+  docs?: SchemaDoc[];
+  /** Schema changelog — drives the per-entity "Changelog" section (C4). */
+  changelog?: ClEntry[];
+  /** Registered automations / interfaces — drive the reverse "Referenced by" section. */
+  automations?: SchemaAutomation[];
+  interfaces?: SchemaInterface[];
+  /** Chat threads — drive the "Chats" group in the reverse "Referenced by" section (B8). */
+  chatThreads?: ChatThread[];
+  /** AI Generate-description capability (matches the Visualize side panel). */
+  aiState?: 'ready' | 'locked' | 'no-credits';
+}
+const { index, docs = [], changelog = [], automations = [], interfaces = [], chatThreads = [], aiState = 'ready' } = Astro.props;
+const docTitles = docs.map((d) => ({ id: d.id, title: d.title }));
+// Reverse tag map: entity id → the automations/interfaces that tag it (bidirectional
+// surfacing). Removed entities are excluded (history, not a live reference).
+type RefKind = 'automation' | 'interface' | 'page';
+const refsByEntity: Record<string, { id: string; name: string; kind: RefKind }[]> = {};
+const addRefs = (tags: { entityId: string }[] | undefined, id: string, name: string, kind: RefKind) =>
+  (tags || []).forEach((t) => { (refsByEntity[t.entityId] ??= []).push({ id, name, kind }); });
+automations.filter((a) => a.status !== 'removed').forEach((a) => addRefs(a.tags, a.id, a.name, 'automation'));
+interfaces.filter((i) => i.status !== 'removed').forEach((i) => addRefs(i.tags, i.id, i.name, i.type));
+// Reverse chat map: entity id → the chats whose messages reference it (B8 "Chats" group).
+// PRODUCTION / ENGINE NOTE: like the reverse reference graph (B3/B8 formulas·rollups·lookups),
+// this aggregation is computed here in the mirror from fixtures — Airtable's API returns neither
+// the reverse reference graph nor chat references, so the ENGINE must emit both. Do not hand-fake.
+const chatRefsByEntity: Record<string, { id: string; title: string }[]> = {};
+chatThreads.filter((t) => !t.archived).forEach((t) => {
+  const seen = new Set<string>();
+  t.messages.forEach((m) => (m.refs || []).forEach((r) => {
+    if (r.kind === 'entity' && !seen.has(r.id)) { seen.add(r.id); (chatRefsByEntity[r.id] ??= []).push({ id: t.id, title: t.title }); }
+  }));
+});
+/**
+ * ATTRIBUTION LADDER (T6, 2026-08-06) — every change is placed on an entity the panel can OPEN.
+ *
+ * This used to be `changelog.filter((c) => c.entityId)`, which was enough while the Changelog tab
+ * had its own drawer: a change with no entity id simply never reached a panel. Now a Changelog row
+ * IS an open-the-entity gesture, so a change the panel cannot place is a row that does nothing.
+ *
+ * The ladder: the change's own `entityId` → the TABLE it happened in → the BASE it happened in.
+ * Removed entities are NOT filtered out — they stay in the index (deleted-items-filter) and the
+ * panel renders them with its read-only "removed" notice, which is the honest answer for a change
+ * about something that is gone. The rungs below that exist for the genuinely unresolvable case: a
+ * field that is not in the snapshot at all (fixture `cl-5`, "Legacy ID removed from Contacts").
+ * Then the change is attributed to its nearest SURVIVING ancestor and carries `where` — the name of
+ * what the change was really about — so the row in the table's panel never reads as if the table
+ * itself changed. Nothing is silently dropped and no row is left dead.
+ */
+const baseIdByName = new Map<string, string>();
+const tableIdByKey = new Map<string, string>();
+for (const e of index) {
+  if (e.kind === 'base') baseIdByName.set(e.name, e.id);
+  else if (e.kind === 'table') tableIdByKey.set(`${e.baseName}::${e.name}`, e.id);
+}
+const entityChangelog = changelog
+  .map((c) => {
+    if (c.entityId) return c;
+    const tid = c.base && c.table ? tableIdByKey.get(`${c.base}::${c.table}`) : undefined;
+    // A table-level change (a new table) IS the table — it needs no `where`; anything deeper that
+    // failed to resolve does, because it is being shown one level up from where it happened.
+    if (tid) return { ...c, entityId: tid, where: c.field || c.entityName };
+    const bid = c.base ? baseIdByName.get(c.base) : undefined;
+    if (bid) return { ...c, entityId: bid, where: c.table || c.field || c.entityName };
+    return c;
+  })
+  .filter((c) => c.entityId);
+---
+
+{/* The tag picker an automation/interface panel BORROWS while it is in edit mode
+    (pattern-panel-edit-mode). It is one wired EntitySearch parked here and MOVED into the panel's
+    Touches section — moving the live node keeps its wiring (typeahead, keyboard, "/" focus), which
+    a copy re-rendered into innerHTML would lose. Only one panel can be holding it, which is exactly
+    right: it is one control, and it belongs to whichever panel you are editing. */}
+<div class="ep-tagpicker-home" data-ep-tagpicker-home hidden>
+  <EntitySearch index={index.filter((e) => e.kind !== 'base')} name="ep-tag" pickEvent="schema:epTagAdd" placeholder="Tag a table or field…" size="sm" />
+</div>
+
+<template data-ep-sheet-tpl>
+  <aside class="ep-sheet" data-ps-panel data-entity-panel role="dialog" aria-modal="false" aria-label="Entity details">
+    <!-- Shown only while a reorder drag is live, and only on the anchor: an opaque scrim that says why
+         this panel refuses the drop. Decorative for AT — the drag is a pointer-only affordance. -->
+    <div class="ep-lock" aria-hidden="true">
+      <span class="iconify lucide--lock size-5" aria-hidden="true"></span>
+      <span class="ep-lock-title">Docked to the table</span>
+      <span class="ep-lock-sub">This panel can’t be reordered</span>
+    </div>
+    <div class="ep-grip" data-ps-grip data-ep-grip><span class="ep-grip-line" aria-hidden="true"></span></div>
+    <header class="ep-head">
+      <div class="ep-head-row">
+        {/* One leading slot, two occupants that are never both present: the anchor cannot be
+            reordered, so it shows Detach; every other panel shows the drag grip. Both are ALWAYS
+            laid out now (Oleh, 2026-08-04) — the collapse-on-rest that used to hide them is what
+            pushed the title and the Back button 32px sideways as the pointer travelled toward them.
+            Ghost, but carrying the primary COLOUR (Oleh, 2026-08-04): the soft plate was tried and
+            read as a filled control competing with the title beside it. Colour alone still lifts it
+            out of the neutral grey the other header icons sit in, which is all it needed.
+
+            Called PIN, not "Detach" (Oleh, 2026-08-04). The panel that holds the anchor is the one
+            the next entity you click LOADS INTO; pressing this protects it, and the next click
+            opens beside instead — which the toast already said in full ("this panel is yours now").
+            "Detach" described our plumbing, and with `pin-off` it read backwards to anyone who
+            knows VS Code, where pinning a tab is exactly this: stop it being reused. */}
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-detach tooltip tooltip-bottom" data-ps-detach data-ep-detach aria-label="Pin this panel so the next row opens beside it" data-tip="Pin — next row opens beside"><span class="iconify lucide--pin size-3.5" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-reorder tooltip tooltip-bottom" data-ps-reorder data-ep-reorder aria-label="Drag to reorder" data-tip="Drag to reorder">
+          <span class="iconify lucide--grip-vertical size-4" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-back" data-ep-back aria-label="Back" hidden>
+          <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
+        </button>
+        <span class="ep-head-ic" data-ep-head-ic aria-hidden="true"></span>
+        <div class="ep-head-title" data-ep-head-title></div>
+        <!-- tooltip-LEFT, not bottom: these buttons sit near the right edge, and a bottom-centred bubble
+             runs off-screen whenever the panel hugs the viewport. Left grows inward, never past the edge. -->
+        <!-- "View … in Airtable" as a corner icon (label lives in the tooltip) — declutters the header
+             so the body opens straight into content. Populated per entity in renderCrumbs. -->
+        <a class="btn btn-sm btn-ghost btn-square ep-viewat tooltip tooltip-left" data-ep-viewat target="_blank" rel="noopener" hidden><span class="iconify lucide--external-link size-4" aria-hidden="true"></span></a>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-park tooltip tooltip-left" data-ps-park data-ep-park aria-label="Park to a rail" data-tip="Park to a rail">
+          <span class="iconify lucide--chevrons-left size-4" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-x tooltip tooltip-left" data-ep-close aria-label="Close" data-tip="Close">
+          <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+        </button>
+      </div>
+      {/* Ancestors on the left, the entity id pulled to the right corner of the same row (Oleh 2026-07-21:
+          the id had its own line wasting height; put it beside the path, right-aligned). */}
+      <div class="ep-crumbrow" data-ep-crumbrow hidden>
+        <nav class="ep-crumbs sb-crumb-row" data-ep-crumbs aria-label="Breadcrumb" hidden></nav>
+        <div class="ep-idchip" data-ep-idchip hidden></div>
+      </div>
+      <nav class="ep-secnav" data-ep-secnav-rail aria-label="Sections" hidden></nav>
+    </header>
+    <div class="ep-body" data-ep-body></div>
+    <div class="sr-only" aria-live="polite" data-ep-live></div>
+  </aside>
+</template>
+
+<script
+  type="application/json"
+  data-ep-index
+  set:html={JSON.stringify(index)}
+/>
+<script
+  type="application/json"
+  data-ep-docs
+  set:html={JSON.stringify(docTitles)}
+/>
+<script type="application/json" data-ep-ai set:html={JSON.stringify(aiState)} />
+<script type="application/json" data-ep-changelog set:html={JSON.stringify(entityChangelog)} />
+<script type="application/json" data-ep-refs set:html={JSON.stringify(refsByEntity)} />
+<script type="application/json" data-ep-chatrefs set:html={JSON.stringify(chatRefsByEntity)} />
+{/* Q4 — Automations/Interfaces open as stacking panels; their objects render the shared read body. */}
+<script type="application/json" data-ep-automations set:html={JSON.stringify(automations)} />
+<script type="application/json" data-ep-interfaces set:html={JSON.stringify(interfaces)} />
+
+<style is:global>
+  /* Global: the panel body is rendered at runtime via innerHTML, so scoped styles
+     would not reach it. Classes are uniquely .ep- prefixed; the panel is schema-only. */
+  /* Multi-panel (pattern-multi-panel-drawer): the region, the control column and the one undo toast
+     all belong to `PanelHost` now (`.ph-wrap` / `.ps-rail` / `.ph-undo`). What is left here is the
+     SHEET this kind contributes — its frame, its header, its body and its rows. */
+  .ep-sheet {
+    position: relative; height: 100%; flex: none;
+    width: var(--panel-w, var(--drawer-w)); display: flex; flex-direction: column;
+    background: var(--color-base-100); border-left: 1px solid var(--color-base-300);
+    transform: translateX(100%); transition: transform .22s cubic-bezier(.22,1,.36,1);
+    pointer-events: auto;
+  }
+  .ep-sheet[hidden] { display: none; }
+  .ep-sheet.ep-in { transform: translateX(0); }
+  /* The panels are PEERS: coplanar, separated by a hairline, never stacked. Only the leftmost casts a
+     shadow — onto the table it floats over. A per-panel shadow made each sheet look layered under its
+     right-hand neighbour (loud in the light theme) and implied a hierarchy that does not exist. */
+  /* 2026-08-04: the shadow moved to the control column (`.ps-rail`, styles/global.css) — the column
+     is the drawer's leftmost surface, so a shadow left here would fall onto it instead of the table. */
+  /* No hover lift. The header tooltips that used to be clipped by the next panel now open LEFTWARDS
+     (tooltip-left), i.e. over an EARLIER sibling, which paints below them anyway. Raising the whole
+     sheet on hover was solving a problem that no longer exists — and it made the leftmost panel jump
+     above its neighbour, dragging its shadow with it. */
+  /* Resize handle (macOS-style): the full-height EDGE LINE — drag it to resize THIS panel alone
+     (it turns primary on hover) — plus a centered capsule GRABBER for resizing BOTH at once (drag =
+     scale the pair proportionally · click = even them 50/50). The grabber only appears when two
+     panels are open. */
+  .ep-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 3; }
+  .ep-grip-line { position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background-color .12s ease; pointer-events: none; }
+  .ep-grip:hover .ep-grip-line, .ep-grip.ps-grip-on .ep-grip-line { background: oklch(from var(--color-primary) l c h / .65); }
+  /* Collapse-to-rail (pattern-panel-collapse-rail): a parked panel becomes a ~46px vertical strip —
+     ✕ (top) · icon tile · rotated name. Click the strip to expand; the ✕ closes. Also the overflow
+     state of the auto-accordion (pattern-panel-accordion). */
+  .ep-sheet.ps-collapsed { width: 46px !important; min-width: 46px; }
+  /* NOT in the hide list: the resize grip. A parked strip can be dragged back out, the same as on
+     Attachments — three of the four hosts used to suppress it and one did not, so the identical
+     drawer behaved differently depending on which section you opened it from (found 2026-08-05,
+     against `decision-one-stack-one-entity-one-drawer`). */
+  .ep-sheet.ps-collapsed .ep-body,
+  .ep-sheet.ps-collapsed .ep-crumbrow,
+  .ep-sheet.ps-collapsed .ep-secnav,
+  .ep-sheet.ps-collapsed .ep-back,
+  .ep-sheet.ps-collapsed .ep-viewat,
+  .ep-sheet.ps-collapsed .ep-reorder,
+  .ep-sheet.ps-collapsed .ep-park { display: none !important; }
+  /* Reorder handle (pattern-panel-reorder): a ⠿ grip, quiet until header-hover; drag live-swaps the
+     panel order. The dragged sheet gets a dashed accent outline. */
+
+  /* ── The "hold" slot — how this panel is held (pattern-multi-panel-drawer) ─────────────────
+     One leading slot, one control: a movable panel shows its drag grip, the anchored one shows
+     Detach, and they are already mutually exclusive (see the anchor rules above). Putting them in
+     the SAME place means the answer to "can I move this?" is always found in the same spot, and it
+     frees the slot Detach used to occupy among the unrelated right-hand actions (Oleh 2026-07-24).
+     Hidden until the header is hovered or holds focus: a grip and a pin do not need to be lit at
+     all times. See the collapse recipe below. */
+  /* ALWAYS laid out and always visible (Oleh, 2026-08-04). It used to collapse to zero width at
+     rest and open on hover, which moved the title — and the Back button — 32px sideways exactly as
+     the pointer travelled toward them: the target left from under the cursor reaching for it.
+     Measured at 32px before the change. Quiet at rest and full strength on hover keeps it from
+     shouting without ever changing the layout. */
+  .ep-reorder {
+    flex: none;
+    opacity: .3;
+    transition: opacity .12s ease;
+  }
+  .ep-head:hover .ep-reorder,
+  .ep-head:focus-within .ep-reorder,
+  .ep-reorder:focus-visible { opacity: 1; }
+  /* Visibility is owned by the hold-slot rule above; this only carries the grab affordance. */
+  .ep-reorder { cursor: grab; }
+  .ep-reorder.ps-grip-on { cursor: grabbing; }
+  /* The dragged sheet stays OPAQUE. `opacity` here used to let the Browse table bleed through it, since
+     the drawer is non-modal and sits over the table. Lift it instead: dashed accent outline + shadow. */
+  .ep-sheet.ps-dragging { outline: 2px dashed var(--color-primary); outline-offset: -2px; z-index: 5;
+    box-shadow: -12px 0 40px oklch(0 0 0 / .35); }
+  /* CONFORMED: this drag lift cast DOWNWARD while the four sibling stack hosts all cast leftward at
+     the same .35. One gesture, five sheets, two directions. Leftward is the majority and matches the
+     stack's axis — a sheet is dragged along the row, not off the bottom of it. */
+  /* While a reorder drag is live, the anchor visibly withdraws: it is not a drop target and never moves.
+     Implemented as an OPAQUE scrim INSIDE the sheet — never `opacity` on the sheet itself, which would
+     make the whole panel translucent and let the Browse table show through it (the drawer is non-modal
+     and sits over the table). The scrim also swallows the pointer, so the cursor reads not-allowed.
+     Shown only for the duration of the gesture: dimmed at rest would say "disabled", and the anchor is
+     fully interactive. */
+  .ep-lock { display: none; }
+  /* Keyed on `.ps-reordering` as a plain ANCESTOR, exactly as the record / file / changelog sheets
+     already were. It used to be `.ep-cols.ps-reordering` — the standalone stack's own row class —
+     so once this kind moved onto the shared host the class landed on `.ph-panels` and the scrim
+     stopped painting entirely. */
+  .ps-reordering .ep-sheet.ps-anchor .ep-lock {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    position: absolute; inset: 0; z-index: 6; cursor: not-allowed; text-align: center; padding: 16px;
+    background: oklch(from var(--color-base-100) l c h / .85);
+    color: oklch(from var(--color-base-content) l c h / .65);
+    animation: ep-scrim-in .12s ease;
+  }
+  .ep-lock-title { font-size: var(--t-14); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .85); }
+  .ep-lock-sub { font-size: var(--t-12); }
+  @keyframes ep-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+  .ep-sheet.ps-collapsed .ep-head { padding: 8px 0; height: 100%; border-bottom: 0; }
+  .ep-sheet.ps-collapsed .ep-head-row { flex-direction: column; align-items: center; gap: 12px; height: 100%; min-height: 0; }
+  .ep-sheet.ps-collapsed .ep-x { order: -1; }
+  .ep-sheet.ps-collapsed .ep-head-title { display: block; flex: 0 1 auto; writing-mode: vertical-rl; transform: rotate(180deg); overflow: hidden; max-height: 100%; }
+  .ep-sheet.ps-collapsed .ep-head-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-height: 100%; }
+  /* A parked strip rotates its title into a vertical writing mode, which drags any sibling badge
+     ("Primary") into the same text flow — it lands on top of the name, and at 46px it is unreadable
+     anyway. The strip carries identity only: icon + name. The badge returns when the panel expands. */
+  .ep-sheet.ps-collapsed .ep-head-title .badge { display: none; }
+  /* Mobile: one full-width column. When a focus panel is open it takes the screen and the anchor
+     tucks away (Back from an exhausted focus reveals the anchor again). */
+  @media (max-width: 1279.98px) {
+    /* The control column keeps its 40px on mobile (＋ and the bulk verbs still apply), so the sheet
+       gives that width back — otherwise column + sheet overflow the viewport. Resizing is off here
+       (panelStack's isMobile() guard returns before any drag), so the column is not a drag surface. */
+    /* ONE SPELLING OF THE NARROW PANEL: `width: calc(100% - 40px)` (16-responsive.md §8).
+       Was `--panel-w: calc(94vw - 40px)`, and it differed from MediaPanel/QuickAskDock in two ways
+       that both matter. (1) `vw` counts the scrollbar, so its "40px of page" is not 40px — measured
+       at 390 it painted 326.59 at x=63.41 against the other spelling's 350 at x=40, two panels on
+       one screen 23.4px apart. (2) It set the CUSTOM PROPERTY, which `panelStack` also writes
+       INLINE for drag-resize — an inline `--panel-w: 480px` outranks this sheet, so the narrow rule
+       was conditionally dead for anyone who had ever dragged the panel. Setting `width` directly
+       beats `width: var(--panel-w, …)` on line 203 by source order and is immune to that. */
+    .ep-sheet { width: calc(100% - 40px); }
+    .ep-grip { display: none; }
+  }
+
+  /* Drawer canon v2: two-row header — icon tile + dynamic title on top, ancestor crumbs below. */
+  .ep-head { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-base-300); }
+  .ep-head-row { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .ep-head-ic { width: 2rem; height: 2rem; border-radius: var(--r-8); flex: none; display: grid; place-items: center; background: var(--color-base-200); }
+  .ep-head-ic .iconify { font-size: var(--t-16); opacity: .8; }
+  .ep-head-ic svg { width: 17px; height: 17px; opacity: .8; }
+  .ep-head-ic:empty { display: none; }
+  .ep-head-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: var(--t-16); font-weight: 650; letter-spacing: -0.15px; line-height: 1.2; }
+  .ep-head-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Edit mode: the title BECOMES its input (pattern-panel-edit-mode). It inherits the title's own
+     font so the name doesn't change size when the mode flips, and the header row is already 32px
+     (btn-sm) tall, so a 32px input adds no height. */
+  .ep-head-nameinput { flex: 1; min-width: 0; height: 32px; font-size: var(--t-16); font-weight: 650; letter-spacing: -0.15px; padding: 0 8px; }
+  /* Crumb-segment styling comes from the shared .sb-crumb* (styles/global.css); .ep-crumbs keeps
+     only the row's layout + hide rule. */
+  .ep-crumbrow { display: flex; align-items: center; gap: 12px; }
+  .ep-crumbrow[hidden] { display: none; }
+  .ep-crumbs { min-width: 0; overflow: hidden; flex: 0 1 auto; }
+  .ep-crumbs[hidden] { display: none; }
+  /* Entity id + copy chip (parity with the Data drawer's .rp-idchip). */
+  .ep-idchip { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; } /* ds-ok: 6px optical id-chip gap */
+  .ep-idchip[hidden] { display: none; }
+  .ep-idlabel { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); } /* ds-ok: id-chip label, menu-title scale */
+  .ep-idval { font-size: var(--t-12); font-family: var(--font-mono, ui-monospace, monospace); color: oklch(from var(--color-base-content) l c h / .65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ep-copyid { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); transition: color .4s ease, background-color .4s ease; }
+  .ep-copyid:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  .ep-copied { color: var(--color-success); background: oklch(from var(--color-success) l c h / .16); transition: none; }
+  .ep-copied .iconify { animation: ep-copypop .32s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes ep-copypop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
+
+  .ep-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
+  /* Slim, calm scrollbar: a low-alpha thumb over a transparent track, brighter on hover. The
+     transparent border + background-clip insets the thumb so it reads as a thin floating bar rather
+     than a heavy bright rail. Token colours so it holds in both themes. */
+  .ep-body, .ep-desc-v { scrollbar-width: thin; scrollbar-color: oklch(from var(--color-base-content) l c h / .16) transparent; }
+  .ep-body::-webkit-scrollbar, .ep-desc-v::-webkit-scrollbar { width: 10px; }
+  .ep-body::-webkit-scrollbar-track, .ep-desc-v::-webkit-scrollbar-track { background: transparent; }
+  .ep-body::-webkit-scrollbar-thumb, .ep-desc-v::-webkit-scrollbar-thumb { background: oklch(from var(--color-base-content) l c h / .16); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  .ep-body::-webkit-scrollbar-thumb:hover, .ep-desc-v::-webkit-scrollbar-thumb:hover { background: oklch(from var(--color-base-content) l c h / .35); background-clip: padding-box; }
+  .ep-body.ep-swap { animation: epslide .2s cubic-bezier(.22,1,.36,1); }
+  @keyframes epslide { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: translateX(0); } }
+  @media (prefers-reduced-motion: reduce) { .ep-sheet { transition: none; } .ep-body.ep-swap { animation: none; } }
+
+  /* Context header */
+  .ep-title { display: flex; align-items: flex-start; gap: 12px; }
+  .ep-title-ic { width: 30px; height: 30px; border-radius: var(--r-8); flex: none; display: grid; place-items: center; background: var(--color-base-200); }
+  .ep-title-ic .iconify { font-size: var(--t-16); opacity: .8; }
+  .ep-title-ic svg { width: 17px; height: 17px; opacity: .85; }
+  .ep-title-main { min-width: 0; flex: 1; }
+  .ep-title-name { font-size: var(--t-16); font-weight: 650; line-height: 1.25; word-break: break-word; }
+  .ep-title-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .ep-body-meta { margin-top: 0; }
+  /* "View in Airtable" is a corner icon in the header (its label lives in the tooltip). */
+  .ep-viewat[hidden] { display: none; }
+  /* Health as an inline chip in the identity line (replaces the old full-width Health card). */
+  .ep-meta-sep { opacity: .4; }
+  .ep-meta-health { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
+  /* Freshness ("as of last backup") is a trust signal — it inherits the identity meta's .65
+     alpha rather than dimming further, so it stays legible next to its siblings. */
+  .ep-meta-fresh { }
+
+  /* Metric tiles — the same bordered strip + dashed dividers as the Home KPI tiles
+     (.hm-kpis), so the panel reads as part of the system, not a bare text row. */
+  /* deleted-items-filter: read-only-history banner for a removed entity. */
+  /* Removed/deleted notice = catalog warning Alert (storybook pattern-removed-notice); only spacing + compact size here. */
+  .ep-removed { margin: 16px 0 2px; font-size: var(--t-12); }
+  .ep-stats { display: grid; grid-template-columns: repeat(var(--ep-stat-n, 3), minmax(0, 1fr)); border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); overflow: hidden; margin: 16px 0 4px; }
+  .ep-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px 12px 12px; }
+  .ep-stat + .ep-stat { border-left: 1px dashed oklch(from var(--color-base-content) l c h / .16); }
+  .ep-stat-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ep-stat-k { font-size: var(--t-11); font-weight: 600; letter-spacing: .02em; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ep-stat-ic { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .ep-stat-v { font-size: var(--t-16); font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .ep-stat-sub { font-size: var(--t-11); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ep-stat-health { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-16); font-weight: 600; }
+
+  /* Sections */
+  /* Canon (c): hairline divider between top-level sections + right-aligned count badge. */
+  /* Sections are separated by whitespace, not a divider line (Oleh: the hairline ladder got busy
+     once panels grew many sections). More air, no rule. */
+  .ep-sec { margin-top: 28px; scroll-margin-top: 8px; }
+
+  /* Progressive in-panel section-nav (pattern panel-section-nav): a chip-strip of the panel's section
+     anchors, rendered as the THIRD header row — inside .ep-head, ABOVE the header's border (part of the
+     fixed header) — ONLY on a genuinely LONG panel (a large formula / long paragraph). Chips are daisyUI
+     SOFT badges (so they don't read like the bordered entity-chips / content pills); the active one goes
+     solid (badge-soft toggled off by the scroll-spy). A chip click scrolls .ep-body to that section. */
+  .ep-secnav {
+    display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+  }
+  .ep-secnav[hidden] { display: none; }
+  .ep-secnav::-webkit-scrollbar { display: none; }
+  /* When the strip overflows, fade both edges so it's obvious it scrolls horizontally. */
+  .ep-secnav.ep-secnav-scroll { -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent); mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent); } /* ds-ok: black is a mask alpha stop, not a visible colour */
+  /* Legible jump-nav pills — the old soft badges read too faintly in dark mode. Inactive = a clear muted
+     label; hover = base-200 fill; active = a primary-tinted pill with primary text. */
+  .ep-secnav-chip {
+    flex: none; white-space: nowrap; cursor: pointer; appearance: none; border: 0; background: transparent;
+    padding: 4px 8px; border-radius: 999px; font: inherit; font-size: var(--t-12); font-weight: 550; line-height: 1.4;
+    color: oklch(from var(--color-base-content) l c h / .65); transition: background-color .12s ease, color .12s ease;
+  }
+  .ep-secnav-chip:hover { background: var(--color-base-200); color: var(--color-base-content); }
+  .ep-secnav-chip.is-active { background: color-mix(in oklch, var(--color-primary) 16%, transparent); color: var(--color-primary); font-weight: 650; }
+  .ep-secnav-chip:focus-visible { outline: 2px solid oklch(from var(--color-primary) l c h / .55); outline-offset: 1px; }
+  .ep-sec-h { display: flex; align-items: center; gap: 8px; font-size: var(--t-11); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); margin-bottom: 8px; }
+  .ep-sec-ic { flex: none; opacity: .85; }
+  /* Count = a catalog badge pressed right after the section name (Oleh) — not a far-right float. */
+  .ep-sec-h .ep-sec-n { text-transform: none; letter-spacing: normal; }
+  /* B8 — the "Referenced by" section groups its rows by kind (Automations · Interfaces · Formulas ·
+     Rollups · Lookups · Docs · Chats). Each group's SUB-header carries its kind concept-icon as the
+     group signifier (the sanctioned exception to "sub-labels get no icon" — documented in the
+     pattern-detail-panel storybook entry), with the per-group count right-aligned like the section. */
+  .ep-refgrp { margin-top: 16px; }
+  .ep-refgrp:first-child { margin-top: 0; }
+  .ep-refgrp-h { display: flex; align-items: center; gap: 4px; font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); margin: 0 0 4px; }
+  .ep-refgrp-ic { flex: none; opacity: .7; }
+  .ep-refgrp-n { text-transform: none; letter-spacing: normal; }
+  /* Canon (b): "+N more" INLINE disclosure — expands the rest in place inside the panel body
+     (a floating popover escapes a scroll-owning panel). Native <details>, marker hidden. */
+  /* "+N more" toggle now lives INSIDE the row-list container (see capRows) — flush, full-width,
+     reads as a final row separated by the same hairline. */
+  .ep-more { margin: 0; }
+  .ep-more-sum { list-style: none; display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 8px 12px; font-size: var(--t-13); font-weight: 500; color: var(--color-primary); border-radius: 0; }
+  .ep-more-sum::-webkit-details-marker { display: none; }
+  .ep-more-sum:hover { background: var(--color-base-200); }
+  .ep-more-chev { transition: transform .15s ease; }
+  .ep-more[open] .ep-more-chev { transform: rotate(180deg); }
+
+  /* description value text (shared by both source tabs) */
+  .ep-desc-v { font-size: var(--t-13); line-height: 1.5; }
+  .ep-desc-v.ep-empty { color: oklch(from var(--color-base-content) l c h / .65); font-style: italic; }
+
+  /* child / relation rows */
+  /* Row-list container (pattern-detail-panel canon): every data-row list sits in ONE bordered,
+     faintly-tinted rounded box so a lone 1–2-row list reads as a grouped surface, not floating
+     text. Rows touch and are split by a 1px base-200 hairline; the box clips the first/last row's
+     hover corner. Same container language as the .ep-stats metric strip + description box. */
+  .ep-rows { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  .ep-rows .ep-row:not(:first-child), .ep-rows .ep-more { border-top: 1px solid var(--color-base-200); }
+  .ep-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 0; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; font: inherit; }
+  .ep-row:hover { background: var(--color-base-200); }
+  /* hover "open beside" ⧉ — a sibling button overlaying the row's right edge (revealed on row hover) */
+  .ep-rowwrap { position: relative; }
+  /* ⧉ open-beside occupies the same spot as the row's trailing meta (type · dir · health dot), so the
+     two SWAP rather than overlap: as a transparent ghost the label read straight through it, and merely
+     making it opaque just chopped the label against its edge. On hover the meta fades out, the button
+     fades in. It carries a base-100 fill + hairline so it reads as a control on the hovered base-200 row. */
+  /* `pointer-events: none` at rest is not tidiness. This button is absolutely positioned at
+     z-index 2 over the row's right edge, so while invisible it still SWALLOWS a click meant for
+     the row — the row drills in place, so the user gets a second panel instead. It bites hardest
+     where :hover never resolves first: a touch tap, or a click that lands before the hover style
+     applies. `.rp-openbeside` already carries this fix with the reason written beside it
+     (RecordPanel.astro); this copy and `.dcp-openbeside` were ported without it. */
+  .ep-beside { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); opacity: 0; pointer-events: none; transition: opacity .1s; z-index: 2;
+    background: var(--color-base-100); border: 1px solid var(--color-base-300); }
+  .ep-rowwrap:hover .ep-beside, .ep-beside:focus-visible { opacity: 1; pointer-events: auto; }
+  .ep-beside:hover { color: var(--color-primary); background: var(--color-base-200); }
+  .ep-rowwrap:hover .ep-row-type,
+  .ep-rowwrap:hover .ep-rel-dir,
+  .ep-rowwrap:hover .ep-dot { opacity: 0; transition: opacity .1s; }
+  /* …but the primary marker lives inside the NAME, not the trailing meta — it must stay put. */
+  .ep-rowwrap:hover .ep-row-name .ep-row-type { opacity: 1; }
+  .ep-row-ic { width: 18px; flex: none; display: grid; place-items: center; }
+  .ep-row-ic svg { width: 15px; height: 15px; opacity: .8; }
+  .ep-row-ic .iconify { font-size: .9rem; opacity: .75; }
+  .ep-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-13); font-weight: 500; }
+  .ep-row-type { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .ep-row-kind { font-size: var(--t-11); color: oklch(from var(--color-base-content) l c h / .65); flex: none; margin-left: auto; }
+  .ep-row-chev { opacity: .35; flex: none; }
+  .ep-row:hover .ep-row-chev { opacity: .7; }
+  /* Master-detail selection: the anchor row whose child is open on the right stays SELECTED — a soft
+     primary tint + a primary chevron + a slightly bolder name, so "the right panel = THIS row expanded"
+     reads at a glance (Finder-column / list-detail convention). No side-stripe (banned): the fill + the
+     chevron carry it. */
+  .ep-row-active, .ep-row-active:hover { background: color-mix(in oklch, var(--color-primary) 14%, transparent); }
+  .ep-row-active .ep-row-chev { opacity: 1; color: var(--color-primary); }
+  .ep-row-active .ep-row-name { font-weight: 650; }
+  .ep-rel-dir { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+
+  /* Options chips share the same row-list container so a short option set reads as a group. */
+  .ep-options { display: flex; flex-wrap: wrap; gap: 8px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: color-mix(in oklch, var(--color-base-200) 45%, transparent); padding: 12px; }
+  .ep-empty-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* view-schema-details — "Fields shown": the visible fields as NAMED entity chips (.sb-chip, from
+     entityChip()), in the same bordered box the Options chips use, capped at 5 with a "+N more"
+     disclosure holding the rest. Chips are injected via innerHTML, so their CSS lives in
+     styles/global.css and this container sits in the panel's is:global block — a scoped rule would
+     never reach either. Spacing stays on the 4px grid. */
+  .ep-chipbox { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: color-mix(in oklch, var(--color-base-200) 45%, transparent); padding: 12px; }
+  /* The overflow lives in the SAME box: `+N more` is a chip-sized control sitting in the flow, and
+     the rest of the chips unhide in place behind it. `display: contents` so the wrapper adds no box
+     of its own and the revealed chips join the same wrap run. */
+  .ep-chiprest { display: none; }
+  .ep-chipbox:has(.ep-chipmore[open]) .ep-chiprest { display: contents; }
+  .ep-chipbox:has(.ep-chipmore[open]) .ep-chipmore { order: 1; }
+  .ep-chipmore { margin-top: 8px; }
+  .ep-chipmore-sum {
+    display: inline-flex; align-items: center; gap: 4px; cursor: pointer; list-style: none;
+    font-size: var(--t-12); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65);
+  }
+  .ep-chipmore-sum::-webkit-details-marker { display: none; }
+  .ep-chipmore-sum:hover { color: var(--color-base-content); }
+  .ep-chipmore[open] > .ep-chipmore-sum .ep-more-chev { transform: rotate(180deg); }
+  /* The "N of M" counter sits inline in the section header, so it opts out of the header's
+     uppercase/tracking exactly as the count badge does. */
+  .ep-sec-h .ep-sec-nm { text-transform: none; letter-spacing: normal; font-weight: 650; color: oklch(from var(--color-base-content) l c h / .65); }
+  .ep-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+  .ep-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .ep-dot-green { background: var(--color-success); }
+  .ep-dot-amber { background: var(--color-warning); }
+  .ep-dot-red { background: var(--color-error); }
+
+  /* Description source tabs — a custom two-button strip with a full-width baseline rail so the
+     tabs don't "float" (daisyUI radio tabs drew only the active label's underline). The active
+     tab's 2px border sits ON the 1px rail via a -1px bottom margin. */
+  .ep-desc-tabsbar { display: flex; gap: 2px; margin-top: 8px; border-bottom: 1px solid var(--color-base-300); }
+  .ep-desc-tabbtn { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px 8px; font: inherit; font-size: var(--t-12); font-weight: 500; line-height: 1.2; color: oklch(from var(--color-base-content) l c h / .65); cursor: pointer; transition: color .12s ease; }
+  .ep-desc-tabbtn:hover { color: var(--color-base-content); }
+  .ep-desc-tabbtn.ep-tab-on { color: var(--color-base-content); font-weight: 650; border-bottom-color: var(--color-primary); }
+  .ep-desc-tab { margin-top: 12px; }
+  /* The value box holds ONLY the description content (caption + status + actions are siblings
+     below it), so a small floor keeps it reading as a field. */
+  .ep-desc-panel { border: 1px solid var(--color-base-300); border-radius: var(--r-8); padding: 12px 12px; min-height: 50px; background: oklch(from var(--color-base-200) l c h / .55); }
+  /* Click-to-edit affordance: the value box is the edit target (no separate Edit button). A
+     hover wash + a corner pencil signal it, and the cursor is a text caret. */
+  .ep-desc-zone { position: relative; cursor: text; transition: border-color .12s ease, background-color .12s ease; }
+  .ep-desc-zone:hover { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-base-200) l c h / .85); }
+  .ep-desc-zone:focus-visible { outline: 2px solid oklch(from var(--color-primary) l c h / .55); outline-offset: 1px; }
+  .ep-desc-zone-ic { position: absolute; top: 7px; right: 8px; opacity: 0; color: oklch(from var(--color-base-content) l c h / .65); transition: opacity .12s ease; pointer-events: none; }
+  .ep-desc-zone:hover .ep-desc-zone-ic, .ep-desc-zone:focus-visible .ep-desc-zone-ic { opacity: .7; }
+  /* scope caption — a quiet note BELOW the value, stating PROVENANCE (where the value came from
+     and that we never write it), never permission. */
+  .ep-desc-meta { display: flex; align-items: center; gap: 8px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin: 8px 2px 0; }
+  .ep-desc-meta-ic { flex: none; opacity: .75; }
+  /* The Airtable MARK (pattern-access-scope): an inline brand SVG, so it needs its own box —
+     the .iconify sizing rules never reach it. Marked ⇒ Baseout never writes it. */
+  .ep-desc-at-mark, .ep-desc-tab-mark { display: inline-flex; align-items: center; }
+  .ep-desc-at-mark svg, .ep-desc-tab-mark svg { width: 12px; height: 12px; }
+  .ep-desc-tabbtn-mark { display: inline-flex; align-items: center; gap: 4px; }
+  .ep-desc-tab-mark { opacity: .7; }
+  .ep-desc-tabbtn.ep-tab-on .ep-desc-tab-mark { opacity: 1; }
+  /* The forward-pointer tooltip wraps the read-only value box. daisyUI's `tooltip` class is
+     inline-block, which would collapse the box to its content width — force it back to a
+     full-width block so the mirrored value keeps the same footprint as the editable one. */
+  .ep-desc-tip { display: block; width: 100%; text-align: left; }
+  /* Canon (b): a long read-mode description grows to a max height, then scrolls in its own box. */
+  .ep-desc-v { max-height: 40vh; overflow-y: auto; }
+  /* AI disclaimer — the "under the input" slot, and only in edit mode. At rest that slot is
+     empty: a value we only read has no state worth a line. */
+  .ep-desc-hint { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: var(--t-12); line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .65); }
+  .ep-desc-hint .iconify { color: var(--color-primary); font-size: .95rem; flex: none; }
+  /* Taller editor — generous vertical room to write (not a cramped 2-line input). */
+  .ep-desc-input { margin-top: 2px; line-height: 1.5; min-height: 132px; resize: vertical; }
+  /* Cost suffix — inline within the button label (shares its baseline); a small left gap
+     restores the breathing room that the old separate-flex-item gap used to give. */
+  .ep-credit { font-size: var(--t-11); font-weight: 600; opacity: .65; margin-left: 4px; }
+
+  /* A3 — in-list field/table filter */
+  .ep-filter { width: 100%; margin-bottom: 8px; }
+
+  /* A4 — field-type configuration; A6 — relationship cardinality + backlink */
+  .ep-cfg-k { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); margin: 12px 0 4px; }
+  .ep-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--t-12); background: var(--color-base-200); border: 1px solid var(--color-base-300); border-radius: var(--r-8); padding: 8px 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .ep-link { color: var(--color-primary); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; font-weight: 600; }
+  .ep-link:hover { text-decoration: underline; }
+  /* Cardinality — a single soft badge under a "Cardinality" label (matching the Backlink
+     section), never the old badge + loose-text combo. */
+  .ep-rel-card { margin-top: 1px; }
+  .ep-rel-back { margin-top: 8px; }
+
+  /* C4 — per-entity changelog section */
+  /* Changelog = the same row-list container (one box, hairline-split rows) rather than a stack of
+     per-row cards, so it reads consistently with References / Fields / Relationships. */
+  .ep-cl { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  .ep-cl-row { padding: 12px; }
+  .ep-cl-row + .ep-cl-row { border-top: 1px solid var(--color-base-200); }
+  .ep-cl-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .ep-cl-date { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); font-variant-numeric: tabular-nums; }
+  .ep-cl-sum { font-size: var(--t-13); line-height: 1.45; }
+  .ep-cl-delta { font-size: var(--t-12); }
+  .ep-cl-before { color: oklch(from var(--color-base-content) l c h / .65); text-decoration: line-through; }
+  .ep-cl-after { font-weight: 600; }
+  /* T6 — what the change was actually about, when it could only be attributed to an ancestor
+     (a deleted field listed under its still-present table). Without it the row would read as if
+     the table itself changed. */
+  .ep-cl-where { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  /* T6 — the AI summary + broken-data warning, moved off the deleted Changelog-tab drawer. Catalog
+     alerts; only the spacing + the internal label are set here. */
+  .ep-cl-detail { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .ep-cl-ai, .ep-cl-warn { align-items: flex-start; font-size: var(--t-12); line-height: 1.45; }
+  .ep-cl-ai-head { font-size: var(--t-11); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 4px; }
+  .ep-cl-ai-text { font-size: var(--t-12); line-height: 1.5; }
+  /* The automation / interface changelog list is a centred flex ROW (.au-cl-item / .if-cl-item);
+     once a row carries the detail block it is no longer one line, so its date must top-align or it
+     floats halfway down the AI summary. */
+  .au-cl-item:has(.ep-cl-detail), .if-cl-item:has(.ep-cl-detail) { align-items: flex-start; }
+  /* Deep-link cue (T6) — the same transient mark RecordPanel puts on a deep-linked comment
+     (`.rp-cm-hit`): it fades on its own, because nothing here is selectable and a permanent
+     highlight would read as state. */
+  .ep-cl-hit { background: color-mix(in oklch, var(--color-primary) 14%, transparent); box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--color-primary) 30%, transparent); transition: background .4s ease, box-shadow .4s ease; }
+  @media (prefers-reduced-motion: reduce) { .ep-cl-hit { transition: none; } }
+
+  /* The stack CONTROL COLUMN, the shutter and the per-panel resize grip are `PanelHost`'s and the
+     shared `.ps-*` set's (styles/global.css) — this component contributes a SHEET, not a stack, so
+     none of that CSS lives here any more. Per-panel width still rides `.ep-grip` above. */
+
+  /* The INSIDE of the row this kind contributes to the host's ONE ＋ picker. The popover, the chip
+     strip, the group headings, the footer count and "Show N more" are the shared `.pk-*` skin
+     (styles/global.css); only the two spans below are ours. Global, because the picker's list is
+     rendered by innerHTML inside PanelHost — a scoped rule would never reach it. */
+  .ep-addname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-13); }
+  /* Where it lives, quiet and second — you scan the names, and read the path only to break a tie. */
+  .ep-addwhere { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* The ANCHOR slot. The panel nearest the table is docked to it: every plain row click lands in THAT
+     panel and in no other, even when focus sits elsewhere. Transience is encoded by POSITION, not by a
+     badge — no preview chip, no italic title, no Pin.
+     The header — the surface you would drag a panel by — is HATCHED to say "this bar does not move".
+     Deliberately NOT an accent left border: that pixel already belongs to .ep-grip, whose hover state
+     is the same primary colour, so a static line there would contradict the resize affordance.
+     The hatch is barely-there on purpose: it must read as "fixed", never as "disabled" — the panel
+     below it stays fully interactive. Detach frees the slot; a non-anchor panel keeps its drag grip. */
+  .ep-sheet:not(.ps-anchor) .ep-detach,
+  .ep-sheet.ps-anchor .ep-reorder,
+  .ep-sheet.ps-collapsed .ep-detach,
+  .ep-sheet.ps-collapsed .ep-lock { display: none !important; }
+  /* The diagonal hatch is gone (Oleh, 2026-08-04). It was drawn when the anchor's only signal was
+     "this one is fixed"; now the pin button states the same fact in words and in a control you can
+     act on, so the texture was a second, quieter voice saying it — and on the panel a person reads
+     most, it made the header look treated rather than plain. The accent line above stays: it marks
+     WHICH panel is the anchor at a glance, which the button alone cannot do from across the row. */
+  .ep-sheet.ps-anchor .ep-head {
+    /* An accent line ALONG THE TOP closes the hatched zone. Drawn as an inset shadow, not a border-top,
+       so the header keeps its height. The panel's LEFT edge stays free — it belongs to .ep-grip. */
+    box-shadow: inset 0 2px 0 var(--color-primary);
+  }
+  .ep-detach { flex: none; color: var(--color-primary); }
+</style>
+
+<script>
+  import { registerPanelKind, host, type HostPanel } from '../ui/panelHostRegistry';
+  // The per-panel CONTROLLER lives in its own module (entityPanelController.ts) so a host other than
+  // this one can instantiate the same thing. It is NOT a read body: it owns the visit stack, the
+  // internal-note edit buffer, edit mode and every data-ep-* handler. Its per-panel state
+  // (descStates / editIds / drafts) is created per call — see the note at the top of that file.
+  import { makeEntityPanel } from './entityPanelController';
+  import type { SchemaEntity } from './schemaEntities';
+  import type { PickerSource } from '../ui/panelAddPicker';
+  import { pkEsc } from '../ui/pickerSearch';
+  import { entityIconMarkup } from './entityIcon';
+
+  type Panel = ReturnType<typeof makeEntityPanel>;
+  // Module scope, not inside registerEntityKind: `routeEntity` (the ONE open entry point, far below)
+  // needs it too, to hand a Changelog deep link to whichever panel now holds the entity.
+  type EPanel = HostPanel & { panel: Panel };
+
+  // Controller — independent-panels model (pattern-multi-panel-drawer, redesigned). Owns an array of
+  // up to CAP panels, each an independent makeEntityPanel over a cloned sheet. A plain open (Browse row /
+  // schema:openEntity) reuses ONE transient PREVIEW panel; Pin keeps it. ⌘/Ctrl/middle-click a row, the
+  // ⧉, or the picker opens a NEW pinned panel beside. Each panel closes independently. Wired once.
+  // ── HOSTED mode: the `entity:` kind of the ONE PanelHost (components/ui/PanelHost.astro) ─────
+  // On `/data` this component renders no root of its own; the entity drawer that opens beside a
+  // file, a record or a run IS this panel — same `.ep-sheet`, same `makeEntityPanel` controller,
+  // description editor, drill rows, edit mode and all. That is the law: an entity's
+  // drawer looks and behaves IDENTICALLY from every section.
+  //
+  // Registration is unconditional and harmless on `/schema`: with no host mounted the `host` proxy
+  // is inert and nothing ever asks the registry for an `entity:` panel.
+  const EP_HOSTED_MINW = 360;
+  // ── The ＋ picker's SCHEMA source ─────────────────────────────────────────────────────────────
+  // Group headings by KIND, because inside "Schema" the kind is the thing that varies (`pickerSearch`'s
+  // one rule) — and it is also the axis the losing dropdown variant offered as its type filter, so the
+  // question a person asks here does not change with the control. The BASE is a facet, not the axis:
+  // it is what the picker opens PINNED to (the focused panel's own base), which is the `All bases ⇄
+  // this base` narrowing the standalone picker had.
+  const EP_KIND_LABEL: Record<string, string> = { space: 'Spaces', base: 'Bases', table: 'Tables', view: 'Views', field: 'Fields' };
+  const EP_KIND_ORDER = ['space', 'base', 'table', 'view', 'field'];
+  function registerEntityKind() {
+    const tpl = document.querySelector<HTMLTemplateElement>('[data-ep-sheet-tpl]');
+    if (!tpl) return;
+    const epIndex = (JSON.parse(document.querySelector('[data-ep-index]')?.textContent || '[]')) as SchemaEntity[];
+    /**
+     * The APP-LAYER items — automations, interfaces and interface pages. They are NOT a sixth and a
+     * seventh panel kind, and deliberately so (2026-08-06). `makeEntityPanel` has registered them as
+     * panel-local pseudo-entities since Q4: `entityPanelController` parses these same two blobs,
+     * `addPseudo`s them into its `byId`, and `renderBody` branches to `automationReadBody` /
+     * `interfaceReadBody`. They already drill, edit, park, reorder and open beside — inside the
+     * `entity:` sheet, which is the whole point of `decision-one-stack-one-entity-one-drawer`.
+     *
+     * What was missing was one set membership. `canOpen` was built from `data-ep-index` ALONE, so the
+     * host refused every id the controller could in fact render, and `onMissing` fired a toast whose
+     * sentence named the only three kinds that set contains. Nothing needed building; the gate needed
+     * to be asked about the same population the panel can show.
+     *
+     * A separate `automation:` prefix would have been actively wrong, not merely redundant: a panel
+     * opened at an automation DRILLS to a tagged field, at which point `panelKey` returns that field's
+     * id while `kindOfPanel` still says `automation:` — so the same field would dedupe under two
+     * prefixes and open twice. The registry says a kind owns a SHEET; these own a body.
+     */
+    type AppItem = { id: string; name: string; baseId?: string; type?: 'interface' | 'page'; status?: string; parentId?: string; triggerType?: string };
+    const readApp = (sel: string): AppItem[] => {
+      try { return JSON.parse(document.querySelector(sel)?.textContent || '[]') as AppItem[]; } catch { return []; }
+    };
+    const epAutos = readApp('[data-ep-automations]');
+    const epIfaces = readApp('[data-ep-interfaces]');
+    const epIds = new Set<string>([
+      ...epIndex.map((e) => e.id),
+      ...epAutos.map((a) => a.id),
+      ...epIfaces.map((i) => i.id),
+      // The synthetic Space entity the controller registers when there is more than one base — it is
+      // reachable by drilling UP from a base, so a panel can genuinely be sitting on it when the
+      // arrangement is saved. Without it here `canOpen` refuses that id on restore and the panel is
+      // counted "pending" forever, silently. The gate has to ask the same population the panel can
+      // actually show, and this was the last id where the two disagreed.
+      ...(epIndex.some((e) => e.kind === 'base') ? ['__ep_space__'] : []),
+    ]);
+    /** A base's display name, resolved from the same index the panel's own crumbs use. */
+    const epBaseName = (id?: string) => (id && epIndex.find((e) => e.id === id)?.name) || 'No base';
+    type EP = HostPanel & { panel: Panel };
+
+    /** The focused entity panel's base — the level the picker opens pinned beneath the kind chip. */
+    const focusedBase = (): { id: string; name: string } | null => {
+      const f = host.focused();
+      if (!f || f.kind !== 'entity:') return null;
+      const id = (f as EP).panel.currentId();
+      const e = id ? epIndex.find((x) => x.id === id) : null;
+      return e ? { id: e.baseId, name: e.baseName } : null;
+    };
+    /**
+     * The ＋ offers schema entities in the sections where a schema entity is what you would want to
+     * open beside what you are reading: **Schema, Reports and — since 2026-08-08 — Data.**
+     *
+     * `data` WAS EXCLUDED, AND DAN REVERSED IT HIMSELF. The old reasoning was his own Slack line —
+     * "I don't think we should allow them to open up any data in the panels from anywhere … in the
+     * data area, I think you just search new data items" — and this gate was how /schema's ＋ could
+     * offer anything without also putting a `Schema` group beside Records on /data. His recording
+     * of 2026-08-08 asks for exactly that group back: *"on the data layer, we probably should also
+     * include the schema items … since those can be open."* Working on a record, you may want that
+     * table's structure open beside it. Note what did NOT change: the Slack line was about data
+     * leaking OUT of Data, and nothing here sends records into /schema — `AREA_SOURCES` keeps the
+     * two directions separate, and this file only answers "may I be asked".
+     *
+     * WHERE THE THREE SIT IS NOT THIS FILE'S CALL. This gate says only that the sources EXIST here;
+     * `panelAddPicker`'s `AREA_SOURCES` decides that on /data they sit in the second band, under a
+     * separator, below Records · Comments · Attachments. One place decides the offer.
+     *
+     * `reports` is in the list for a third reason (2026-08-06). A Reports page registers ONE
+     * kind — `entity:` — so a gate that excluded it left the ＋ opening a picker with nothing in it
+     * at all: a control that is always empty is worse than a control that offers the wrong thing.
+     * And a report's own content IS schema (the schema-health rows that opened this panel), so the
+     * on-topic set here is exactly the entity index.
+     */
+    const EP_PICKER_SECTIONS = ['schema', 'reports', 'data'];
+    function entityPickerSources(): PickerSource[] {
+      // NOT named `host`: this file imports `host` from the registry at the top, and a local of the
+      // same name shadows it for the whole function — `host.panels()` three lines down then resolved
+      // to a DOM element, threw, and left the picker silently empty. Neither gate can see it; the
+      // console said `host.panels is not a function`.
+      const hostRoot = document.querySelector<HTMLElement>('[data-ph-section]');
+      if (!EP_PICKER_SECTIONS.includes(hostRoot?.dataset.phSection || 'data')) return [];
+      return [{
+      key: 'entity',
+      label: () => 'Schema',
+      axis: 'kind',
+      groupLabel: (v) => EP_KIND_LABEL[v] || v,
+      scopeLabel: (v) => EP_KIND_LABEL[v] || v,
+      groupOrder: (a, b) => EP_KIND_ORDER.indexOf(a) - EP_KIND_ORDER.indexOf(b),
+      defaultScope: () => { const b = focusedBase(); return b ? [{ key: 'base', value: b.id, label: b.name }] : []; },
+      // Deleted entities are left OUT. Browse default-hides them (deleted-items-filter), so offering
+      // them here would let the ＋ open something the listing behind it says is not there.
+      rows: () => {
+        // Already-open entities stay LISTED but inert — a row that disappears reads as "gone".
+        const open = new Set(host.panels().filter((p) => p.kind === 'entity:').map((p) => (p as EP).panel.currentId()));
+        return epIndex.filter((e) => !e.removed).map((e) => ({
+          id: e.id,
+          facets: { kind: e.kind, base: e.baseId },
+          // Where it lives is searchable, so `Orders status` finds the field without leaving the box.
+          hay: `${e.name} ${e.tableName || ''} ${e.baseName} ${e.id}`.toLowerCase(),
+          // What a person would CALL it is its own name — the `elsewhere` block's name test.
+          nameHay: e.name.toLowerCase(),
+          disabled: open.has(e.id),
+          html:
+            entityIconMarkup(e.kind, { size: 'size-4' }) +
+            `<span class="ep-addname">${pkEsc(e.name)}</span>` +
+            // The PARENT path, not the entity's own name restated: a base has nothing above it, a
+            // table has its base, a field or a view has both. Keyed on KIND, not on `tableName`
+            // being present — a TABLE carries its own name there, so the presence test printed
+            // `Companies — Sales CRM ▸ Companies`: the answer twice, eating half the row (measured
+            // at 130px of a 360px popover).
+            `<span class="ep-addwhere">${pkEsc(
+              e.kind === 'base' ? ''
+              : e.kind === 'table' ? e.baseName
+              : e.tableName ? `${e.baseName} ▸ ${e.tableName}` : e.baseName,
+            )}</span>`,
+        }));
+      },
+      open: (id) => host.openBeside(host.focused(), 'entity:' + id),
+    },
+    // ── Automations ─────────────────────────────────────────────────────────────────────────────
+    // A SECOND source from the same kind, exactly as `record:` contributes Records AND Comments: a
+    // source is a searchable population, not a panel kind, and these open into the entity sheet.
+    // This is the working answer to the founder's own Slack question — "Base | Table | Field |
+    // Automation | Interface — ? too much?" — which the picker's own module already anticipated:
+    // a group only appears once it matches something, so five headings are never five headings.
+    //
+    // Grouped by BASE, not by kind: within Automations the kind does not vary (they are all
+    // automations), and base is what the tab itself groups by, so the ＋ continues the narrowing the
+    // listing behind it already made rather than inventing a second axis.
+    {
+      key: 'automation',
+      label: () => 'Automations',
+      axis: 'base',
+      groupLabel: (v) => epBaseName(v),
+      scopeLabel: (v) => epBaseName(v),
+      defaultScope: () => { const b = focusedBase(); return b ? [{ key: 'base', value: b.id, label: b.name }] : []; },
+      // Removed automations are left out for the same reason removed entities are: the tab
+      // default-hides them, so offering one here would open something the listing says is gone.
+      rows: () => {
+        const open = new Set(host.panels().filter((p) => p.kind === 'entity:').map((p) => (p as EP).panel.currentId()));
+        return epAutos.filter((a) => a.status !== 'removed').map((a) => ({
+          id: a.id,
+          facets: { base: a.baseId || '' },
+          hay: `${a.name} ${a.triggerType || ''} ${epBaseName(a.baseId)} ${a.id}`.toLowerCase(),
+          nameHay: a.name.toLowerCase(),
+          disabled: open.has(a.id),
+          html:
+            entityIconMarkup('automation', { size: 'size-4' }) +
+            `<span class="ep-addname">${pkEsc(a.name)}</span>` +
+            `<span class="ep-addwhere">${pkEsc(epBaseName(a.baseId))}</span>`,
+        }));
+      },
+      open: (id) => host.openBeside(host.focused(), 'entity:' + id),
+    },
+    // ── Interfaces (and their pages) ────────────────────────────────────────────────────────────
+    // ONE source holding both, because a page is not a different kind of thing to open — it is an
+    // interface's child, and it opens the same sheet. The tab nests pages under interfaces; here the
+    // nesting is carried by the `where` line (a page reads `Base ▸ its interface`), which is the same
+    // parent-path rule the Schema source uses for a field. Grouping by base keeps an interface and
+    // its pages adjacent without a second level of headings inside a 360px popover.
+    {
+      key: 'interface',
+      label: () => 'Interfaces',
+      axis: 'base',
+      groupLabel: (v) => epBaseName(v),
+      scopeLabel: (v) => epBaseName(v),
+      defaultScope: () => { const b = focusedBase(); return b ? [{ key: 'base', value: b.id, label: b.name }] : []; },
+      rows: () => {
+        const open = new Set(host.panels().filter((p) => p.kind === 'entity:').map((p) => (p as EP).panel.currentId()));
+        const parentName = (pid?: string) => epIfaces.find((x) => x.id === pid)?.name || '';
+        return epIfaces.filter((i) => i.status !== 'removed').map((i) => {
+          const isPage = i.type === 'page';
+          // `baseId` is required on a PAGE too (SchemaInterfaces.astro) — a page is not resolved
+          // through its parent, so grouping never depends on the parent being present in the blob.
+          const base = epBaseName(i.baseId);
+          // A page whose parent is missing would otherwise print `Sales CRM ▸ ` — a separator pointing
+          // at nothing, which reads as a truncation bug rather than as an orphan.
+          const parent = isPage ? parentName(i.parentId) : '';
+          const where = parent ? `${base} ▸ ${parent}` : base;
+          return {
+            id: i.id,
+            facets: { base: i.baseId || '' },
+            hay: `${i.name} ${where} ${i.id}`.toLowerCase(),
+            nameHay: i.name.toLowerCase(),
+            disabled: open.has(i.id),
+            html:
+              entityIconMarkup(isPage ? 'page' : 'interface', { size: 'size-4' }) +
+              `<span class="ep-addname">${pkEsc(i.name)}</span>` +
+              `<span class="ep-addwhere">${pkEsc(where)}</span>`,
+          };
+        });
+      },
+      open: (id) => host.openBeside(host.focused(), 'entity:' + id),
+    }]; }
+
+    registerPanelKind<EP>({
+      prefix: 'entity:',
+      // 360 EVERYWHERE, and that now includes `/schema`. The standalone stack argued 320 so that a
+      // fourth panel could stay expanded on a 1440 laptop (4 × 320 + 150 = 1430). Schema is hosted
+      // now, and a drawer that is 40px narrower depending on which section opened it is exactly the
+      // drift `decision-one-stack-one-entity-one-drawer` exists to remove — the entity sheet sits
+      // beside record/file/run sheets that are all 360. The price is paid in PARKING, not in width:
+      // at 1440 the fourth panel arrives as a 46px strip, one click from expanded, instead of every
+      // panel silently reading 40px narrower on one page.
+      minw: EP_HOSTED_MINW,
+      buildPanel: () => {
+        const el = (tpl.content.cloneNode(true) as DocumentFragment).querySelector<HTMLElement>('.ep-sheet')!;
+        // Every callback resolves its own panel by ELEMENT: the controller is built before the stack
+        // has a panel object for it. Same handshake the standalone stack uses.
+        const self = () => host.panels().find((q) => q.el === el) || null;
+        const panel = makeEntityPanel(el, {
+          role: 'anchor',
+          // A drill INSIDE the entity panel opens beside it — in THIS stack. There is no second
+          // stack for it to escape into any more.
+          onOpenBeside: (rid) => host.openBeside(self(), 'entity:' + rid),
+          onClose: () => { const me = self(); if (me) host.closePanel(me); },
+          onCloseAll: () => host.panels().slice().forEach((q) => host.closePanel(q)),
+          onExhaustedBack: () => {},
+        });
+        return { el, panel, kind: 'entity:', uid: 0, anchor: false, w: 0, seq: 0, collapsed: false };
+      },
+      // An entity panel self-renders on open() (which also resets its own visit stack).
+      loadInto: (p, id) => p.panel.open(id.slice(7), true),
+      render: () => {},
+      panelKey: (p) => { const id = p.panel.currentId(); return id ? 'entity:' + id : ''; },
+      canOpen: (id) => epIds.has(id.slice(7)),
+      // The old sentence — "That base, table or field isn't in this backup." — was wrong twice over.
+      // It named the three kinds of the ONE set it happened to test, so an automation that was
+      // plainly on screen was reported as absent; and it blamed the backup for what was really a
+      // gap in this page's snapshot. Now that the set is the full openable population, the only
+      // remaining cause is a genuinely unknown id, and the message says exactly that — with the id,
+      // because the reader is an ops user debugging a stale link, not a shopper.
+      onMissing: (id) => host.toast(`Nothing with the id ${id.slice(7)} is in this snapshot.`, null),
+      // Keyboard shortcuts inside an entity panel act on the panel the user is actually in.
+      onFocus: (p, active) => p.panel.setActive(active),
+      onDestroy: (p) => p.panel.doClose(true),
+      // The controller owns its own Escape: it swallows the key for an open description editor,
+      // walks its INTERNAL back-stack, and only then closes through `onClose`.
+      // Closing it from the host would take an unsaved edit with it and skip the back step.
+      onEsc: () => true,
+      detachedText: 'Pinned — this panel is yours now. The next row you click opens a fresh one beside the table.',
+      pickerSources: entityPickerSources,
+    });
+  }
+  registerEntityKind();
+  document.addEventListener('astro:after-swap', registerEntityKind);
+
+  // ── The ONE `[data-entity-open]` entry point ─────────────────────────────────────────────────
+  // It used to live inside `wireEntityPanel`, i.e. only where a standalone stack existed. It is
+  // module-scope now so every hosted page reaches the same route, and it carries the guard that
+  // replaced RecordPanel's cross-stack `stopPropagation()`: a `[data-entity-open]` inside ANOTHER
+  // kind's sheet belongs to that kind (a record's field name opens its field config IN PLACE), and
+  // this delegate declines it. Stated once, positively, instead of each host silently swallowing
+  // the other's events.
+  //
+  // There is exactly ONE destination now. The `standalone` fallback that sat here went with the
+  // second stack: a page that renders this component and mounts no host opens nothing, which is a
+  // loud failure rather than a quiet second drawer.
+  //
+  // `changeId` (T6) is the Changelog tab's deep link: open this entity AND land on that one change.
+  // It is applied AFTER the open rather than through the host's `init` seam on purpose — `init` is
+  // skipped on `openBeside`'s reuse path, and on `open`'s reuse path the entity kind's `render` is a
+  // no-op, so neither hook fires for the "same change clicked twice" case. Resolving the panel by
+  // the id it now holds covers every path with one line, and `focusChange` is idempotent.
+  function routeEntity(id: string, beside: boolean, changeId?: string) {
+    if (!host.mounted()) return;
+    if (beside) host.openBeside(host.focused(), 'entity:' + id);
+    else host.open('entity:' + id);
+    if (changeId) host.panels().forEach((p) => { if (p.kind === 'entity:' && (p as EPanel).panel.currentId() === id) (p as EPanel).panel.focusChange(changeId); });
+  }
+  function entityOpenTarget(t: EventTarget | null): string | null {
+    const o = (t as HTMLElement | null)?.closest?.<HTMLElement>('[data-entity-open]');
+    if (!o) return null;
+    const sheet = o.closest<HTMLElement>('[data-ps-panel]');
+    if (sheet && !sheet.classList.contains('ep-sheet')) return null;
+    return o.getAttribute('data-entity-open');
+  }
+  document.addEventListener('click', (ev) => {
+    const id = entityOpenTarget(ev.target); if (!id) return;
+    const me = ev as MouseEvent;
+    ev.preventDefault();
+    routeEntity(id, me.metaKey || me.ctrlKey);
+  });
+  document.addEventListener('auxclick', (ev) => {
+    const me = ev as MouseEvent; if (me.button !== 1) return;
+    const id = entityOpenTarget(ev.target); if (!id) return;
+    ev.preventDefault();
+    routeEntity(id, true);
+  });
+  // Global entry point (unchanged contract — every tab opens via this).
+  // `beside` is opt-in on the event, so every caller that already dispatched it keeps landing in the
+  // anchor. It exists because the Automations / Interfaces / Changelog rows are NOT
+  // `[data-entity-open]` elements — they carry their own click handlers — and without a way to say
+  // "beside" through this event, ⌘/Ctrl-click on those rows would silently degrade to a plain open,
+  // i.e. the one gesture that behaves differently depending on which tab you are standing on.
+  document.addEventListener('schema:openEntity', (ev) => { const d = (ev as CustomEvent).detail || {}; if (d.id) routeEntity(d.id, !!d.beside, d.changeId); });
+
+</script>

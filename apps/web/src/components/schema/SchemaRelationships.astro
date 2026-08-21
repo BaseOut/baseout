@@ -1,0 +1,727 @@
+---
+/**
+ * SchemaRelationships — the Schema page's Relationships tab (openspec relationships-tab).
+ *
+ * A list of a Space's relationships (linked records, formulas, rollups, lookups,
+ * lastModified, and inferred synced views), grouped Base ▸ type, with a Flat mode.
+ * Each row: a type icon, an "A ↔ B" summary (entities primary, fields muted), a
+ * validity status dot, a cardinality token, and soft badges (Inferred / Removed
+ * history). Inferred (synced-view) rows carry inline Confirm / Dismiss; declared
+ * ones don't. Selecting a row opens a right detail panel listing the linked
+ * entities — each a click-through to the shared EntityPanel (same as Browse).
+ *
+ * Filters are consolidated (research-backed, openspec deviation flagged for Dan):
+ * ONE hierarchical scope picker (Base ▸ Table) + a Type facet + an Include-removed
+ * toggle, with quick chips for validity / inferred. Reuses Browse's toolbar chrome
+ * (.sch-tb), the Airtable field icons, and the status-badge palette.
+ */
+import FacetFilter, { type FacetGroup } from './FacetFilter.astro';
+import { groupByWorkspace } from './workspaceGroups';
+import ExportControl from '../patterns/ExportControl.astro';
+import Table from '../ui/Table.astro';
+import { RL_FLAT_COLUMNS } from './schemaTableHead';
+import type { TableColumn } from '../../lib/table/contract';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import { entityChip } from './entityChip';
+import { relStatusCell, relTypePill } from './relStatusBadge';
+
+export type RelType = 'linkedRecords' | 'formulas' | 'rollups' | 'lookups' | 'lastModified' | 'syncedViews';
+export interface RelEndpoint {
+  /** Entity id (opens the shared sidebar via data-entity-open). */
+  id: string;
+  name: string;
+  kind: 'table' | 'field';
+  fieldType?: string;
+  /** For a field, its parent table name (shown muted in the detail). */
+  tableName?: string;
+}
+export interface RelLink {
+  from: RelEndpoint;
+  to: RelEndpoint;
+  /** A removed link is history — hidden unless "Include removed" is on. */
+  removed?: boolean;
+  firstSeen?: string;
+  removedAt?: string;
+  note?: string;
+}
+export interface SchemaRelationship {
+  id: string;
+  type: RelType;
+  baseId: string;
+  baseName: string;
+  /** The two headline entities for the row summary. */
+  a: RelEndpoint;
+  b: RelEndpoint;
+  /** e.g. "m:1", "1:1", "m:m". Shown as a small mono token. */
+  cardinality?: string;
+  /** one = A → B (one-way), two = A ↔ B (reciprocal). */
+  direction?: 'one' | 'two';
+  /** Inferred (synced views): a guess needing Confirm / Dismiss. */
+  inferred?: boolean;
+  /** valid = has ≥1 active link; invalid = all links removed (kept for history). */
+  validity: 'valid' | 'invalid';
+  /** Has at least one removed link (history). */
+  hasRemovedHistory?: boolean;
+  /** Why this is inferred / the source field type — shown in the detail. */
+  provenance?: string;
+  /** Per-link breakdown for the detail panel. */
+  links?: RelLink[];
+}
+interface Props {
+  relationships: SchemaRelationship[];
+  bases: { id: string; name: string; workspaceId?: string; workspaceName?: string }[];
+}
+const { relationships, bases } = Astro.props;
+
+const REL_TYPES: { key: RelType; label: string; icon: string; declared: boolean }[] = [
+  { key: 'linkedRecords', label: 'Linked records', icon: 'lucide--link', declared: true },
+  { key: 'formulas', label: 'Formulas', icon: 'lucide--variable', declared: true },
+  { key: 'rollups', label: 'Rollups', icon: 'lucide--sigma', declared: true },
+  { key: 'lookups', label: 'Lookups', icon: 'lucide--search', declared: true },
+  { key: 'lastModified', label: 'Last modified', icon: 'lucide--history', declared: true },
+  { key: 'syncedViews', label: 'Synced views', icon: 'lucide--refresh-cw', declared: false },
+];
+const TYPE_META = Object.fromEntries(REL_TYPES.map((t) => [t.key, t])) as Record<RelType, (typeof REL_TYPES)[number]>;
+
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const endpointIcon = (e: RelEndpoint) =>
+  e.kind === 'field' ? `<span class="concept-ic-field">${fieldIconSvg(e.fieldType) || '<span class="iconify lucide--tag"></span>'}</span>` : '<span class="iconify lucide--table-2 concept-ic-table"></span>';
+const arrow = (r: SchemaRelationship) => (r.direction === 'two' ? '↔' : '→');
+const searchStr = (r: SchemaRelationship) =>
+  [r.a.name, r.b.name, r.a.tableName, r.b.tableName, r.baseName, TYPE_META[r.type].label, r.cardinality].filter(Boolean).join(' ').toLowerCase();
+
+// Tree: Base ▸ type ▸ relationships (authored order within each).
+const tree = bases
+  .map((base) => {
+    const inBase = relationships.filter((r) => r.baseId === base.id);
+    const groups = REL_TYPES.map((t) => ({ type: t, items: inBase.filter((r) => r.type === t.key) })).filter((g) => g.items.length > 0);
+    return { base, groups, count: inBase.length };
+  })
+  .filter((b) => b.count > 0);
+const flat = [...relationships];
+
+const multiBase = bases.length > 1;
+const presentTypes = REL_TYPES.filter((t) => relationships.some((r) => r.type === t.key));
+const typeGroups: FacetGroup[] = [{ items: presentTypes.map((t) => ({ value: t.key, label: t.label })) }];
+// Facet groups — matching Visualize's faceted toolbar + Dan's spec (base · type · status · validity).
+// Base facet groups by Airtable workspace (workspace-visual-grouping).
+const baseGroups: FacetGroup[] = groupByWorkspace(bases).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  items: g.items.map((b) => ({ value: b.id, label: b.name })),
+}));
+const hasConfirmed = relationships.some((r) => !r.inferred);
+const statusGroups: FacetGroup[] = [{
+  items: [
+    ...(relationships.some((r) => r.inferred) ? [{ value: 'inferred', label: 'Inferred' }] : []),
+    ...(hasConfirmed ? [{ value: 'confirmed', label: 'Confirmed' }] : []),
+  ],
+}];
+const validityGroups: FacetGroup[] = [{
+  items: [
+    ...(relationships.some((r) => r.validity === 'valid') ? [{ value: 'valid', label: 'Valid' }] : []),
+    ...(relationships.some((r) => r.validity === 'invalid') ? [{ value: 'invalid', label: 'Invalid' }] : []),
+  ],
+}];
+
+const total = relationships.length;
+const inferredCount = relationships.filter((r) => r.inferred).length;
+// Invalid (all links removed) relationships are history — hidden until "Include removed".
+const hiddenCount = relationships.filter((r) => r.validity === 'invalid').length;
+const hasRel = total > 0;
+
+// ---- server-rendered row HTML (tree rows are divs so they can hold the Confirm/Dismiss buttons) ----
+const statusClass = (r: SchemaRelationship) => (r.inferred ? 'rl-status-inferred' : r.validity === 'invalid' ? 'rl-status-invalid' : 'rl-status-valid');
+const entHtml = (e: RelEndpoint) =>
+  `<span class="rl-ent"><span class="rl-ent-ic">${endpointIcon(e)}</span><span class="rl-ent-name">${esc(e.name)}</span></span>`;
+// Inferred carries a sparkles glyph (matches the bulk bar) so it reads as an AI status tag, not a button.
+const rowBadges = (r: SchemaRelationship) =>
+  (r.inferred ? '<span class="badge badge-soft badge-primary rl-b-inferred"><span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span>Inferred</span>' : '') +
+  (r.hasRemovedHistory ? '<span class="badge badge-soft badge-warning rl-b-removed">Removed history</span>' : '');
+const confirmDismiss = '<button type="button" class="btn btn-sm btn-ghost btn-square rl-confirm tooltip tooltip-left" data-rl-confirm data-tip="Confirm" aria-label="Confirm"><span class="iconify lucide--check size-4" aria-hidden="true"></span></button><button type="button" class="btn btn-sm btn-ghost btn-square rl-dismiss tooltip tooltip-left" data-rl-dismiss data-tip="Dismiss" aria-label="Dismiss"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>';
+// Only DECLARED synced-view rows are user-editable (they own the fact); Edit opens the form.
+// Inferred rows are OUR guess → Confirm/Dismiss only (Confirm promotes to declared, then editable).
+const editSynced = '<button type="button" class="btn btn-sm btn-ghost btn-square rl-edit" data-rl-edit-synced aria-label="Edit this declared synced table"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span></button>';
+// Shared clickable-row trailing (row-actions.css): every row gets the chevron (opens the detail
+// sidecart); inferred/synced rows also get their hover-revealed action icons to its left.
+const CHEV = '<span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>';
+const trailing = (r: SchemaRelationship) => {
+  const acts = r.inferred ? `<span class="row-actions">${confirmDismiss}</span>`
+    : r.type === 'syncedViews' ? `<span class="row-actions">${editSynced}</span>` : '';
+  return `<span class="row-end">${acts}${CHEV}</span>`;
+};
+const rowActions = trailing;
+const flatActions = trailing;
+const rowDataAttrs = (r: SchemaRelationship) => {
+  const tableIds = [r.a, r.b].filter((e) => e.kind === 'table').map((e) => e.id).join(' ');
+  return `data-rl-row data-rl-id="${esc(r.id)}" data-base="${esc(r.baseId)}" data-tables="${esc(tableIds)}" data-type="${esc(r.type)}" data-inferred="${r.inferred ? '1' : '0'}" data-validity="${esc(r.validity)}" data-removed-row="${r.validity === 'invalid' ? '1' : '0'}" data-search="${esc(searchStr(r))}"`;
+};
+// --- table columns (default view, matching Automations/Interfaces) ---
+const CARD_WORD: Record<string, string> = { 'm:1': 'Many-to-one', '1:m': 'One-to-many', '1:1': 'One-to-one', 'm:m': 'Many-to-many' };
+const cardWord = (c?: string) => (c && CARD_WORD[c]) || c || '';
+const typeBadge = (r: SchemaRelationship) =>
+  relTypePill(TYPE_META[r.type].icon, esc(TYPE_META[r.type].label));
+const cardCell = (r: SchemaRelationship) =>
+  r.cardinality ? `<span class="rl-card tooltip tooltip-left" data-tip="${esc(cardWord(r.cardinality))}">${esc(r.cardinality)}</span>` : '<span class="rl-dash">—</span>';
+/**
+ * Status column — our Storybook status badges (soft + semantic + dot): Valid / Invalid / Inferred,
+ * plus a "Removed history" badge when some links were removed.
+ *
+ * D44 — this built its colour by INTERPOLATION (`badge-soft badge-${color}`), and one of the three
+ * colours was `neutral`. That composed the banned neutral pair for `Invalid` at render time, so
+ * D44's own verify grep for the literal pair reads 0 on this file while the served HTML of every
+ * `/schema` route contains it — the only instrument that finds it is the rendered DOM. Measured
+ * 1.34:1 text and 1.02:1 pill on dark, 4.35:1 / 1.11:1 on light: `Invalid` had no readable text and
+ * no discernible shape in either theme, on the one row that says a relationship is dead.
+ *
+ * Batch T — the literal map D44 left here has MOVED to `relStatusBadge.ts`, because the file was
+ * only half the story: `schemaRelationships.ts` paints the same pill for the synced-view tree row
+ * and for `confirmRel`, and its copy had drifted to `badge-sm` + a `size-3` glyph. Two vessels, one
+ * pill, two sizes. Both halves now call the shared builder. The pill cannot be a `<Badge>` at all:
+ * these rows are HTML strings injected with `set:html`, and an Astro component has no reach there.
+ */
+const relStatusBadge = (r: SchemaRelationship) =>
+  relStatusCell(r.inferred ? 'inferred' : r.validity === 'invalid' ? 'invalid' : 'valid', !!r.hasRemovedHistory);
+// B1 (Dan 2026-07-06): a formula/rollup row references several fields — show ALL of them on the
+// one row (not just the first), capped at REF_CAP chips + a "+N more" popover. Deduped from
+// links[].to (the referenced field endpoints). Single-ref rows keep the plain "A → B" summary.
+const REF_CAP = 3;
+const refFields = (r: SchemaRelationship): RelEndpoint[] => {
+  if ((r.type !== 'formulas' && r.type !== 'rollups') || !r.links) return [];
+  const seen = new Set<string>();
+  return r.links.map((l) => l.to).filter((e) => e.kind === 'field' && !seen.has(e.id) && seen.add(e.id));
+};
+const refChip = (e: RelEndpoint) =>
+  entityChip({ name: e.name, icon: endpointIcon(e), context: e.kind === 'field' && e.tableName ? e.tableName : undefined, clickable: true, attrs: 'data-entity-open="' + esc(e.id) + '"' });
+const refMoreItem = (e: RelEndpoint) =>
+  `<li><button type="button" data-entity-open="${esc(e.id)}"><span class="rl-refmenu-ic">${endpointIcon(e)}</span><span class="rl-refmenu-t">${esc(e.name)}</span></button></li>`;
+// The "+N more" reuses the B9 "Tagged" pattern (SchemaBrowse): a ghost-button trigger + a daisyUI
+// dropdown-hover popover of click-through fields, each opening its shared EntityPanel on hover.
+const bSideHtml = (r: SchemaRelationship) => {
+  const fields = refFields(r);
+  if (fields.length <= 1) return entHtml(r.b);
+  const shown = fields.slice(0, REF_CAP).map(refChip).join('');
+  const rest = fields.slice(REF_CAP);
+  if (!rest.length) return `<span class="rl-refs">${shown}</span>`;
+  const menu = rest.map(refMoreItem).join('');
+  const label = `Show ${rest.length} more referenced ${rest.length === 1 ? 'field' : 'fields'}`;
+  const trigger = `<div tabindex="0" role="button" class="btn btn-ghost btn-sm rl-more-trig" aria-label="${esc(label)}">+${rest.length} more</div>`;
+  return `<span class="rl-refs">${shown}<div class="dropdown dropdown-hover dropdown-end rl-more">${trigger}<ul tabindex="0" class="dropdown-content menu rl-moremenu">${menu}</ul></div></span>`;
+};
+/**
+ * THE TREE COLUMNS — one table per Base, migrated onto the vessel (`components/ui/Table.astro`).
+ *
+ * The indices below ARE the `data-sort-col` the vessel computes, and `schemaRelationships.ts`
+ * reads them in `sortValue(row, col)`: 0 Relationship · 1 Type · 2 Cardinality · 3 Status. They are
+ * the same four numbers the hand-written `<th>`s carried, in the same order, so nothing renumbers.
+ *
+ * `labelSlot` on Status is why this table could migrate at all. The status LEGEND — a rich tooltip
+ * card listing what Valid / Invalid / Inferred mean — lives in the Status header because the legend
+ * explains the STATUS dots, so it belongs on that column and not in the toolbar, where it cost a
+ * labelled button of width (Oleh 2026-07-24, kept when the toolbar alternative was rejected).
+ * `TableColumn.label` is a string, so before `labelSlot` the vessel had no way to express it. The
+ * flag marks WHICH `<th>` receives the vessel's `col-extra` slot; the card itself is written as
+ * `<Fragment slot="col-extra">` in the template below, where markup belongs.
+ *
+ * WHERE THIS ARRAY SHOULD LIVE, stated so the next reader does not think it was overlooked:
+ * `schemaTableHead.ts`, beside `AU_COLUMNS` and `RL_FLAT_COLUMNS`, as `RL_TREE_COLUMNS` — because
+ * `schemaRelationships.ts:438` builds a SECOND copy of this header as a runtime `innerHTML` string
+ * when a user declares a synced table for a Base that has no group yet, and that copy is still
+ * hand-written. Moving the array there and calling `tableHeadHtml(RL_TREE_COLUMNS)` from the
+ * controller is what would make the two halves one. That edit spans two files this change was not
+ * allowed to touch, so it is named here rather than half-done.
+ *
+ * NO `hook` IS PASSED TO THE TREE'S `<Table>`, deliberately. `rl` is already the FLAT table's hook,
+ * and the vessel turns a hook into `data-<hook>-body` on the tbody; `hook="rl"` here would stamp
+ * `data-rl-body` onto every Base group's tbody, and `schemaRelationships.ts` windows the pager over
+ * `[data-rl-body] [data-rl-row]` — every tree row would silently join the flat table's paged set.
+ * The tree's own queries are `.rl-tbl thead [data-sort-col]` and `.rl-tbl tbody`, which the vessel
+ * satisfies through `tableClass="rl-tbl"`.
+ */
+const RL_TREE_COLUMNS: TableColumn[] = [
+  { label: 'Relationship', sort: true, class: 'rl-th-rel' },
+  { label: 'Type', sort: true, class: 'rl-th-type' },
+  { label: 'Cardinality', sort: true, class: 'rl-th-card' },
+  { label: 'Status', sort: true, class: 'rl-th-status', labelSlot: true },
+  { label: '', srLabel: 'Actions', class: 'rl-th-act' },
+];
+const renderRow = (r: SchemaRelationship) =>
+  `<tr class="rl-row row-clickable" ${rowDataAttrs(r)} role="button" tabindex="0">
+    <td class="rl-c-rel"><span class="rl-pair">${entHtml(r.a)}<span class="rl-arrow">${arrow(r)}</span>${bSideHtml(r)}</span></td>
+    <td class="rl-c-type">${typeBadge(r)}</td>
+    <td class="rl-c-card">${cardCell(r)}</td>
+    <td class="rl-c-status">${relStatusBadge(r)}</td>
+    <td class="rl-c-act">${rowActions(r)}</td>
+  </tr>`;
+const renderFlatRow = (r: SchemaRelationship) =>
+  `<tr class="rl-frow row-clickable" ${rowDataAttrs(r)} role="button" tabindex="0">
+    <td><span class="rl-pair"><span class="rl-status ${statusClass(r)}" aria-hidden="true"></span>${entHtml(r.a)}<span class="rl-arrow">${arrow(r)}</span>${bSideHtml(r)}${rowBadges(r)}</span></td>
+    <td><span class="rl-ftype"><span class="iconify ${TYPE_META[r.type].icon} size-3.5" aria-hidden="true"></span>${esc(TYPE_META[r.type].label)}</span></td>
+    <td class="rl-td-muted">${esc(r.baseName)}</td>
+    <td class="rl-ft-r">${r.cardinality ? `<span class="rl-card">${esc(r.cardinality)}</span>` : ''}</td>
+    <td class="rl-ft-act">${flatActions(r)}</td>
+  </tr>`;
+---
+
+<section class="rl" data-relationships data-total={total}>
+  {hasRel ? (
+    <>
+      {/* One toolbar row: search │ consolidated filters → right cluster (count + Tree/Flat). */}
+      <div class="sch-tb">
+        <label class="input input-sm sch-tb-search rl-search">
+          <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+          <input type="search" placeholder="Search relationships…" data-rl-search data-sch-search aria-label="Search relationships" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+
+        {/* Faceted filters — same chrome + order as Visualize / Browse (base · type · status · validity). */}
+        {multiBase && <FacetFilter label="Bases" name="rlbase" groups={baseGroups} groupToggles />}
+        <FacetFilter label="Type" name="rltype" groups={typeGroups} />
+        {statusGroups[0].items.length > 1 && <FacetFilter label="Status" name="rlstatus" groups={statusGroups} />}
+        {validityGroups[0].items.length > 1 && <FacetFilter label="Validity" name="rlvalidity" groups={validityGroups} />}
+
+        {hiddenCount > 0 && (
+          <FacetFilter single labelTrigger label="History" name="rlhistory" groups={[{ items: [
+            { value: 'active', label: 'Active' },
+            { value: 'removed', label: `Removed only (${hiddenCount})` },
+            { value: 'all', label: 'All' },
+          ] }]} />
+        )}
+
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1 rl-clear" data-rl-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+
+        <div class="sch-tb-right">
+          <span class="sch-tb-count" data-rl-count>{total} relationships</span>
+          <ExportControl tab="relationships" format="csv" noun="relationships" total={total} rowSelector="[data-rl-row]" />
+          {/* Airtable's API can't detect synced tables, so a person declares one here. The verb is
+              DECLARE, never create: this records metadata in Baseout about a sync that already exists
+              in Airtable — we never set up a sync there (pattern-access-scope). */}
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-rl-new-synced><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Declare a synced table</button>
+          <div class="join sch-tb-modes" role="tablist" aria-label="Display mode">
+            <button type="button" class="btn btn-sm join-item sch-tb-mode-active" data-rl-mode="tree" role="tab">
+              <span class="iconify lucide--list-tree size-4" aria-hidden="true"></span>Tree
+            </button>
+            <button type="button" class="btn btn-sm join-item" data-rl-mode="flat" role="tab">
+              <span class="iconify lucide--table size-4" aria-hidden="true"></span>Flat
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Inferred bulk bar — only while inferred rows are present/visible. */}
+      {inferredCount > 0 && (
+        <div class="alert alert-soft alert-info rl-bulk" role="note" data-rl-bulk>
+          <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>
+          <span class="rl-bulk-txt"><b data-rl-bulk-n>{inferredCount}</b> inferred synced-view {inferredCount === 1 ? 'relationship' : 'relationships'} to review — confirm the ones that are real, dismiss the rest.</span>
+          <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-rl-bulk-confirm><span class="iconify lucide--check size-3.5" aria-hidden="true"></span>Confirm all</button>
+          <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-rl-bulk-dismiss><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Dismiss all</button>
+        </div>
+      )}
+
+      {/* Default view — one table per Base (Type · Relationship · Cardinality · Status), matching
+          Automations/Interfaces. The per-type sub-grouping is now the Type column. */}
+      <div class="rl-tree tbl-frame" data-rl-view="tree" data-grid-fit data-narrow-pan>
+        {tree.map(({ base, groups }) => {
+          const items = groups.flatMap((g) => g.items);
+          return (
+          <div class="rl-base" data-rl-base-node={base.id}>
+            <button type="button" class="rl-base-head" data-rl-twist aria-expanded="true">
+              <span class="rl-twist" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+              <span class="iconify lucide--database size-4 rl-base-ic" aria-hidden="true"></span>
+              <span class="rl-base-name">{base.name}</span>
+              <span class="rl-base-meta">{items.length} {items.length === 1 ? 'relationship' : 'relationships'}</span>
+            </button>
+            <div class="rl-base-body">
+              <Table
+                tableClass="rl-tbl"
+                name="schema-relationships-tree"
+                columns={RL_TREE_COLUMNS}
+                rowCount={items.length}
+                growth="unpaged"
+                growthReason="The tree is Base ▸ type ▸ relationship, and slicing a hierarchy orphans children — a page boundary would cut a Base group in half and leave rows whose heading is on the previous page (decision-tree-showmore-not-pager). The pager belongs to Flat mode, which is the same set as ONE list and can be windowed honestly; `paged` here would demand a pager under every Base group, and `fixed` would claim the data model bounds this set, which it does not — an Airtable base can hold any number of links, formulas, rollups and lookups."
+                narrow="none"
+                narrowReason="The pan scroller is `.rl-tree`, one level up, and it has to be: each Base group is its own <table>, so `pan` here would emit `data-narrow-pan` per group and give every Base an independent horizontal offset while all of them claim to share one set of columns — the same defect SchemaAutomations measured. The tab pans; just not at this element."
+              >
+                <Fragment slot="col-extra">
+                  <div class="tooltip tooltip-bottom rl-help-tt">
+                    <div class="tooltip-content">
+                      <p class="rl-help-lead">Relationships are the connections in your schema: links, formulas, rollups, lookups, and synced views. They matter for restores, since connected tables usually need to come back together.</p>
+                      <ul class="rl-help-legend">
+                        <li><span class="rl-status rl-status-valid" aria-hidden="true"></span><span><b>Valid</b> — active, working links.</span></li>
+                        <li><span class="rl-status rl-status-invalid" aria-hidden="true"></span><span><b>Invalid</b> — every link was removed; kept as history.</span></li>
+                        <li><span class="rl-status rl-status-inferred" aria-hidden="true"></span><span><b>Inferred</b> — a guess we couldn’t confirm from Airtable. Confirm or dismiss it.</span></li>
+                      </ul>
+                      <p class="rl-help-note"><b>m:1 / 1:1</b> is cardinality: how many records link to how many. <b>Confirm</b> keeps an inferred relationship; <b>Dismiss</b> removes it and stops it being suggested.</p>
+                    </div>
+                    <span class="rl-help-trigger tooltip tooltip-left" data-tip="How this works" aria-label="How this works"><span class="iconify lucide--info size-4" aria-hidden="true"></span></span>
+                  </div>
+                </Fragment>
+                <Fragment set:html={items.map((r) => renderRow(r)).join('')} />
+              </Table>
+            </div>
+          </div>
+          );
+        })}
+        <div class="rl-nomatch" data-rl-nomatch hidden>
+          <span class="iconify lucide--filter-x size-5 opacity-50" aria-hidden="true"></span>
+          <p>No relationships match your filters.</p>
+          <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-rl-clear-empty><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+        </div>
+      </div>
+
+      {/* Flat view — one table of all relationships */}
+      <div class="rl-flat" data-rl-view="flat" hidden>
+        {/* THE ONE TABLE (catalog `table`). The five `<th>`s and the hand-written
+            `text-xs uppercase tracking-wider text-base-content/60` header row left this file —
+            that class list was a fourth spelling of the column band `.tbl-colhead` already owns.
+            `scope="col"` arrives with the vessel; this table has no sort of its own (the tree view
+            owns the sort), so no column declares one.
+
+            `growth="paged"` is what the pager below already asserted, and the vessel now renders
+            that pager under the same name (`rl`) and in the same place — after the `[data-grid-fit]`
+            scrollport, not inside it, which is the position the note below argues for.
+
+            The no-match block moves into the vessel's `empty` slot: it sits between the table and
+            the pager on every log that has one, and the vessel owns that order now. */}
+        <Table
+          class="rl-flatwrap tbl-frame"
+          tableClass="rl-ftable"
+          name="schema-relationships-flat"
+          columns={RL_FLAT_COLUMNS}
+          rowCount={flat.length}
+          growth="paged"
+          narrow="pan"
+          hook="rl"
+          pager={{ sizes: [10, 25, 50], selected: 25 }}
+          data-grid-fit
+        >
+              {flat.map((r) => (
+                <Fragment set:html={renderFlatRow(r)} />
+              ))}
+          <div slot="empty" class="rl-nomatch" data-rl-nomatch-flat hidden>
+            <span class="iconify lucide--filter-x size-5 opacity-50" aria-hidden="true"></span>
+            <p>No relationships match your filters.</p>
+            <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-rl-clear-empty><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+          </div>
+        </Table>
+        {/* Flat mode only — the Tree is Base ▸ type ▸ relationship and cannot be sliced.
+            OUTSIDE `.rl-flatwrap` since that wrapper became a `[data-grid-fit]` scrollport: a pager
+            inside the box it pages would scroll away with the rows. It is the wrapper's next
+            sibling, which is also how gridFit learns to reserve room for it (Browse's flat table
+            already had this shape). `createPager` finds it by `[data-pager="rl"]` from the section
+            root, so moving it changes no lookup. The pager is the vessel's now (`growth="paged"`
+            refuses to render without one) and it lands in exactly this position, under the same
+            name. */}
+      </div>
+
+      {/* The undo toast + relationship detail overlay now live in the shared
+          RelationshipPanel (page level) so the graph edge-click can open them too. */}
+    </>
+  ) : (
+    <div class="rl-empty">
+      <span class="rl-empty-ic"><span class="iconify lucide--waypoints"></span></span>
+      <p class="rl-empty-title">No relationships yet</p>
+      {/* D17 tab-level card: reached only WITH a snapshot (SchemaView degrades wholesale when there
+          is none), so the copy explains what makes a relationship rather than telling a reader who
+          has already backed up to back up. */}
+      <p class="rl-empty-sub">This snapshot has no linked records, formulas, rollups, lookups, or synced views. They show up here as soon as your bases have them.</p>
+    </div>
+  )}
+</section>
+
+
+<!-- is:global because rows (set:html) and the detail body (JS innerHTML) are injected
+     without Astro's scope attribute; every selector is uniquely `.rl-`-prefixed. -->
+<style is:global>
+  .rl { display: flex; flex-direction: column; gap: 1rem; }
+  .rl-search { flex: 0 1 280px; min-width: 180px; }
+
+  /* inferred bulk bar */
+  /* This was a HAND-ROLLED alert: its own 28%-primary border and its own 6% fill, which is why it
+     read as outlined while every real alert beside it does not (Oleh, 2026-08-17). It now wears the
+     catalog trio `alert alert-soft alert-info` and this class keeps only what is genuinely private —
+     the row layout and the controller hook. Exactly the shape `au-recorded` already uses. */
+  .rl-bulk { display: flex; align-items: center; gap: .5rem; font-size: var(--t-13); }
+  .rl-bulk[hidden] { display: none; }
+  .rl-bulk .iconify { color: var(--color-primary); flex: none; }
+  .rl-bulk-txt { flex: 1; min-width: 0; color: oklch(from var(--color-base-content) l c h / .85); }
+
+  /* tree */
+  /* No `overflow` declaration: both listings are `[data-grid-fit]`, and the global
+     `[data-grid-fit] { overflow: auto }` is what makes the bounded box scrollable. A scoped rule
+     here carries the astro-cid attribute, would out-specify the global one, and would leave a
+     max-height with no way to reach the rows below it. `auto` clips the corners as `hidden` did. */
+  /* Chrome (border + radius + background) is the shared `.tbl-frame` on the element itself. */
+  .rl-base + .rl-base { border-top: 1px solid var(--color-base-300); }
+  .rl-base-head { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .75rem .75rem; background: oklch(from var(--color-base-200) l c h / .55); border: 0; cursor: pointer; text-align: left; }
+  .rl-base-head:hover { background: oklch(from var(--color-base-200) l c h / .85); }
+  .rl-twist .iconify { transition: transform .12s ease; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-base[data-collapsed] .rl-base-body { display: none; }
+  .rl-base:not([data-collapsed]) .rl-base-head .rl-twist .iconify { transform: rotate(90deg); }
+  .rl-base-ic { color: color-mix(in oklch, var(--color-primary) 78%, var(--color-base-content)); }
+  .rl-base-name { font-weight: 600; font-size: var(--t-14); }
+  /* count sits inline right after the name (Browse "8 tables · 47 fields" style), not floating at the edge */
+  .rl-base-meta { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .rl-typegroup { border-top: 1px solid var(--color-base-200); }
+  /* tree indent steps (like Browse): base ~0.85rem → type group → relationship row */
+  .rl-type-head { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem .5rem 2rem; font-size: var(--t-12); }
+  .rl-type-ic { color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-type-label { font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); font-size: var(--t-11); }
+  /* type count inline after the label, quiet — no edge-floating column of numbers */
+  .rl-type-n { font-size: var(--t-11); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* default view — table per Base (Type · Relationship · Cardinality · Status · actions),
+     fixed-width columns so they align across Base groups (matches Automations/Interfaces). */
+  .rl-tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  /* The column-band TYPE left this rule when the header moved into the vessel. It was a private
+     fifth spelling of the band — 11px/600/.45 against `.tbl-colhead`'s 11px/700/.55 — and being
+     `.rl-tbl thead th` (0,1,2) it out-specified the shared rule, so migrating while keeping it
+     would have carried the variance across intact and left the vessel looking like it changed
+     nothing. What stays here is what is genuinely this table's: the left alignment, the cell
+     padding, and the hairline that separates the head from the Base button above it. */
+  .rl-tbl thead th { text-align: left; padding: .5rem .75rem; border-top: 1px solid var(--color-base-200); }
+  .rl-th-type { width: 10.5rem; }
+  .rl-th-card { width: 7rem; }
+  .rl-th-status { width: 14rem; }
+  .rl-th-act { width: 6rem; }
+  .rl-tbl td { padding: .5rem .75rem; border-top: 1px solid var(--color-base-200); font-size: var(--t-14); vertical-align: middle; }
+  /* overflow visible (not hidden) so the "+N more" popover can escape the cell; the entity name
+     truncates itself (.rl-ent-name), so long names still don't blow out the fixed column. */
+  .rl-c-rel { overflow: visible; }
+  /* .rl-row hover/cursor now from shared .row-clickable */
+  .rl-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  .rl-row[hidden] { display: none; }
+  .rl-row[data-removed-row="1"], .rl-frow[data-removed-row="1"] { opacity: .55; }
+  /* Type chip — a solid, legible category chip (NOT the faint badge-soft, which read as disabled). */
+  .rl-type-badge { gap: .25rem; font-weight: 500; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .85); border: 1px solid var(--color-base-300); white-space: nowrap; }
+  .rl-type-badge .iconify { opacity: .7; }
+  .rl-c-status { white-space: normal; }
+  .rl-badge { gap: .25rem; white-space: nowrap; }
+  /* Status cell: badges sit inline when they fit, wrap with a real gap (never overlap) when they don't. */
+  .rl-status-cell { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .rl-c-act { text-align: right; }
+
+  /* ── NARROW (see `data-narrow-pan` in global.css) ───────────────────────────────────────────
+     Same `table-layout: fixed` defect as Automations, and here it took out the column the tab is
+     ABOUT: 10.5 + 7 + 14 + 6rem of declared width is 600px, so at 459 the relationship pair — the
+     one cell that names what relates to what — resolved to 0 and painted over its neighbours.
+     Floors are content-measured: the widest pair is 309px (`Pipeline Value → Amount`), so 12rem is
+     a floor rather than a target and long pairs simply make the row wider. */
+  @media (max-width: 1279.98px) {
+    /* `fixed` kept and given a definite width, for the reason spelled out in SchemaAutomations:
+       one <table> per base, and `auto` lets each one pick its own columns, so the same column sits
+       at a different x in every group. 13 + 7 + 4.5 + 8 + 3 = 35.5rem. */
+    .rl-tbl { width: 35.5rem; min-width: 100%; }
+    .rl-tbl thead th, .rl-tbl td { padding: 8px 12px; }
+    .rl-th-rel    { width: 13rem; }
+    .rl-th-type   { width: 7rem; }
+    .rl-th-card   { width: 4.5rem; }
+    .rl-th-status { width: 8rem; }
+    .rl-th-act    { width: 3rem; }
+    /* The pair KEEPS its wrap, and that is a reversal of what this block first said. `nowrap` read
+       well and cost 574px for one column, taking the tree to 1020 against 459 — and unlike the
+       changelog sentence beside it, a pair cannot be truncated, because the half that would be cut
+       is the half that says what it relates TO. Wrapping is the only lossless narrow form it has:
+       two or three short lines instead of one long row. Tree 620 instead of 1020. */
+    /* `.rl-c-rel` carries `overflow: visible` at desktop so a B-side chip can breathe past the cell
+       edge into space the wide layout has going spare. At 459 there is no spare space, and the chip
+       simply painted over the TYPE column beside it — the last row of Oleh's screenshot, where
+       `Amount · Deals` sits on top of `Formulas`. Wrapping is the fix rather than clipping: the
+       B-side is a LIST, so a row with two of them wants two lines, not one and a half of one. */
+    .rl-c-rel { overflow: hidden; }
+    .rl-c-rel .rl-pair { flex-wrap: wrap; row-gap: 4px; }
+  }
+  .rl-dash { color: oklch(from var(--color-base-content) l c h / .35); }
+
+  /* status dot (flat view + the "How this works" legend) */
+  .rl-status { width: .6rem; height: .6rem; border-radius: 999px; flex: none; display: inline-block; }
+  .rl-status-valid { background: var(--color-success); }
+  .rl-status-invalid { background: oklch(from var(--color-base-content) l c h / .35); }
+  .rl-status-inferred { background: transparent; border: 1.5px dashed color-mix(in oklch, var(--color-primary) 60%, var(--color-base-content)); }
+  .rl-frow[data-removed-row="1"] .rl-status { background: oklch(from var(--color-base-content) l c h / .35); }
+  .rl-pair { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; }
+  .rl-ent { display: inline-flex; align-items: center; gap: .25rem; min-width: 0; }
+  .rl-ent-ic { display: inline-grid; place-items: center; width: 14px; flex: none; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-ent-ic svg { width: 13px; height: 13px; }
+  .rl-ent-ic .iconify { font-size: .82rem; }
+  .rl-ent-name { font-weight: 560; font-size: var(--t-14); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rl-ent-sub { color: oklch(from var(--color-base-content) l c h / .65); font-weight: 400; }
+  .rl-arrow { color: oklch(from var(--color-base-content) l c h / .65); flex: none; font-size: var(--t-14); }
+
+  /* B1 (Dan 2026-07-06) — multi-field reference summary: a formula/rollup row lists ALL its
+     referenced fields as chips (cap 3) + a "+N more" ghost-button trigger with a daisyUI
+     dropdown-hover popover (reuses the Browse "Tagged" pattern, B9). Each chip / popover row
+     opens that field's shared EntityPanel via data-entity-open. */
+  .rl-refs { display: inline-flex; align-items: center; gap: .25rem; flex-wrap: wrap; min-width: 0; }
+  .rl-more { display: inline-flex; }
+  .rl-more-trig { font-weight: 500; }
+  .rl-moremenu { z-index: 40; width: 14rem; max-width: 78vw; max-height: 60vh; overflow-y: auto; padding: 4px; background: var(--color-base-100); border-radius: var(--r-12); box-shadow: 0 8px 24px oklch(0 0 0 / .18); border: 1px solid var(--color-base-300); }
+  .rl-moremenu li > button { display: flex; align-items: center; gap: 8px; font-size: var(--t-13); }
+  .rl-refmenu-ic { flex: none; display: inline-grid; place-items: center; width: 14px; opacity: .7; }
+  .rl-refmenu-ic svg { width: 13px; height: 13px; }
+  .rl-refmenu-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Cardinality mono token — sized to the same 1.5rem/24px height as the default badge so it
+     never reads smaller than the type / status chips in the same row (in-table chip floor). */
+  .rl-card { display: inline-flex; align-items: center; height: 1.5rem; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); background: var(--color-base-200); border-radius: var(--r-6); padding: 0 .5rem; }
+  .rl-actions { display: inline-flex; align-items: center; gap: .25rem; flex: none; justify-content: flex-end; }
+
+  /* flat table — mirrors Browse's flat (table text-sm · roomy padding-block · hover Open→) */
+  /* Chrome is the shared `.tbl-frame` on the element itself. */
+  .rl-ftable { margin: 0; }
+  .rl-ftable thead th { font-weight: 700; white-space: nowrap; }
+  .rl-ftable th.rl-ft-r, .rl-ftable td.rl-ft-r { text-align: right; }
+  .rl-ftable tbody td { padding-block: 1rem; vertical-align: middle; white-space: nowrap; }
+  .rl-td-muted { color: oklch(from var(--color-base-content) l c h / .65); }
+  /* .rl-frow hover/cursor now from shared .row-clickable */
+  .rl-frow[hidden] { display: none; }
+  .rl-ftype { display: inline-flex; align-items: center; gap: .5rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-ftype .iconify { opacity: .6; }
+  /* trailing action column — Open→ for declared (hover), Confirm/Dismiss for inferred (hover), right-aligned */
+  .rl-ft-act { text-align: right; }
+  .rl-frow .rl-actions { justify-content: flex-end; }
+
+  /* Tree / Flat view toggle styling now lives in the shared .sch-tb-modes (global.css). */
+
+  /* badges (soft, semantic, max two per row) */
+  .rl-b-inferred { color: var(--color-primary); }
+  .rl-b-removed { }
+  .rl-confirm { color: var(--color-success); }
+  .rl-dismiss { color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* row "open detail" affordance — a quiet chevron that appears on hover */
+
+  /* glossary tooltip ("How this works") — a rich hover card, same pattern as Health methodology */
+  .rl-help-trigger { cursor: help; display: inline-grid; place-items: center; margin-left: 4px; vertical-align: middle; opacity: .5; }
+  .rl-help-trigger:hover { opacity: 1; }
+  .rl-th-status .rl-help-tt { display: inline-block; }
+  .rl-help-tt { --tt-bg: var(--color-base-100); display: inline-block; }
+  /* THE CARD MUST STOP INHERITING THE COLUMN-HEADER TYPE, and this is not cosmetic tidying —
+     measured on /schema?tab=relationships at 1440 on 2026-08-15, every element in this card
+     computed to `text-transform: uppercase; font-weight: 700; letter-spacing: .44px`. The lead
+     paragraph — a full sentence of explanatory prose — rendered as "RELATIONSHIPS ARE THE
+     CONNECTIONS IN YOUR SCHEMA: LINKS, FORMULAS, ROLLUPS…".
+
+     The cause is structural, not a bad rule: this card is a DOM DESCENDANT of the Status `<th>`,
+     because Oleh put the legend in the header on purpose. `text-transform`, `letter-spacing` and
+     `font-weight` all INHERIT, so the 11px/700/uppercase column band flows straight into a
+     290px card of body copy. It predates the vessel — the hand-written `.rl-tbl thead th` carried
+     the same `text-transform: uppercase` — so this is a defect the migration REVEALED rather than
+     caused, and it survived because no rule here ever contradicted it and no gate models
+     inheritance.
+
+     Reset here, at the card, rather than on each child: a rule per child is five places for the
+     sixth child to be forgotten. */
+  .rl-help-tt .tooltip-content { width: 290px; max-width: 290px; text-align: left; white-space: normal; padding: 12px 12px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); box-shadow: 0 12px 32px oklch(0 0 0 / .24); color: var(--color-base-content); z-index: 80; text-transform: none; letter-spacing: normal; font-weight: 400; font-size: var(--t-13); }
+  .rl-help-lead { font-size: var(--t-13); line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .85); margin: 0; }
+  .rl-help-legend { list-style: none; margin: .5rem 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .rl-help-legend li { display: flex; align-items: flex-start; gap: .5rem; font-size: var(--t-12); line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .85); }
+  .rl-help-legend li .rl-status { flex: none; margin-top: .25rem; }
+  .rl-help-legend b { font-weight: 600; color: var(--color-base-content); }
+  .rl-help-note { font-size: var(--t-12); line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .65); margin: .5rem 0 0; padding-top: .5rem; border-top: 1px solid var(--color-base-300); }
+  .rl-help-note b { color: var(--color-base-content); font-weight: 600; }
+
+  /* nomatch + empty */
+  .rl-nomatch { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; padding: 2.25rem 1.5rem; text-align: center; font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-nomatch[hidden] { display: none; }
+  .rl-nomatch p { margin: 0; }
+
+  /* undo toast */
+  .rl-toast { z-index: 70; }
+  .rl-toast[hidden] { display: none; }
+  /* A FLOATING toast, so the opaque fill and the shadow are honestly its own \u2014 a translucent soft
+     alert over moving content would be unreadable. The RADIUS was not: 11px was an eleventh value for
+     a rounded box, and an alert has one. */
+  .rl-toast-alert { border: 1px solid var(--color-base-300); background: var(--color-base-100); box-shadow: 0 10px 30px oklch(0 0 0 / .2); font-size: var(--t-14); padding: 8px 12px; }
+  .rl-toast-alert .iconify { color: var(--color-success); }
+  .rl-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; padding: 3rem 2rem; border: 1px dashed var(--color-base-300); border-radius: var(--r-12); }
+  .rl-empty-ic { width: 3rem; height: 3rem; border-radius: var(--r-8); display: grid; place-items: center; background: var(--color-base-200); }
+  .rl-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-empty-title { font-size: var(--t-16); font-weight: 650; }
+  .rl-empty-sub { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); max-width: 46ch; }
+
+  /* detail panel (right; entity chips open the shared EntityPanel which stacks over this) */
+  /* below the shared EntityPanel (z-60) so a chip click-through stacks the sidebar cleanly on top */
+  /* Non-modal (drawer canon): the wrapper lets clicks through so the page stays live behind the panel. */
+  .rl-detail { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+  .rl-detail[hidden] { display: none; }
+  .rl-detail-scrim { position: absolute; inset: 0; } /* no dimming; inherits pointer-events:none from .rl-detail */
+  .rl-detail-panel { position: absolute; top: 0; right: 0; height: 100%; width: var(--drawer-w); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -12px 0 34px oklch(0 0 0 / .22); display: flex; flex-direction: column; pointer-events: auto; }
+  /* Canonical header (mirrors EntityPanel .ep-head): a column of Row 1 (icon + name + close) and
+     Row 2 (location crumbs). Identity meta moved OUT to the body's first element. */
+  .rl-detail-head { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-base-300); }
+  .rl-detail-headrow { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .rl-detail-ic { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--r-8); background: var(--color-base-200); flex: none; }
+  /* Tile glyph reads at opacity .8 (matching .ep-head-ic / .sb-drawer-titleic) so all four
+     drawer tiles look identical, rather than muting via a base-content/.7 colour. */
+  .rl-detail-ic .iconify, .rl-detail-ic svg { opacity: .8; }
+  .rl-detail-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-16); font-weight: 650; letter-spacing: -0.15px; line-height: 1.2; }
+  /* Crumb-segment styling comes from the shared .sb-crumb* (styles/global.css); this keeps the row
+     from overflowing the header, matching .ep-crumbs. */
+  .rl-detail-crumbs { min-width: 0; overflow: hidden; }
+  .rl-detail-crumbs[hidden] { display: none; }
+  /* Identity meta line — FIRST body element (canonical), styled like EntityPanel .ep-body-meta:
+     status dot+label · readable cardinality. */
+  .rl-dbody-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-meta-sep { opacity: .4; }
+  /* Validity as a coloured dot + label (Browse-panel identity), not plain text. */
+  .rl-dstatus { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
+  .rl-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .rl-dot-green { background: var(--color-success); }
+  .rl-dot-red { background: var(--color-error); }
+  .rl-dot-primary { background: var(--color-primary); }
+  .rl-detail-body { padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+
+  /* detail body bits (rendered via JS innerHTML → keep selectors global-safe) */
+  .rl-dsect-label { display: flex; align-items: center; gap: 8px; font-size: var(--t-11); text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .65); font-weight: 700; margin-bottom: 8px; }
+  .rl-dsect-ic { flex: none; opacity: .85; }
+  /* Count badge (catalog badge-sm badge-neutral) — pressed right after the section name; the flex
+     gap keeps it 8px off the label. Suppressed under 2 by the builder, so a lone "1" never shows. */
+  .rl-dsect-count { flex: none; }
+  /* Canonical panel-anatomy (c): adjacent body sections separated by whitespace, NOT a divider —
+     a small top margin on the 4px grid on top of the body's flex gap (skip the first section). */
+  .rl-detail-body > div:not(:first-child):has(> .rl-dsect-label) { margin-top: 8px; }
+  /* Connects — the A→B pair inside the shared row-list container (same recipe as .rl-dfields)
+     so the chips read as one boxed group, not bare floating chips. */
+  .rl-dpair { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: color-mix(in oklch, var(--color-base-200) 45%, transparent); padding: 12px; }
+  .rl-darrow { color: oklch(from var(--color-base-content) l c h / .65); }
+  .rl-dmeta { font-size: var(--t-13); line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .65); }
+  /* Provenance = catalog Alert (alert alert-soft alert-info); only compact size here. */
+  .rl-dprov { font-size: var(--t-13); line-height: 1.45; }
+  /* Linked fields (formula/rollup) — the referenced fields as click-through chips, inside the
+     shared row-list container (pattern-detail-panel) so a lone chip doesn't float. */
+  .rl-dfields { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; padding: 12px; }
+  /* Changelog — the relationship's added/removed history. Now the shared row-list container (one
+     clearly-visible box, hairline-split rows) instead of faint per-row fills that were too subtle. */
+  .rl-dlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  .rl-dlog-item { display: flex; align-items: center; gap: .5rem; font-size: var(--t-13); padding: 8px 12px; }
+  .rl-dlog-item + .rl-dlog-item { border-top: 1px solid var(--color-base-200); }
+  .rl-dlog-ic { flex: none; }
+  .rl-dlog-added .rl-dlog-ic { color: var(--color-success); }
+  .rl-dlog-removed .rl-dlog-ic { color: var(--color-error); }
+  .rl-dlog-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rl-dlog-when { margin-left: auto; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; flex: none; }
+  /* Invalid = catalog Alert (alert alert-soft alert-warning); only compact size here. */
+  .rl-dinvalid { font-size: var(--t-13); }
+  /* Inference card — one bordered catalog Alert (alert-soft alert-info) grouping the header,
+     the provenance explanation, and the Confirm/Dismiss actions as its footer, so the buttons
+     clearly act on the inference above them. Column layout overrides the alert's default grid. */
+  .rl-dinf { display: block; }
+  .rl-dinf-inner { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .rl-dinf-head { display: flex; align-items: center; gap: 8px; font-size: var(--t-13); font-weight: 650; }
+  .rl-dinf-copy { margin: 0; font-size: var(--t-13); line-height: 1.45; opacity: .9; }
+  .rl-dactions { display: flex; gap: .5rem; padding-top: .25rem; }
+</style>
+
+<script>
+  import { wireRelationships } from './schemaRelationships';
+  wireRelationships();
+  document.addEventListener('astro:after-swap', wireRelationships);
+</script>

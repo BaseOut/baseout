@@ -29,6 +29,8 @@ export const SERVICE_IDS = {
     "retention_cleanup",
     "service_runs_prune",
     "webhook_renewal",
+    // server-reports task 4.1: weekly/monthly report schedule sweep.
+    "report_schedule_sweep",
   ],
   reserved: [
     "connection_lock_sweep",

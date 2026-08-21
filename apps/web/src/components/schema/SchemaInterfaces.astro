@@ -1,0 +1,653 @@
+---
+/**
+ * SchemaInterfaces — Interfaces Schema tab body (web-automations-interfaces-tabs).
+ *
+ * Lazy-fetches `/api/spaces/:id/interfaces`, merges MCP + manual rows via
+ * mergeInterfaceSources + provenanceBadges, nests Pages under Interfaces, and
+ * create/edits in the catalog Drawer (page requires parent-interface picker).
+ */
+import EmptyState from '../ui/EmptyState.astro'
+import Drawer from '../ui/Drawer.astro'
+import EntitySearch from './EntitySearch.astro'
+import type { TypeaheadItem, TypeaheadGroups } from './typeaheadItems'
+import type { AutomationTag } from './SchemaAutomations.astro'
+
+/** Listing row shape for EntityPanel reverse "Referenced by" (Phase 13). */
+export interface SchemaInterface {
+  id: string
+  name: string
+  type: 'interface' | 'page'
+  baseId?: string
+  parentId?: string
+  status: 'active' | 'removed'
+  tags?: AutomationTag[]
+  removedAt?: string
+}
+
+interface Props {
+  bases: { baseId: string; name: string }[]
+  tagItems: TypeaheadItem[]
+  canUse: boolean
+}
+
+const { bases, tagItems, canUse } = Astro.props
+const tagGroups: TypeaheadGroups = [
+  ['table', 'Tables'],
+  ['field', 'Fields'],
+]
+const entMeta = Object.fromEntries(
+  tagItems.map((t) => [t.id, { name: t.name, kind: t.kind, scopeKey: t.scopeKey ?? '' }]),
+)
+---
+
+{!canUse ? (
+  <EmptyState
+    icon="lucide--layout-panel-left"
+    title="Track your Airtable interfaces"
+    description="Register the interfaces and pages Airtable’s API can’t export, so they’re tracked alongside your schema. Available on Growth and above."
+    actionHref="/settings/billing"
+    actionLabel="View plans"
+  />
+) : (
+  <div data-interfaces-tab class="space-y-4">
+    <div class="flex flex-wrap items-center gap-3">
+      {bases.length > 1 && (
+        <div class="flex items-center gap-2">
+          <label class="text-sm font-medium" for="if-base-select">Base</label>
+          <select id="if-base-select" class="select select-bordered select-sm w-64">
+            <option value="">All bases</option>
+            {bases.map((b) => (
+              <option value={b.baseId}>{b.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {bases.length === 1 && (
+        <input type="hidden" id="if-base-select" value={bases[0].baseId} />
+      )}
+      <label class="flex cursor-pointer items-center gap-2 text-sm">
+        <input type="checkbox" id="if-include-removed" class="toggle toggle-sm" />
+        <span>Include removed</span>
+      </label>
+      <button type="button" id="if-new" class="btn btn-primary btn-sm gap-1 ml-auto">
+        <span class="iconify lucide--plus size-4" aria-hidden="true"></span> Register interface
+      </button>
+    </div>
+    <div id="if-content" class="min-h-[12rem] text-sm text-base-content/60">
+      <span class="loading loading-spinner loading-sm"></span>
+    </div>
+
+    <Drawer id="if-drawer" title="Interface" width="w-[min(94vw,30rem)]">
+      <form id="if-form" class="flex flex-col gap-4">
+        <input type="hidden" id="if-f-row-id" value="" />
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Interface / Page ID <span class="text-error">*</span></span>
+            <input type="text" id="if-f-entity-id" class="input input-bordered input-sm font-mono" placeholder="pbdXXXXXXXXXXXXXX" required />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Name <span class="text-error">*</span></span>
+            <input type="text" id="if-f-name" class="input input-bordered input-sm" placeholder="e.g. CRM App" required />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Type <span class="text-error">*</span></span>
+            <select id="if-f-type" class="select select-bordered select-sm" required>
+              <option value="interface">Interface</option>
+              <option value="page">Page</option>
+            </select>
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs font-semibold">Base <span class="text-error">*</span></span>
+            <select id="if-f-base" class="select select-bordered select-sm" required>
+              <option value="" disabled selected>Select a base…</option>
+              {bases.map((b) => (
+                <option value={b.baseId}>{b.name}</option>
+              ))}
+            </select>
+          </label>
+          <label class="form-control sm:col-span-2" id="if-parent-wrap" hidden>
+            <span class="label-text text-xs font-semibold">Parent interface <span class="text-error">*</span></span>
+            <select id="if-f-parent" class="select select-bordered select-sm">
+              <option value="">Select a parent…</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-semibold">Tagged tables &amp; fields</span>
+          <div id="if-chips" class="flex flex-wrap gap-2 empty:hidden"></div>
+          <EntitySearch
+            items={tagItems}
+            groups={tagGroups}
+            name="iftag"
+            placeholder="Tag a table or field…"
+            pickEvent="schema:ifTagAdd"
+            pickHint="tag"
+            emptyText="No matching tables or fields"
+            size="sm"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold">Definition (JSON)</span>
+            <span class="flex items-center gap-2">
+              <span id="if-def-valid" class="text-xs font-semibold" hidden></span>
+              <button type="button" id="if-def-format" class="btn btn-ghost btn-xs">Format</button>
+            </span>
+          </div>
+          <textarea id="if-f-definition" class="textarea textarea-bordered textarea-sm font-mono text-xs" rows="6" placeholder="{}"></textarea>
+          <span id="if-def-err" class="text-xs text-error" hidden>Invalid JSON</span>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-1">
+          <label for="if-drawer" class="btn btn-ghost btn-sm">Cancel</label>
+          <button type="submit" id="if-save" class="btn btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+    </Drawer>
+  </div>
+)}
+
+{canUse && (
+  <>
+    <script type="application/json" data-if-bases set:html={JSON.stringify(Object.fromEntries(bases.map((b) => [b.baseId, b.name])))} />
+    <script type="application/json" data-if-entmeta set:html={JSON.stringify(entMeta)} />
+  </>
+)}
+
+<script>
+  import { setButtonLoading } from '../../lib/ui'
+  import { mergeInterfaceSources, provenanceBadges } from '../../lib/interfaces/merge-sources'
+
+  type Tag = { targetType: 'table' | 'field'; targetId: string; source: 'auto' | 'manual'; targetRemoved?: boolean }
+  type Iface = {
+    id: string
+    baseId: string
+    airtableEntityId: string | null
+    name: string | null
+    type: 'interface' | 'page'
+    definition: unknown
+    status: string
+    submittedVia: string | null
+    parentId: string | null
+    tags: Tag[]
+  }
+  type Display = Iface & {
+    sources: ('mcp' | 'manual')[]
+    provenanceHtml: string
+  }
+
+  const esc = (s: string) =>
+    String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+
+  function toDisplay(raw: Iface[]): Display[] {
+    const byId = new Map(raw.map((r) => [r.id, r]))
+    const merged = mergeInterfaceSources(
+      raw.map((r) => ({
+        id: r.id,
+        airtableEntityId: r.airtableEntityId,
+        name: r.name,
+        type: r.type,
+        status: r.status,
+        submittedVia: r.submittedVia,
+        definition: r.definition,
+      })),
+    )
+    return merged.map((m) => {
+      const truth = byId.get(m.rowIds[0])!
+      const tagMap = new Map<string, Tag>()
+      for (const rid of m.rowIds) {
+        for (const t of byId.get(rid)?.tags ?? []) {
+          tagMap.set(`${t.targetType}:${t.targetId}`, t)
+        }
+      }
+      const badges = provenanceBadges(m.sources)
+      const provenanceHtml = badges
+        .map((b) => {
+          const cls = b.variant === 'primary' ? 'badge-soft badge-primary' : 'badge-soft badge-secondary'
+          return `<span class="badge badge-sm ${cls}">${esc(b.label)}</span>`
+        })
+        .join(' ')
+      return {
+        ...truth,
+        id: m.rowIds[0],
+        name: m.name,
+        type: (m.type as 'interface' | 'page') || truth.type,
+        status: m.status,
+        definition: m.definition,
+        airtableEntityId: m.airtableEntityId,
+        tags: [...tagMap.values()],
+        sources: m.sources,
+        provenanceHtml,
+      }
+    })
+  }
+
+  function wireInterfaces() {
+    const tab = document.querySelector<HTMLElement>('[data-interfaces-tab]')
+    const root = document.querySelector<HTMLElement>('[data-schema-docs]')
+    if (!tab || !root || tab.dataset.ifWired) return
+    tab.dataset.ifWired = '1'
+
+    const spaceId = root.dataset.spaceId!
+    const select = document.getElementById('if-base-select') as HTMLSelectElement | HTMLInputElement | null
+    const includeRemoved = document.getElementById('if-include-removed') as HTMLInputElement | null
+    const content = document.getElementById('if-content')
+    const drawerToggle = document.getElementById('if-drawer') as HTMLInputElement | null
+    const form = document.getElementById('if-form') as HTMLFormElement | null
+    const chipsEl = document.getElementById('if-chips')
+    const tagSearch = document.querySelector<HTMLElement>('[data-es-name="iftag"]')
+    const parentWrap = document.getElementById('if-parent-wrap')
+    const parentSelect = document.getElementById('if-f-parent') as HTMLSelectElement | null
+    const typeSelect = document.getElementById('if-f-type') as HTMLSelectElement | null
+
+    const basesMap: Record<string, string> = JSON.parse(document.querySelector('[data-if-bases]')?.textContent || '{}')
+    const entMeta: Record<string, { name: string; kind: string; scopeKey: string }> = JSON.parse(
+      document.querySelector('[data-if-entmeta]')?.textContent || '{}',
+    )
+
+    let rows: Display[] = []
+    let editTags: Tag[] = []
+    let loaded = false
+
+    const openDrawer = (title: string) => {
+      const panelTitle = drawerToggle?.closest('.sb-drawer')?.querySelector<HTMLElement>('[data-sb-drawer-title]')
+      if (panelTitle) panelTitle.textContent = title
+      if (drawerToggle) drawerToggle.checked = true
+    }
+    const closeDrawer = () => {
+      if (drawerToggle) drawerToggle.checked = false
+    }
+
+    const statusBadge = (r: Display) =>
+      r.status === 'removed'
+        ? '<span class="badge badge-sm badge-warning">removed from Airtable</span>'
+        : '<span class="badge badge-sm badge-success">active</span>'
+
+    const tagChip = (t: Tag) => {
+      const meta = entMeta[t.targetId]
+      const label = esc(meta?.name ?? t.targetId)
+      const warn = t.targetRemoved ? ' badge-warning' : t.source === 'auto' ? ' badge-ghost' : ' badge-outline'
+      const x =
+        t.source === 'manual'
+          ? `<button type="button" class="btn btn-ghost btn-xs btn-square" data-if-untag="${esc(t.targetId)}" aria-label="Remove tag">×</button>`
+          : ''
+      return `<span class="badge badge-sm gap-1${warn}">${label}${t.targetRemoved ? ' (removed)' : ''}${x}</span>`
+    }
+
+    const renderChips = () => {
+      if (!chipsEl) return
+      chipsEl.innerHTML = editTags.map(tagChip).join('')
+    }
+
+    const syncParentVisibility = () => {
+      const isPage = typeSelect?.value === 'page'
+      if (parentWrap) parentWrap.hidden = !isPage
+      if (parentSelect) parentSelect.required = !!isPage
+    }
+
+    const fillParentOptions = (baseId: string, selected?: string) => {
+      if (!parentSelect) return
+      const parents = rows.filter(
+        (r) => r.type === 'interface' && r.status !== 'removed' && r.baseId === baseId && r.airtableEntityId,
+      )
+      parentSelect.innerHTML =
+        '<option value="">Select a parent…</option>' +
+        parents
+          .map(
+            (p) =>
+              `<option value="${esc(p.airtableEntityId!)}" ${selected === p.airtableEntityId ? 'selected' : ''}>${esc(p.name || p.airtableEntityId!)}</option>`,
+          )
+          .join('')
+    }
+
+    const rowActions = (r: Display) =>
+      `<button type="button" class="btn btn-ghost btn-xs" data-if-edit="${esc(r.id)}">Edit</button>${
+        r.status === 'removed'
+          ? ''
+          : `<button type="button" class="btn btn-ghost btn-xs text-error" data-if-delete="${esc(r.id)}">Delete</button>`
+      }`
+
+    const renderRow = (r: Display, indent: boolean) => {
+      const muted = r.status === 'removed' ? ' opacity-55' : ''
+      const tags = r.tags?.length ?? 0
+      const pad = indent ? ' pl-8' : ''
+      const kindIcon =
+        r.type === 'page'
+          ? '<span class="iconify lucide--file size-3.5 opacity-60" aria-hidden="true"></span>'
+          : '<span class="iconify lucide--layout-panel-left size-3.5 opacity-60" aria-hidden="true"></span>'
+      return `<tr class="hover${muted}" data-if-id="${esc(r.id)}">
+        <td class="font-medium${pad}"><span class="inline-flex items-center gap-1.5">${kindIcon}${esc(r.name || r.airtableEntityId || r.id)}</span> ${r.provenanceHtml}</td>
+        <td class="text-xs capitalize">${esc(r.type)}</td>
+        <td>${statusBadge(r)}</td>
+        <td class="text-right text-xs">${tags ? `${tags} tagged` : '—'}</td>
+        <td class="text-right whitespace-nowrap">${rowActions(r)}</td>
+      </tr>`
+    }
+
+    const renderList = () => {
+      if (!content) return
+      const showRemoved = !!includeRemoved?.checked
+      const filterBase = select && 'options' in select && select.value ? select.value : ''
+      let list = rows.filter((r) => (showRemoved || r.status !== 'removed') && (!filterBase || r.baseId === filterBase))
+
+      if (list.length === 0) {
+        content.innerHTML =
+          rows.length === 0
+            ? '<p class="text-base-content/50">No interfaces registered yet. Register an interface (then its pages) to track them alongside your schema.</p>'
+            : '<p class="text-base-content/50">No interfaces match these filters.</p>'
+        return
+      }
+
+      const interfaces = list.filter((r) => r.type === 'interface')
+      const pages = list.filter((r) => r.type === 'page')
+      const pagesByParent = new Map<string, Display[]>()
+      const orphans: Display[] = []
+      const parentKeys = new Set(interfaces.map((i) => i.airtableEntityId).filter(Boolean) as string[])
+      for (const p of pages) {
+        if (p.parentId && parentKeys.has(p.parentId)) {
+          ;(pagesByParent.get(p.parentId) ?? pagesByParent.set(p.parentId, []).get(p.parentId)!).push(p)
+        } else {
+          orphans.push(p)
+        }
+      }
+
+      const byBase = new Map<string, Display[]>()
+      for (const i of interfaces) {
+        const k = i.baseId || '__none__'
+        ;(byBase.get(k) ?? byBase.set(k, []).get(k)!).push(i)
+      }
+      // Orphans without a parent interface still need a base group.
+      for (const o of orphans) {
+        const k = o.baseId || '__none__'
+        if (!byBase.has(k)) byBase.set(k, [])
+      }
+
+      const order = Object.keys(basesMap)
+      const keys = [...byBase.keys()].sort((x, y) => {
+        const ix = order.indexOf(x)
+        const iy = order.indexOf(y)
+        return (ix < 0 ? 999 : ix) - (iy < 0 ? 999 : iy)
+      })
+
+      const sections = keys
+        .map((baseId) => {
+          const ifaces = byBase.get(baseId) || []
+          const baseOrphans = orphans.filter((o) => (o.baseId || '__none__') === baseId)
+          const label = esc(basesMap[baseId] || 'No base')
+          const bodyParts: string[] = []
+          for (const iface of ifaces) {
+            bodyParts.push(renderRow(iface, false))
+            const kids = (iface.airtableEntityId && pagesByParent.get(iface.airtableEntityId)) || []
+            for (const kid of kids) bodyParts.push(renderRow(kid, true))
+          }
+          if (baseOrphans.length) {
+            bodyParts.push(
+              `<tr><td colspan="5" class="text-xs text-warning font-medium pt-3">Orphan pages (parent missing)</td></tr>`,
+            )
+            for (const o of baseOrphans) bodyParts.push(renderRow(o, true))
+          }
+          if (!bodyParts.length) return ''
+          const activeCount = ifaces.filter((i) => i.status !== 'removed').length
+          return `<details class="collapse collapse-arrow border border-base-300 bg-base-100 rounded-box" open>
+            <summary class="collapse-title text-sm font-semibold min-h-0 py-3">${label} <span class="text-base-content/40 font-normal">(${activeCount})</span></summary>
+            <div class="collapse-content px-0">
+              <div class="overflow-x-auto">
+                <table class="table table-sm">
+                  <thead><tr><th>Name</th><th>Type</th><th>Status</th><th class="text-right">Tags</th><th></th></tr></thead>
+                  <tbody>${bodyParts.join('')}</tbody>
+                </table>
+              </div>
+            </div>
+          </details>`
+        })
+        .filter(Boolean)
+        .join('')
+
+      content.innerHTML = `<div class="space-y-3">${sections}</div>`
+    }
+
+    const load = async () => {
+      if (!content) return
+      content.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      const baseId = select?.value || ''
+      const multiAll = select && 'options' in select && !select.value
+      const q = new URLSearchParams()
+      if (!multiAll && baseId) q.set('baseId', baseId)
+      if (includeRemoved?.checked) q.set('includeRemoved', '1')
+      let res: Response
+      try {
+        res = await fetch(`/api/spaces/${spaceId}/interfaces?${q.toString()}`)
+      } catch {
+        content.innerHTML = '<span class="text-error">Could not load interfaces.</span>'
+        return
+      }
+      if (res.status === 403) {
+        content.innerHTML =
+          '<p class="text-base-content/60">Interfaces are available on Growth and above. <a class="link" href="/settings/billing">View plans</a></p>'
+        return
+      }
+      if (!res.ok) {
+        content.innerHTML = '<span class="text-error">Could not load interfaces.</span>'
+        return
+      }
+      const data = (await res.json()) as { interfaces: Iface[] }
+      rows = toDisplay(data.interfaces ?? [])
+      renderList()
+    }
+
+    const resetForm = () => {
+      form?.reset()
+      ;(document.getElementById('if-f-row-id') as HTMLInputElement).value = ''
+      const idInput = document.getElementById('if-f-entity-id') as HTMLInputElement
+      idInput.disabled = false
+      if (typeSelect) typeSelect.disabled = false
+      editTags = []
+      renderChips()
+      syncParentVisibility()
+      const err = document.getElementById('if-def-err')
+      const valid = document.getElementById('if-def-valid')
+      if (err) err.hidden = true
+      if (valid) valid.hidden = true
+    }
+
+    const fillForm = (r: Display) => {
+      ;(document.getElementById('if-f-row-id') as HTMLInputElement).value = r.id
+      const idInput = document.getElementById('if-f-entity-id') as HTMLInputElement
+      idInput.value = r.airtableEntityId || ''
+      idInput.disabled = true
+      ;(document.getElementById('if-f-name') as HTMLInputElement).value = r.name || ''
+      if (typeSelect) {
+        typeSelect.value = r.type
+        typeSelect.disabled = true
+      }
+      ;(document.getElementById('if-f-base') as HTMLSelectElement | null)!.value = r.baseId
+      fillParentOptions(r.baseId, r.parentId || undefined)
+      syncParentVisibility()
+      const def = document.getElementById('if-f-definition') as HTMLTextAreaElement
+      def.value =
+        r.definition == null || r.definition === ''
+          ? ''
+          : typeof r.definition === 'string'
+            ? r.definition
+            : JSON.stringify(r.definition, null, 2)
+      editTags = (r.tags || []).map((t) => ({ ...t }))
+      renderChips()
+      if (tagSearch) tagSearch.dataset.esScopeBase = r.baseId
+    }
+
+    const parseDefinition = (): { ok: true; value: unknown } | { ok: false } => {
+      const raw = (document.getElementById('if-f-definition') as HTMLTextAreaElement).value.trim()
+      const err = document.getElementById('if-def-err')
+      const valid = document.getElementById('if-def-valid')
+      if (!raw) {
+        if (err) err.hidden = true
+        if (valid) valid.hidden = true
+        return { ok: true, value: null }
+      }
+      try {
+        const value = JSON.parse(raw)
+        if (err) err.hidden = true
+        if (valid) {
+          valid.hidden = false
+          valid.textContent = 'Valid JSON'
+          valid.className = 'text-xs font-semibold text-success'
+        }
+        return { ok: true, value }
+      } catch {
+        if (err) err.hidden = false
+        if (valid) {
+          valid.hidden = false
+          valid.textContent = 'Invalid'
+          valid.className = 'text-xs font-semibold text-error'
+        }
+        return { ok: false }
+      }
+    }
+
+    document.getElementById('if-def-format')?.addEventListener('click', () => {
+      const ta = document.getElementById('if-f-definition') as HTMLTextAreaElement
+      const parsed = parseDefinition()
+      if (!parsed.ok || parsed.value == null) return
+      ta.value = JSON.stringify(parsed.value, null, 2)
+    })
+    document.getElementById('if-f-definition')?.addEventListener('input', () => parseDefinition())
+
+    typeSelect?.addEventListener('change', () => {
+      syncParentVisibility()
+      const baseId = (document.getElementById('if-f-base') as HTMLSelectElement | null)?.value ?? ''
+      if (baseId) fillParentOptions(baseId)
+    })
+    document.getElementById('if-f-base')?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLSelectElement).value
+      if (tagSearch) tagSearch.dataset.esScopeBase = v
+      fillParentOptions(v)
+    })
+
+    document.addEventListener('schema:ifTagAdd', ((e: CustomEvent<{ id: string }>) => {
+      const id = e.detail?.id
+      if (!id) return
+      const meta = entMeta[id]
+      if (!meta || (meta.kind !== 'table' && meta.kind !== 'field')) return
+      if (editTags.some((t) => t.targetId === id)) return
+      editTags.push({ targetType: meta.kind as 'table' | 'field', targetId: id, source: 'manual' })
+      renderChips()
+    }) as EventListener)
+
+    chipsEl?.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-if-untag]')
+      if (!btn) return
+      editTags = editTags.filter((t) => !(t.targetId === btn.dataset.ifUntag && t.source === 'manual'))
+      renderChips()
+    })
+
+    document.getElementById('if-new')?.addEventListener('click', () => {
+      resetForm()
+      openDrawer('Register interface')
+      ;(document.getElementById('if-save') as HTMLButtonElement).textContent = 'Register'
+    })
+
+    content?.addEventListener('click', async (e) => {
+      const editBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-if-edit]')
+      if (editBtn) {
+        const r = rows.find((x) => x.id === editBtn.dataset.ifEdit)
+        if (!r) return
+        fillForm(r)
+        openDrawer(r.type === 'page' ? 'Edit page' : 'Edit interface')
+        ;(document.getElementById('if-save') as HTMLButtonElement).textContent = 'Save changes'
+        return
+      }
+      const delBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-if-delete]')
+      if (!delBtn) return
+      const id = delBtn.dataset.ifDelete!
+      setButtonLoading(delBtn, true)
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/interfaces`, {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id }),
+        })
+        if (res.status === 403) {
+          if (content)
+            content.innerHTML =
+              '<p class="text-base-content/60">Interfaces are available on Growth and above. <a class="link" href="/settings/billing">View plans</a></p>'
+          return
+        }
+        if (res.ok) await load()
+        else setButtonLoading(delBtn, false)
+      } catch {
+        setButtonLoading(delBtn, false)
+      }
+    })
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const saveBtn = document.getElementById('if-save') as HTMLButtonElement
+      const rowId = (document.getElementById('if-f-row-id') as HTMLInputElement).value
+      const airtableEntityId = (document.getElementById('if-f-entity-id') as HTMLInputElement).value.trim()
+      const name = (document.getElementById('if-f-name') as HTMLInputElement).value.trim()
+      const baseId = (document.getElementById('if-f-base') as HTMLSelectElement | null)?.value ?? ''
+      const type = (typeSelect?.value || 'interface') as 'interface' | 'page'
+      const parentId = parentSelect?.value || null
+      if (!name || !baseId || (!rowId && !airtableEntityId)) return
+      if (type === 'page' && !parentId) return
+      const def = parseDefinition()
+      if (!def.ok) return
+      const tags = editTags.map((t) => ({
+        targetType: t.targetType,
+        targetId: t.targetId,
+        source: t.source,
+      }))
+      setButtonLoading(saveBtn, true)
+      try {
+        const isCreate = !rowId
+        const body = isCreate
+          ? { baseId, type, airtableEntityId, name, parentId: type === 'page' ? parentId : null, definition: def.value, tags }
+          : {
+              id: rowId,
+              name,
+              type,
+              parentId: type === 'page' ? parentId : null,
+              definition: def.value,
+              tags,
+            }
+        const res = await fetch(`/api/spaces/${spaceId}/interfaces`, {
+          method: isCreate ? 'POST' : 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (res.status === 403) {
+          closeDrawer()
+          if (content)
+            content.innerHTML =
+              '<p class="text-base-content/60">Interfaces are available on Growth and above. <a class="link" href="/settings/billing">View plans</a></p>'
+          return
+        }
+        if (res.ok) {
+          closeDrawer()
+          await load()
+        }
+      } finally {
+        setButtonLoading(saveBtn, false)
+      }
+    })
+
+    const tabBtn = document.querySelector<HTMLButtonElement>('[data-tab="interfaces"]')
+    tabBtn?.addEventListener('click', () => {
+      if (!loaded) {
+        loaded = true
+        load()
+      }
+    })
+    select?.addEventListener('change', () => {
+      if (loaded) load()
+    })
+    includeRemoved?.addEventListener('change', () => {
+      if (loaded) load()
+    })
+  }
+
+  wireInterfaces()
+  document.addEventListener('astro:after-swap', wireInterfaces)
+</script>

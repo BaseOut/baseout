@@ -2,8 +2,28 @@
 @layer components {
 
   /* ── Split layout container ── */
+  /* S36-F1 / D35 — THE SCROLL CONTRACT. THIS SHELL SCROLLS.
+     This was `flex h-screen w-full overflow-hidden` with a vertically centred card, which is the
+     one combination that clips BOTH ends and offers no scrollbar. Measured on
+     `/welcome?fixture=trial` at 844×390 (device-metrics override, not a window resize):
+     `.auth-layout` scrollHeight 460 vs clientHeight 390, `documentElement` could not scroll, the
+     card ran −0.25 → 459.75, and `Continue`'s bottom sat at 459.75 in a 390 viewport. A phone in
+     landscape could not submit the onboarding form. Five screens share this shell.
+
+     `min-height` not `height`: the shell is AT LEAST the viewport and grows past it when the card
+     needs more. No `overflow` here — the DOCUMENT scrolls, which is one scroll model for the family
+     and the one the browser already gives us a scrollbar for. (`.auth-brand` keeps its own
+     `overflow-hidden`; that clips the decorative rays, not the form.)
+
+     The half that is easy to miss: dropping `h-screen` is NOT enough on its own. `justify-content:
+     center` on an overflowing flex container distributes the overflow to BOTH ends, and the leading
+     end is unreachable — no scroll position can go above 0, which is where that −0.25 came from.
+     So the centring moves off `.auth-panel`'s `justify-center` and onto `margin-block: auto` on
+     `.auth-card`: auto margins take FREE space, so they centre when there is room and resolve to 0
+     when there is not. See `.auth-panel` and `.auth-card` below — the three rules are one fix. */
   .auth-layout {
-    @apply flex h-screen w-full overflow-hidden;
+    @apply flex w-full;
+    min-height: 100dvh;
   }
 
   /* ── Brand / marketing panel (left, wide) ── */
@@ -12,16 +32,30 @@
            flex-col items-center justify-center
            gap-8 p-12
            relative overflow-hidden;
-    flex: 1 1 0;
+    flex: 1 1 50%;
     background: linear-gradient(180deg, #09090d 0%, #0a0f14 50%, #09090d 100%);
   }
 
+  /* The decorative light source, anchored top because the point is that it shines
+     downward onto the content below it.
+
+     `screen` is load-bearing, not a taste call. The source artwork was a cyan burst
+     on a transparent black field, and under `screen` a black pixel contributes
+     nothing — which makes the alpha channel mathematically redundant here
+     (for near-black backdrop B: (1-a)B + a·screen(C,B) == screen(a·C, B)). So the
+     asset ships FLATTENED onto black and opaque: 1367 KB of RGBA PNG became 32 KB
+     of WebP, pixel-equivalent on screen. If this layer ever stops being `screen`,
+     the flattening stops being free — re-export from the RGBA original first.
+
+     No opacity multiplier: the art is already faint (it peaks at 73/255). The 0.6
+     that the previous background carried would erase the rays entirely. */
   .auth-brand-bg {
     @apply absolute inset-0 pointer-events-none;
-    background-image: url('/images/auth-bg.png');
+    background-image: url('/images/auth-rays.webp');
     background-size: cover;
-    background-position: top;
-    opacity: 0.6;
+    background-position: top center;
+    background-repeat: no-repeat;
+    mix-blend-mode: screen;
   }
 
   .auth-brand-mesh {
@@ -44,7 +78,7 @@
   }
 
   .auth-brand-description {
-    font-size: 15px;
+    font-size: var(--t-16, 16px);
     line-height: 1.5;
     max-width: 400px;
     text-align: center;
@@ -66,36 +100,58 @@
   .auth-brand-feature {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 14px;
+    gap: 12px;
+    font-size: var(--t-14, 14px);
     color: color-mix(in oklab, white 60%, transparent);
   }
 
   .auth-brand-feature-icon {
     color: var(--color-success);
-    font-size: 18px;
+    font-size: var(--t-18, 18px);
   }
 
-  /* ── Form panel (right, fixed 480px) ── */
+  /* ── Form panel (right) ──
+     Desktop is an even 50/50 split with the brand panel, not a fixed rail: at 1440 a
+     480px rail left the form column visibly cramped next to a 960px decorative half. */
+  /* Part 2 of the scroll contract (see `.auth-layout`). `justify-center` and `h-full` are both gone:
+     `justify-center` is what made the top of an overflowing card unreachable, and `h-full` was a
+     percentage against a parent that no longer has a definite height — the panel is a flex item and
+     `align-items: stretch` already gives it the full shell height. Vertical padding is new and
+     load-bearing: at 0 the card touched the viewport edge the moment it started scrolling. 16px
+     block / 16px inline, on the 4px grid. */
   .auth-panel {
-    @apply flex flex-col items-center justify-center
-           h-full
+    @apply flex flex-col items-center
            bg-base-100;
     width: 100%;
-    padding: 0 1rem;
+    padding: 16px;
   }
 
-  @media (min-width: 1024px) {
+  /* NOT the product boundary. This is one view's own two-column split — the auth pages carry
+     no sidebar, no panels and no nav item, so they are outside the phone/desktop classification
+     entirely (`isDesktopOnly` returns false for an unowned route, by design). Moving it to 1280
+     would give a 1100px window a single stacked column for a form that fits in 360px, which is a
+     regression bought with consistency nobody can see. Same class of decision as SchemaDocs's
+     per-surface stack: a component asking "do I fit", not the app asking "which product is this". */
+  @media (min-width: 1024px) { /* ds-ok: a view's own column split, not the product boundary — see above */
     .auth-panel {
-      width: 480px;
-      flex: 0 0 480px;
-      padding: 0 2.5rem;
+      width: 50%;
+      flex: 1 1 50%;
+      /* Block padding is restated, not dropped: this rule fully replaces the shorthand above, so
+         `0 2.5rem` here would have quietly undone the 16px the scroll contract needs. Inline 40px
+         is the measured desktop gutter (D35). */
+      padding: 16px 40px;
     }
   }
 
+  /* Part 3 of the scroll contract (see `.auth-layout`). `margin-block: auto` is the centring, and it
+     is the whole reason this fix does not trade one bug for another: an auto margin claims FREE
+     space, so with room to spare the card sits centred exactly as before, and with none the margins
+     resolve to 0 and the card starts at the top — reachable, scrollable to its end. `justify-content:
+     center` cannot do that; it splits the overflow across an edge no scroll position can reach. */
   .auth-card {
     @apply w-full;
     max-width: 360px;
+    margin-block: auto;
   }
 
   .auth-card-inner {
@@ -133,14 +189,14 @@
 
   /* ── Typography ── */
   .auth-card-title {
-    font-size: 26px;
+    font-size: var(--t-24, 24px);
     font-weight: 700;
     text-align: center;
     color: var(--color-base-content);
   }
 
   .auth-card-subtitle {
-    font-size: 14px;
+    font-size: var(--t-14, 14px);
     text-align: center;
     margin-top: 4px;
     color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
@@ -161,6 +217,60 @@
            tracking-wide uppercase;
   }
 
+  /* ── Provider (SSO) button ──
+     The mark is a brand logo — the one exemption to the Lucide-only rule. The note
+     under it is load-bearing copy, not decoration: signing in WITH Airtable and
+     granting Baseout access to your bases are different things, and a user who
+     conflates them will not press the button. */
+  .auth-provider-mark {
+    display: inline-flex;
+    align-items: center;
+    color: currentColor;
+  }
+
+  /* THE ONE CAPTION OF THIS FAMILY — 12px, the floor rung, which does not step below 1280.
+     `.auth-provider-note` used to sit here as a byte-identical second copy of this rule whose only
+     difference was `text-align: center`; it was deleted and its two call sites now say
+     `auth-form-note text-center`. Alignment is a property of WHERE a caption sits (a full-width
+     centred stack under a button vs. a line under a left-aligned checkbox in `.auth-trust`), so it
+     belongs on the element, not in a fork of the rule. */
+  .auth-form-note {
+    font-size: var(--t-12, 12px);
+    line-height: 1.4;
+    margin-top: 8px;
+    color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  }
+
+  /* A control and the caption that belongs TO it — the refusal a field earns (D3b), or a hint.
+     The wrapper exists so the message sits 4px under its own control instead of one `.auth-form`
+     gap (16px) away, which is what made a summary line above the button feel unattached to any
+     field. `margin-top` is zeroed because the gap is the wrapper's job here. */
+  .auth-field {
+    display: grid;
+    gap: 4px;
+  }
+
+  .auth-field > .auth-form-note {
+    margin-top: 0;
+  }
+
+  /* Instruction above a control that has no visible <legend> (the code input). */
+  .auth-field-label {
+    font-size: var(--t-14, 14px);
+    text-align: center;
+    color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  }
+
+  .auth-trust {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .auth-trust .auth-form-note {
+    margin-top: 0;
+  }
+
   /* ── "or continue with" divider ── */
   .auth-divider {
     display: flex;
@@ -175,7 +285,7 @@
   }
 
   .auth-divider-label {
-    font-size: 12px;
+    font-size: var(--t-12, 12px);
     color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
   }
 
@@ -184,8 +294,20 @@
     @apply text-center mt-6 space-y-3;
   }
 
+  /* 12px, NOT `text-sm` (Oleh, batch D1). This line and `.auth-form-note` are stacked directly on
+     top of each other under the submit button and disagreed on both axes: the note read 12px/start,
+     this read 14px/center, and the smaller of the two was the one carrying the more important
+     sentence. One size for both, and the size is the FLOOR rung — `--t-12` is the only token that
+     does not step below 1280, so the pair agrees at every width. `text-sm` would have re-opened the
+     gap at narrow (`--t-12` holds at 12 while `text-sm` resolves to 12 there but 14 at 1440).
+     12 is also what the other three captions in this card already use (`.auth-form-note`,
+     `.auth-divider-label`, `.auth-copyright`), so the footer stops being the outlier.
+     The two lines stay TELLABLE APART by weight and colour, not by size: this one is 60% and its
+     `<a>` is `font-semibold text-primary`, the note is 55% and has no link. A hint and a navigation
+     offer are different jobs; they are not different rungs. */
   .auth-footer-text {
-    @apply text-sm;
+    font-size: var(--t-12, 12px);
+    line-height: 1.45;
     color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
   }
 
@@ -199,3 +321,18 @@
     color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
   }
 }
+
+/* ── AN UNARMED SUBMIT (Oleh, batch D3a → PROMOTED, batch F2) ───────────────────────────────────
+   `/welcome` painted a solid `btn-primary` from first paint on a form with six empty fields: the
+   loudest thing on the screen claimed to be ready before anything was. It now carries
+   `aria-disabled` while the required set is unsatisfied and looks the part.
+
+   The RULE that paints it no longer lives here. Batch D scoped it to `[data-auth-submit]` so it
+   could not become the app's version without someone deciding that it should; batch F decided, and
+   it now sits UNLAYERED at the foot of `styles/components/overrides.css` as
+   `.btn[aria-disabled='true']:not(.btn-link, .btn-ghost)`, which reaches `/welcome`'s submit, the
+   setup wizard's Next and `FacetFilter`'s locked trigger alike. The reasoning — why
+   `aria-disabled` and not `disabled`, why no `pointer-events: none`, why daisyUI's own
+   `.btn:disabled` values, and the site-by-site list of what the widened selector deliberately does
+   NOT reach — moved with it rather than being duplicated. This note exists so that a reader who
+   comes to the auth stylesheet asking "what paints the unarmed Continue?" is not met by silence. */

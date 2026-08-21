@@ -1,0 +1,156 @@
+---
+/**
+ * DateRangePicker — the period filter. See storybook `pattern-date-range`.
+ *
+ * A bordered `ff-trigger` (matching the shared FacetFilter, so the filter bar reads as one set) that
+ * opens a popover: quick presets (All time · Last 30 / 60 / 90 days) + a custom From/To pair of native
+ * date inputs with Apply. The trigger states the active range; a non-default range gets the primary
+ * `ff-on` active tint. Emits a bubbling `daterangechange` { name, from, to } (from/to are ISO date
+ * strings, or null for "all"); clears on the shared `facetreset`. Dependency-free.
+ */
+import { rangeAnchorLabel } from '../../lib/time';
+
+interface Props {
+  /** Filter id, echoed on the emitted event so the host can route it. */
+  name: string;
+  /** Preset day-windows to offer (besides "All time"). */
+  presets?: number[];
+  /**
+   * Surface-specific presets that are an EVENT rather than a day-window (media-library, 2026-07-31:
+   * Attachments offers "Captured in last run"). They lead the list because they are the question
+   * people actually arrive with; each emits `from` with an open end, exactly like a day preset.
+   */
+  eventPresets?: { label: string; from: string }[];
+  /**
+   * D09 — THE ANCHOR. The moment a day preset counts BACK from. On a surface that
+   * shows a snapshot (Schema, Data, Attachments, Comments) this is the backup
+   * as-of; the wall clock is not what the data is as of, and reading it is why the
+   * same "Last 7 days" returned 0 rows on one tab and 314 on its sibling at the
+   * same instant. Omitted → the picker reads the clock, and SAYS so ("· to today")
+   * rather than staying silent about which end it measured from.
+   */
+  anchor?: string | null;
+}
+const { name, presets = [30, 60, 90], eventPresets = [], anchor = null } = Astro.props;
+// The label is built server-side too, so the preset list reads its anchor before any JS lands.
+const presetLabel = (d: number) => rangeAnchorLabel(d, anchor);
+---
+
+<div class="dropdown dr" data-dr={name} data-dr-anchor={anchor ?? ''}>
+  <div tabindex="0" role="button" class="btn btn-sm gap-1.5 ff-trigger" data-dr-trigger aria-label="Filter by date range">
+    <span class="iconify lucide--calendar-range size-4 opacity-70" aria-hidden="true"></span>
+    <span data-dr-label>All time</span>
+    <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
+  </div>
+  <div tabindex="0" class="dropdown-content dr-panel">
+    <div class="dr-presets">
+      {eventPresets.map((p) => (
+        <button type="button" class="dr-preset" data-dr-event={p.from} data-dr-eventlabel={p.label}>{p.label}</button>
+      ))}
+      <button type="button" class="dr-preset" data-dr-preset="">All time</button>
+      {presets.map((d) => (
+        <button type="button" class="dr-preset" data-dr-preset={String(d)}>{presetLabel(d)}</button>
+      ))}
+    </div>
+    <div class="dr-sep"></div>
+    <div class="dr-custom">
+      <label class="dr-field"><span>From</span><input type="date" class="input input-sm" data-dr-from /></label>
+      <label class="dr-field"><span>To</span><input type="date" class="input input-sm" data-dr-to /></label>
+    </div>
+    <div class="dr-foot">
+      <button type="button" class="btn btn-sm btn-ghost gap-1" data-dr-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear</button>
+      <button type="button" class="btn btn-sm btn-primary" data-dr-apply>Apply</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { fmtDayShort, rangeAnchorLabel, rangeAnchorMs } from '../../lib/time';
+
+  function initDateRanges() {
+    document.querySelectorAll<HTMLElement>('[data-dr]').forEach((root) => {
+      if (root.dataset.drWired) return;
+      root.dataset.drWired = '1';
+      const name = root.dataset.dr!;
+      const trigger = root.querySelector<HTMLElement>('[data-dr-trigger]')!;
+      const labelEl = root.querySelector<HTMLElement>('[data-dr-label]')!;
+      const fromEl = root.querySelector<HTMLInputElement>('[data-dr-from]')!;
+      const toEl = root.querySelector<HTMLInputElement>('[data-dr-to]')!;
+
+      const iso = (d: Date) => d.toISOString().slice(0, 10);
+      const fmt = (s: string) => fmtDayShort(s + 'T00:00:00');
+      // D09 — the window's far end. The backup as-of when the host supplied one, else the clock.
+      const anchorIso = root.dataset.drAnchor || '';
+
+      const emit = (from: string | null, to: string | null, label: string) => {
+        labelEl.textContent = label;
+        trigger.classList.toggle('ff-on', label !== 'All time');
+        root.dispatchEvent(new CustomEvent('daterangechange', { detail: { name, from, to }, bubbles: true }));
+      };
+
+      const applyPreset = (days: string) => {
+        if (!days) { fromEl.value = ''; toEl.value = ''; emit(null, null, 'All time'); return; }
+        const to = new Date(rangeAnchorMs(anchorIso || null));
+        const from = new Date(to.getTime()); from.setDate(from.getDate() - Number(days));
+        fromEl.value = iso(from); toEl.value = iso(to);
+        // The trigger states the anchor, not just the width — "Last 7 days" alone is unfalsifiable.
+        emit(iso(from), iso(to), rangeAnchorLabel(Number(days), anchorIso || null));
+      };
+
+      // An EVENT preset is an open-ended range starting at a moment the host supplies (a backup
+      // run's timestamp), so it goes through the same emit path — the host never learns a second
+      // event shape and `facetreset` clears it like any other range.
+      root.querySelectorAll<HTMLButtonElement>('[data-dr-event]').forEach((b) =>
+        b.addEventListener('click', () => {
+          const from = b.dataset.drEvent!;
+          fromEl.value = from.slice(0, 10);
+          toEl.value = '';
+          emit(from.slice(0, 10), null, b.dataset.drEventlabel!);
+          (document.activeElement as HTMLElement | null)?.blur();
+        }),
+      );
+      root.querySelectorAll<HTMLButtonElement>('[data-dr-preset]').forEach((b) =>
+        b.addEventListener('click', () => { applyPreset(b.dataset.drPreset || ''); (document.activeElement as HTMLElement | null)?.blur(); }),
+      );
+      // Extracted from the Apply button so the same window can be applied from OUTSIDE (the URL —
+      // see `facetset` below) without a second copy of the labelling rule.
+      const applyCustom = (f: string | null, t: string | null) => {
+        if (!f && !t) { emit(null, null, 'All time'); return; }
+        const label = f && t ? `${fmt(f)} – ${fmt(t)}` : f ? `From ${fmt(f)}` : `Until ${fmt(t!)}`;
+        emit(f, t, label);
+      };
+      root.querySelector<HTMLButtonElement>('[data-dr-apply]')!.addEventListener('click', () => {
+        applyCustom(fromEl.value || null, toEl.value || null);
+        (document.activeElement as HTMLElement | null)?.blur();
+      });
+      root.querySelector<HTMLButtonElement>('[data-dr-clear]')!.addEventListener('click', () => applyPreset(''));
+      root.addEventListener('facetreset', () => { fromEl.value = ''; toEl.value = ''; labelEl.textContent = 'All time'; trigger.classList.remove('ff-on'); });
+      // D07 — `facetset { from, to }`, the same inbound contract `FacetFilter` grew, so a shared
+      // link restores the window. A restored 7-day window comes back as its DATES ("Jul 7 – Jul 14")
+      // rather than as the preset's wording: the two describe the same range, and re-deriving
+      // "which preset was this" from a pair of dates is a guess the picker should not make.
+      root.addEventListener('facetset', (e) => {
+        const d = ((e as CustomEvent).detail || {}) as { from?: string; to?: string };
+        fromEl.value = d.from || '';
+        toEl.value = d.to || '';
+        applyCustom(fromEl.value || null, toEl.value || null);
+      });
+    });
+  }
+  initDateRanges();
+  document.addEventListener('astro:after-swap', initDateRanges);
+</script>
+
+<style is:global>
+  /* Trigger reuses the global .ff-trigger look (facet-filter.css). Only the popover is bespoke. */
+  .dr-panel { z-index: 30; margin-top: 4px; width: 15rem; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); padding: 8px; box-shadow: 0 10px 28px oklch(0 0 0 / .14); }
+  .dr-presets { display: flex; flex-direction: column; gap: 2px; }
+  .dr-preset { display: flex; align-items: center; padding: 8px; border-radius: var(--r-6); font-size: var(--t-13); text-align: left; }
+  .dr-preset:hover { background: oklch(from var(--color-base-200) l c h / .65); }
+  .dr-sep { margin: 8px 0; border-top: 1px solid var(--color-base-300); }
+  .dr-custom { display: flex; flex-direction: column; gap: 8px; padding: 0 4px; }
+  .dr-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--t-12); }
+  .dr-field > span { color: oklch(from var(--color-base-content) l c h / .65); }
+  .dr-field .input { width: 9.5rem; }
+  .dr-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; padding: 0 4px; }
+</style>

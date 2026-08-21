@@ -1,0 +1,435 @@
+---
+/**
+ * SpaceHomeView — a Space's Home / dashboard (absorbs the old Overview).
+ *
+ * Two-region "primary + rail" layout for a feeling of CONTROL at a glance:
+ *   LEFT  — the user's backups: a metrics strip, then the Backup history and
+ *           Schema tables (what happened).
+ *   RIGHT — a set-apart, sticky status rail (the control panel): health
+ *           (Everything's backed up · last/next · Run backup now), the backup
+ *           pipeline drawn vertically (Source → bases → Destination), and usage.
+ * Not-set-up Spaces show the full-width setup diagram instead of the split.
+ *
+ * Visual prototype: numbers come from the Space's state + run history (the engine
+ * counts records/tables/attachments as it writes them). No fabricated metrics.
+ */
+import SpacePipelineHero from '../components/patterns/SpacePipelineHero.astro';
+import RunBackupNowModal from '../components/backups/RunBackupNowModal.astro';
+import { formatNextScheduledAt } from '../lib/backups/format';
+import type { IntegrationsState } from '../stores/connections';
+import type { SourceSummary } from '../stores/sources';
+import type { DestinationSummary } from '../stores/destinations';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
+
+/** Per-base figures: fields from Airtable's schema, records/attachments counted by the engine. */
+interface BaseMetric {
+  id: string;
+  name: string;
+  status: 'ok' | 'failed' | 'pending';
+  fields: number;
+  records: number;
+  attachments: number;
+}
+/** A usage meter vs the plan limit (limit null = unlimited / no cap). */
+interface UsageItem {
+  label: string;
+  used: number;
+  limit: number | null;
+  unit: string;
+}
+
+interface Props {
+  state: IntegrationsState;
+  source?: SourceSummary | null;
+  destinations?: DestinationSummary[];
+  runs?: BackupRunSummary[];
+  statusCode?: 'saved' | 'running' | null;
+  baseMetrics?: BaseMetric[];
+  usage?: UsageItem[];
+}
+const { state, source = null, destinations = [], runs = [], statusCode = null, baseMetrics = [], usage = [] } = Astro.props;
+
+const spaceName = Astro.locals.account?.space?.name ?? 'this Space';
+const includedCount = state.bases.filter((b) => b.isIncluded).length;
+const fileDest = destinations.find((d) => d.kind === 'file') ?? null;
+const dbDest = destinations.find((d) => d.kind === 'database') ?? null;
+
+const sourceBroken = source?.status === 'reconnect';
+const brokenDest = destinations.find((d) => d.status === 'reconnect') ?? null;
+const isConfigured = !!source && includedCount > 0 && !!fileDest;
+const paused = sourceBroken || !!brokenDest;
+const pipeOk = !paused;
+
+// Just-finished setup confirmations. `running` = the FIRST backup is in progress
+// (no completed history yet); `justSaved` = an edit to an already-running Space.
+const running = statusCode === 'running' && !paused;
+const justSaved = statusCode === 'saved' && !paused;
+
+// Terminal runs, most recent first. The Schema section shows up to 5 bases, so
+// the history preview mirrors it with 5 runs (full log lives on /backups).
+const terminal = runs
+  .filter((r) => ['succeeded', 'failed', 'cancelled', 'trial_succeeded'].includes(r.status))
+  .sort((a, b) => new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime());
+const lastSuccess = runs.find((r) => r.status === 'succeeded' || r.status === 'trial_succeeded') ?? null;
+const succeeded = runs.filter((r) => r.status === 'succeeded');
+// Δ records vs the previous backup — a drop can flag a mass deletion (anomaly).
+const recordDelta = succeeded.length >= 2 ? (succeeded[0].recordCount ?? 0) - (succeeded[1].recordCount ?? 0) : null;
+const recent = terminal.slice(0, 5);
+
+const nf = new Intl.NumberFormat('en-US');
+const nextLabel = formatNextScheduledAt(state.policy.nextScheduledAt);
+const frequency = state.policy.frequency;
+
+function since(iso: string | null): string {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
+}
+
+const includedNames = state.bases.filter((b) => b.isIncluded).slice(0, 3).map((b) => b.name);
+const folder = fileDest ? `/Baseout/${spaceName}` : '';
+
+// Per-node pipeline status chip (top-right of each card) — conveys "everything is
+// connected and flowing" at a glance, and pinpoints the broken object when paused.
+const srcStatus = sourceBroken ? { tone: 'warn', label: 'Reconnect' } : { tone: 'ok', label: 'Connected' };
+const midStatus = paused ? { tone: 'muted', label: 'Paused' } : { tone: 'ok', label: 'Active' };
+const destStatus = brokenDest ? { tone: 'warn', label: 'Reconnect' } : { tone: 'ok', label: 'Connected' };
+
+// Schema section: top bases by attachment volume (most attachments = most to verify).
+const topBases = [...baseMetrics].sort((a, b) => b.attachments - a.attachments).slice(0, 5);
+
+// Pipeline node status → catalog soft badge (same mapping as the rest of the app).
+const nodeBadge = (tone: string) =>
+  tone === 'ok' ? 'badge-soft badge-success' : tone === 'warn' ? 'badge-soft badge-warning' : 'badge-ghost';
+---
+
+<div class="mx-auto max-w-[1400px]" data-space-home>
+  {isConfigured ? (
+    <>
+      {/* Slim page title — the health summary lives in the rail. */}
+      <div class="hm-title">
+        <h1 class="truncate">{spaceName}</h1>
+        <span class="hm-title-sub">Home</span>
+      </div>
+
+      {/* Transient just-finished-setup confirmation — read-once, so it's dismissible. */}
+      {(running || justSaved) && (
+        <div role="alert" class="alert alert-soft alert-success mb-4">
+          <span class="iconify lucide--circle-check size-4" aria-hidden="true"></span>
+          <span class="flex-1">{running
+            ? <>Your Space is protected. The first backup is running — track it on the <a href="/backups" class="font-semibold underline">Backups page</a>.</>
+            : <>Backup configuration saved. Changes apply on the next scheduled run.</>}</span>
+          <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>
+        </div>
+      )}
+
+      <div class="hm-cols">
+        {/* LEFT — the user's backups */}
+        <div class="hm-main">
+
+          {/* Metrics strip, above the tables */}
+          <div class="hm-kpis">
+            <div class="hm-kpi">
+              <div class="hm-kpi-top"><span class="hm-kpi-k">Bases protected</span><span class="iconify lucide--database hm-kpi-ic" aria-hidden="true"></span></div>
+              <span class="hm-kpi-v">{nf.format(includedCount)}</span>
+              <span class="hm-kpi-sub">in this Space</span>
+            </div>
+            <div class="hm-kpi">
+              <div class="hm-kpi-top"><span class="hm-kpi-k">Records backed up</span><span class="iconify lucide--rows-3 hm-kpi-ic" aria-hidden="true"></span></div>
+              <span class="hm-kpi-v">{lastSuccess ? nf.format(lastSuccess.recordCount ?? 0) : '—'}</span>
+              {recordDelta !== null ? (
+                <span class={`hm-kpi-sub hm-delta ${recordDelta >= 0 ? 'is-up' : 'is-down'}`}><span class={`iconify ${recordDelta >= 0 ? 'lucide--arrow-up' : 'lucide--arrow-down'}`} aria-hidden="true"></span>{nf.format(Math.abs(recordDelta))} vs prev</span>
+              ) : (
+                <span class="hm-kpi-sub">last backup</span>
+              )}
+            </div>
+            <div class="hm-kpi">
+              <div class="hm-kpi-top"><span class="hm-kpi-k">Attachments</span><span class="iconify lucide--paperclip hm-kpi-ic" aria-hidden="true"></span></div>
+              <span class="hm-kpi-v">{lastSuccess ? nf.format(lastSuccess.attachmentCount ?? 0) : '—'}</span>
+              <span class="hm-kpi-sub">last backup</span>
+            </div>
+            <div class="hm-kpi">
+              <div class="hm-kpi-top"><span class="hm-kpi-k">Backups run</span><span class="iconify lucide--history hm-kpi-ic" aria-hidden="true"></span></div>
+              <span class="hm-kpi-v">{nf.format(succeeded.length)}</span>
+              <span class="hm-kpi-sub">all time</span>
+            </div>
+          </div>
+
+          {/* Backup history */}
+          <section class="hm-panel">
+            <div class="hm-panel-head"><h2>Backup history</h2><a href="/backups" class="btn btn-ghost btn-sm text-primary -mr-2">View all →</a></div>
+            <div class="hm-tablewrap">
+              <table class="table text-sm">
+                <thead>
+                  <tr class="text-xs uppercase tracking-wider text-base-content/60">
+                    <th>Status</th><th>Date</th><th class="text-right">Bases</th><th class="text-right">Records</th><th class="text-right">Attachments</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.length === 0 && (
+                    <tr><td colspan="6" class="hm-empty">{running ? 'First backup in progress — it will appear here when it finishes.' : 'No backups yet.'}</td></tr>
+                  )}
+                  {recent.map((r) => {
+                    const ok = r.status === 'succeeded' || r.status === 'trial_succeeded';
+                    const failed = r.status === 'failed';
+                    const badge = ok ? 'badge-soft badge-success' : failed ? 'badge-soft badge-error' : 'badge-ghost';
+                    return (
+                      <tr>
+                        <td><span class={`badge ${badge}`}>{ok ? 'Succeeded' : failed ? 'Failed' : 'Cancelled'}</span></td>
+                        <td class="mono-data text-base-content/64">{since(r.completedAt)}</td>
+                        <td class="text-right tabular-nums">{r.includedBases.length}</td>
+                        <td class="text-right tabular-nums">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
+                        <td class="text-right tabular-nums">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>
+                        <td class="text-right"><a href={`/backups/run?id=${r.id}`} class="btn btn-ghost btn-sm text-sm text-primary">Details →</a></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Schema — top bases by attachment volume */}
+          {topBases.length > 0 && (
+            <section class="hm-panel">
+              <div class="hm-panel-head"><h2>Schema</h2><a href="/schema" class="btn btn-ghost btn-sm text-primary -mr-2">View schema →</a></div>
+              <div class="hm-tablewrap">
+                <table class="table text-sm">
+                  <thead>
+                    <tr class="text-xs uppercase tracking-wider text-base-content/60">
+                      <th>Base</th><th>Status</th><th class="text-right">Fields</th><th class="text-right">Records</th><th class="text-right">Attachments</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topBases.map((b) => {
+                      const badge = b.status === 'ok' ? 'badge-soft badge-success' : b.status === 'failed' ? 'badge-soft badge-error' : 'badge-ghost';
+                      return (
+                        <tr>
+                          <td class="font-medium">{b.name}</td>
+                          <td><span class={`badge ${badge}`}>{b.status === 'ok' ? 'Backed up' : b.status === 'failed' ? 'Failed' : 'Pending'}</span></td>
+                          <td class="text-right tabular-nums">{nf.format(b.fields)}</td>
+                          <td class="text-right tabular-nums">{nf.format(b.records)}</td>
+                          <td class="text-right tabular-nums">{nf.format(b.attachments)}</td>
+                          <td class="text-right"><a href="/schema" class="btn btn-ghost btn-sm text-sm text-primary">Schema →</a></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          <p class="hm-foot">Records, tables and attachments are counted by the backup engine as it writes them. Usage limits are illustrative pending the final billing model.</p>
+        </div>
+
+        {/* RIGHT — the status rail (control panel) */}
+        <aside class="hm-rail">
+          <div class="hm-rail-inner">
+
+            {/* Health */}
+            <div class={`hm-status ${paused ? 'is-paused' : running ? 'is-running' : 'is-ok'}`}>
+              <div class="hm-status-top">
+                <span class="hm-status-ic" aria-hidden="true"><span class={`iconify ${paused ? 'lucide--triangle-alert' : running ? 'lucide--loader-circle hm-spin' : 'lucide--shield-check'}`}></span></span>
+                <span class="hm-status-line">{paused
+                  ? 'Backups paused'
+                  : running
+                    ? 'First backup running…'
+                    : <><span class="iconify lucide--check" aria-hidden="true"></span>Everything&rsquo;s backed up</>}</span>
+              </div>
+              {paused
+                ? <p class="hm-status-detail">{sourceBroken ? <>Source <b>{source!.name}</b> lost access.</> : <>Destination <b>{brokenDest!.name}</b> lost access.</>}</p>
+                : (
+                  <div class="hm-status-meta">
+                    <div><span class="hm-mk">Last backup</span><span class="hm-mv mono-data">{running ? 'in progress' : since(lastSuccess?.completedAt ?? null)}</span></div>
+                    <div><span class="hm-mk">Next backup</span><span class="hm-mv"><span class="mono-data">{nextLabel}</span> · <span class="capitalize">{frequency}</span></span></div>
+                  </div>
+                )}
+              {paused
+                ? <button type="button" class="btn btn-primary hm-status-btn"><span class="iconify lucide--plug size-4" aria-hidden="true"></span>Reconnect</button>
+                : running
+                  ? <a href="/backups" class="btn btn-primary hm-status-btn"><span class="iconify lucide--activity size-4" aria-hidden="true"></span>View progress</a>
+                  : <button type="button" class="btn btn-primary hm-status-btn" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>}
+            </div>
+
+            {/* Pipeline — vertical */}
+            <div class="hm-sect">
+              <div class="hm-sect-head"><h3>Backup pipeline</h3><a href="/integrations/configure" class="btn btn-ghost btn-sm text-primary -mr-2"><span class="iconify lucide--settings size-4" aria-hidden="true"></span>Configure</a></div>
+              <div class="hm-pipe">
+                <div class="hm-node">
+                  <div class="hm-node-head"><span class="hm-node-cap">Source</span><span class={`badge badge-sm ${nodeBadge(srcStatus.tone)}`}><span class="size-1.5 rounded-full bg-current"></span>{srcStatus.label}</span></div>
+                  <span class="hm-node-main"><img src="/airtable.svg" alt="" width="16" height="16" class="hm-mark" />{source!.name}</span>
+                  <span class="hm-node-sub">{source!.account}</span>
+                </div>
+                <span class={`hm-conn ${pipeOk ? 'is-ok' : 'is-warn'}`} aria-hidden="true"><span class="hm-conn-badge"><span class={`iconify ${pipeOk ? 'lucide--check' : 'lucide--triangle-alert'}`}></span></span></span>
+                <div class="hm-node">
+                  <div class="hm-node-head"><span class="hm-node-cap">Backs up</span><span class={`badge badge-sm ${nodeBadge(midStatus.tone)}`}><span class="size-1.5 rounded-full bg-current"></span>{midStatus.label}</span></div>
+                  <span class="hm-node-main">{includedCount} base{includedCount === 1 ? '' : 's'}</span>
+                  <span class="hm-node-sub">{includedNames.join(', ')}{includedCount > 3 ? ` +${includedCount - 3}` : ''}</span>
+                </div>
+                <span class={`hm-conn ${pipeOk ? 'is-ok' : 'is-warn'}`} aria-hidden="true"><span class="hm-conn-badge"><span class={`iconify ${pipeOk ? 'lucide--check' : 'lucide--triangle-alert'}`}></span></span></span>
+                <div class="hm-node">
+                  <div class="hm-node-head"><span class="hm-node-cap">Destination</span><span class={`badge badge-sm ${nodeBadge(destStatus.tone)}`}><span class="size-1.5 rounded-full bg-current"></span>{destStatus.label}</span></div>
+                  <span class="hm-node-main"><span class="iconify lucide--hard-drive hm-mark-ic" aria-hidden="true"></span>{fileDest!.name}</span>
+                  <span class="hm-node-sub">{folder}{dbDest && <span> · + {dbDest.name}</span>}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Usage */}
+            {usage.length > 0 && (
+              <div class="hm-sect">
+                <div class="hm-sect-head"><h3>Usage this month</h3><a href="/settings/billing" class="btn btn-ghost btn-sm text-primary -mr-2">Upgrade</a></div>
+                <div class="hm-usage">
+                  {usage.map((u) => {
+                    const pct = u.limit ? Math.min(100, Math.round((u.used / u.limit) * 100)) : null;
+                    const hot = pct !== null && pct >= 80;
+                    return (
+                      <div class="hm-usage-item">
+                        <div class="hm-usage-row"><span>{u.label}</span><span class="hm-usage-val">{nf.format(u.used)}{u.unit}{u.limit !== null ? ` / ${nf.format(u.limit)}${u.unit}` : ''}</span></div>
+                        {u.limit !== null && <div class="hm-usage-track"><span class={`hm-usage-fill ${hot ? 'is-hot' : ''}`} style={`width:${pct}%`}></span></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </aside>
+      </div>
+    </>
+  ) : (
+    <>
+      {/* Not set up — the product model, drawn */}
+      <header class="hm-head mb-6">
+        <div class="min-w-0">
+          <h1 class="text-title truncate">{spaceName}</h1>
+          <p class="text-sm text-base-content/60 mt-1">Set up what this Space backs up, and where.</p>
+        </div>
+      </header>
+      <SpacePipelineHero spaceName={spaceName} />
+    </>
+  )}
+
+  {/* Credits-warning confirm for the rail's "Run backup now" — triggers a real run. */}
+  <RunBackupNowModal spaceId={Astro.locals.account?.space?.id ?? ''} redirectTo="/?status=running" />
+</div>
+
+<style>
+  .hm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  /* Slim page title (health lives in the rail) */
+  .hm-title { display: flex; align-items: baseline; gap: .6rem; margin-bottom: 1.1rem; min-width: 0; }
+  .hm-title h1 { font-size: 1.5rem; font-weight: 680; letter-spacing: -.02em; line-height: 1.15; min-width: 0; }
+  .hm-title-sub { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .66); font-weight: 600; flex: none; }
+
+  /* Just-finished-setup confirmation banner */
+  /* The just-finished-setup confirmation is a catalog dismissible alert now. */
+  .hm-spin { animation: hm-spin 1s linear infinite; transform-origin: center; }
+  @keyframes hm-spin { to { transform: rotate(360deg); } }
+
+  /* Two-region grid: backups (left) + status rail (right) */
+  .hm-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1.5rem; align-items: start; }
+  .hm-main { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
+  @media (max-width: 1024px) { .hm-cols { grid-template-columns: 1fr; } .hm-rail { order: -1; } }
+
+  /* Metrics strip */
+  .hm-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); overflow: hidden; }
+  .hm-kpi { display: flex; flex-direction: column; gap: .15rem; min-width: 0; padding: 1.05rem 1.25rem 1.1rem; }
+  .hm-kpi + .hm-kpi { border-left: 1px dashed oklch(from var(--color-base-content) l c h / .16); }
+  .hm-kpi-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .hm-kpi-k { font-size: .76rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .64); }
+  .hm-kpi-ic { font-size: 1.2rem; color: var(--color-primary); flex: none; }
+  .hm-kpi-v { font-size: 1.65rem; font-weight: 740; letter-spacing: -.02em; line-height: 1.12; font-variant-numeric: tabular-nums; }
+  .hm-kpi-sub { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); display: inline-flex; align-items: center; gap: .22rem; }
+  .hm-delta.is-up { color: var(--color-success); font-weight: 600; }
+  .hm-delta.is-down { color: var(--color-warning); font-weight: 600; }
+  .hm-delta .iconify { font-size: .74rem; }
+  @media (max-width: 560px) { .hm-kpis { grid-template-columns: 1fr 1fr; } .hm-kpi:nth-child(odd) { border-left: 0; } .hm-kpi:nth-child(n+3) { border-top: 1px dashed oklch(from var(--color-base-content) l c h / .16); } }
+
+  /* Left panels + tables */
+  .hm-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.2rem; }
+  .hm-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .9rem; }
+  .hm-panel-head h2 { font-size: .95rem; font-weight: 660; }
+  /* Section-header "more / action" links are catalog buttons (btn-ghost btn-sm text-primary). */
+  /* Tables are the daisyUI primitive (same as Backups); only the wrap + empty/foot are bespoke. */
+  .hm-tablewrap { overflow-x: auto; }
+  .hm-tablewrap :is(th, td) { white-space: nowrap; }
+  .hm-empty { text-align: center !important; color: oklch(from var(--color-base-content) l c h / .64); padding: 1.1rem 0 !important; }
+  .hm-foot { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); }
+
+  /* Status rail — the set-apart control panel */
+  .hm-rail { position: sticky; top: 1rem; }
+  .hm-rail-inner { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: .9rem; background: var(--color-base-100); overflow: hidden; }
+  .hm-sect { padding: 1.05rem 1.15rem; }
+  .hm-sect + .hm-sect, .hm-status + .hm-sect { border-top: 1px solid oklch(from var(--color-base-content) l c h / .1); }
+  .hm-sect-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .85rem; }
+  .hm-sect-head h3 { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .64); }
+
+  /* Health block (top of the rail) */
+  .hm-status { padding: 1.1rem 1.15rem; }
+  .hm-status.is-ok { background: oklch(from var(--color-success) l c h / .08); }
+  .hm-status.is-running { background: oklch(from var(--color-primary) l c h / .08); }
+  .hm-status.is-paused { background: oklch(from var(--color-warning) l c h / .11); }
+  .hm-status-top { display: flex; align-items: center; gap: .55rem; }
+  .hm-status-ic { width: 2rem; height: 2rem; border-radius: .55rem; display: grid; place-items: center; flex: none; }
+  .hm-status-ic .iconify { font-size: 1.15rem; }
+  .hm-status.is-ok .hm-status-ic { background: oklch(from var(--color-success) l c h / .16); }
+  .hm-status.is-ok .hm-status-ic .iconify { color: var(--color-success); }
+  .hm-status.is-running .hm-status-ic { background: oklch(from var(--color-primary) l c h / .16); }
+  .hm-status.is-running .hm-status-ic .iconify { color: var(--color-primary); }
+  .hm-status.is-paused .hm-status-ic { background: oklch(from var(--color-warning) l c h / .16); }
+  .hm-status.is-paused .hm-status-ic .iconify { color: var(--color-warning); }
+  .hm-status-line { display: inline-flex; align-items: center; gap: .3rem; font-size: .92rem; font-weight: 600; }
+  .hm-status.is-ok .hm-status-line { color: var(--color-success); }
+  .hm-status.is-running .hm-status-line { color: var(--color-primary); }
+  .hm-status.is-paused .hm-status-line { color: oklch(from var(--color-base-content) l c h / .9); }
+  .hm-status-line .iconify { font-size: 1rem; }
+  .hm-status-meta { display: flex; flex-direction: column; gap: .5rem; margin: .85rem 0; }
+  .hm-status-meta > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .hm-status-detail { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .8); margin: .6rem 0 .85rem; }
+  .hm-status-btn { width: 100%; }
+  /* Keep the label on one line; let the value wrap instead (e.g. a long "next backup" date). */
+  .hm-mk { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .66); white-space: nowrap; flex: none; }
+  .hm-mv { font-size: .82rem; font-weight: 600; text-align: right; min-width: 0; }
+
+  /* Vertical pipeline */
+  .hm-pipe { display: flex; flex-direction: column; }
+  .hm-node { display: flex; flex-direction: column; gap: .25rem; padding: .85rem .9rem; border: 1px solid var(--color-base-300); border-radius: .6rem; background: var(--color-base-100); min-width: 0; }
+  .hm-node-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .hm-node-cap { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .66); }
+  /* Per-node connection status chip = catalog daisyUI badge (badge-soft + leading dot). */
+  .hm-node-main { display: flex; align-items: center; gap: .4rem; font-size: .875rem; font-weight: 600; min-width: 0; }
+  .hm-node-main .hm-mark { border-radius: 4px; flex: none; }
+  .hm-mark-ic { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .6); flex: none; }
+  .hm-node-sub { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hm-warn { color: var(--color-warning); font-weight: 600; }
+  .hm-conn { position: relative; height: 1.4rem; display: grid; place-items: center; }
+  .hm-conn::before { content: ''; position: absolute; top: -.3rem; bottom: -.3rem; left: 50%; width: 2px; transform: translateX(-50%); border-radius: 2px; }
+  .hm-conn.is-ok::before { background: oklch(from var(--color-success) l c h / .5); }
+  .hm-conn.is-warn::before { background: oklch(from var(--color-warning) l c h / .55); }
+  .hm-conn-badge { position: relative; z-index: 1; width: 1rem; height: 1rem; border-radius: 999px; display: grid; place-items: center; box-shadow: 0 0 0 3px var(--color-base-100); }
+  .hm-conn.is-ok .hm-conn-badge { background: var(--color-success); color: var(--color-success-content); }
+  .hm-conn.is-warn .hm-conn-badge { background: var(--color-warning); color: var(--color-warning-content); }
+  .hm-conn-badge .iconify { font-size: .72rem; }
+
+  /* Usage bars */
+  .hm-usage { display: flex; flex-direction: column; gap: .7rem; }
+  .hm-usage-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: .8rem; margin-bottom: .3rem; }
+  .hm-usage-val { color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; }
+  .hm-usage-track { height: 6px; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .1); overflow: hidden; }
+  .hm-usage-fill { display: block; height: 100%; border-radius: 999px; background: var(--color-primary); }
+  .hm-usage-fill.is-hot { background: var(--color-warning); }
+
+  /* Light-theme contrast: the semantic status colors are tuned for accents/icons and for
+     the dark theme; as SMALL TEXT on white they fail WCAG AA. Darken them on light only
+     (dark keeps the brighter token). The dot/icon graphics keep the bright token. */
+  :global([data-theme="baseout-light"]) .hm-status.is-ok .hm-status-line { color: oklch(from var(--color-success) calc(l - 0.16) c h); }
+</style>

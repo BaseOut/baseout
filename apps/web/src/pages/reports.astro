@@ -1,5 +1,77 @@
 ---
-// Reports is out of V1 scope (Jul 6, 2026 decision — openspec/changes/web-v1-scope-trim):
-// the tab is hidden and this route redirects so stale links / bookmarks don't 404.
-return Astro.redirect('/', 302);
+/**
+ * Reports — list of named report DEFINITIONS for the active Space
+ * (Phase 8 / web-reports-page; ui-only tip views + engine API from 4d3ff862).
+ *
+ * SSR-loads via createBackupEngine().listReportDefinitions, with a master-DB
+ * fallback because report definitions are canonically owned by apps/web.
+ */
+import { env } from 'cloudflare:workers';
+import { and, eq, sql } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import ReportsView from '../views/ReportsView.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { createBackupEngine } from '../lib/backup-engine';
+import {
+  createMasterDbReportDefinitionRepository,
+  listReportDefinitionsForPage,
+} from '../lib/reports/list-page-definitions';
+import type { ReportDefinition } from '../lib/reports/types';
+import { atBases, backupConfigurationBases, backupConfigurations, backupRuns } from '../db/schema';
+
+const breadcrumbs = getBreadcrumbs('/reports');
+const { account, db } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+
+let definitions: ReportDefinition[] = [];
+let baseNames: Record<string, string> = {};
+let hasBackups = false;
+
+if (spaceId && db) {
+  try {
+    const engine = env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+      ? createBackupEngine({
+          binding: env.BACKUP_ENGINE,
+          internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+        })
+      : null;
+    definitions = await listReportDefinitionsForPage({
+      spaceId,
+      engine,
+      repository: createMasterDbReportDefinitionRepository(db),
+    });
+  } catch {
+    definitions = [];
+  }
+
+  try {
+    const bases = await db
+      .select({ id: atBases.id, name: atBases.name })
+      .from(backupConfigurationBases)
+      .innerJoin(
+        backupConfigurations,
+        eq(backupConfigurations.id, backupConfigurationBases.backupConfigurationId),
+      )
+      .innerJoin(atBases, eq(atBases.id, backupConfigurationBases.atBaseId))
+      .where(eq(backupConfigurations.spaceId, spaceId));
+    baseNames = Object.fromEntries(bases.map((b) => [b.id, b.name]));
+
+  } catch {
+    baseNames = {};
+  }
+
+  try {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(backupRuns)
+      .where(and(eq(backupRuns.spaceId, spaceId)));
+    hasBackups = Number(row?.n ?? 0) > 0;
+  } catch {
+    hasBackups = false;
+  }
+}
 ---
+
+<SidebarLayout pageTitle="Reports" breadcrumbs={breadcrumbs}>
+  <ReportsView definitions={definitions} baseNames={baseNames} hasBackups={hasBackups} spaceId={spaceId} />
+</SidebarLayout>

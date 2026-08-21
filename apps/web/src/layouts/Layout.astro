@@ -59,6 +59,21 @@ const embedBoot = {
     </script>
   </head>
   <body class="font-sans text-base-content antialiased">
+    <div id="nav-pending" class="nav-pending" hidden></div>
+    <script is:inline>
+      document.addEventListener('astro:before-preparation', function () {
+        var el = document.getElementById('nav-pending');
+        if (el) el.removeAttribute('hidden');
+      });
+      document.addEventListener('astro:after-swap', function () {
+        var el = document.getElementById('nav-pending');
+        if (el) el.setAttribute('hidden', '');
+      });
+      document.addEventListener('astro:page-load', function () {
+        var el = document.getElementById('nav-pending');
+        if (el) el.setAttribute('hidden', '');
+      });
+    </script>
     <slot />
     <script type="application/json" id="embed-reboot" set:html={JSON.stringify(embedBoot)} />
     <script>
@@ -69,6 +84,27 @@ const embedBoot = {
         initEmbedClient(cfg)
       }
     </script>
+
+    {/* ── BELOW THE 390 FLOOR ──────────────────────────────────────────────────────────────────────
+        MOVED HERE FROM `SidebarLayout.astro` (S36-F3 / D35). It sat in the app shell, so the three
+        routes a signed-out person can reach — `/login`, `/register`, `/welcome` — were the three
+        WITHOUT the gate, i.e. the routes most likely to be opened narrow first were the ones that
+        declined to say so. Both shells render this Layout, so putting it here makes the floor ONE
+        rule instead of two, which was the alternative and the reason it drifted in the first place.
+
+        It is rendered ALWAYS and shown by CSS alone — no cookie, no script, no server guess — because
+        a viewport narrower than the floor is the one state that must be right on the first paint,
+        before anything has had a chance to load. Last in the DOM and `position: fixed`, so nothing
+        can paint over it.
+
+        Inside Airtable's extension panel this never appears: the Blocks SDK enforces a declared
+        `ViewportConstraint minSize` and draws its own. This is the browser window and the Chrome
+        extension, where nobody enforces a minimum for us. */}
+    <div id="too-narrow" role="alert">
+      <span class="iconify lucide--move-horizontal size-6 opacity-60" aria-hidden="true"></span>
+      <p class="text-base font-semibold">This window is too narrow.</p>
+      <p class="text-sm opacity-70">Baseout needs at least 390px across. Widen the window and it comes straight back.</p>
+    </div>
   </body>
 </html>
 
@@ -77,5 +113,22 @@ const embedBoot = {
     margin: 0;
     width: 100%;
     min-height: 100%;
+  }
+  .nav-pending {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 9999;
+    pointer-events: none;
+    background: var(--color-primary);
+    transform-origin: 0 50%;
+    animation: nav-pending-slide 1.1s ease-in-out infinite;
+  }
+  @keyframes nav-pending-slide {
+    0% { transform: scaleX(0.12); opacity: 1; }
+    55% { transform: scaleX(0.72); opacity: 1; }
+    100% { transform: scaleX(1); opacity: 0.35; }
   }
 </style>

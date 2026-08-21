@@ -99,9 +99,12 @@ export function schemaDocsErrorStatus(code: string): number {
     case 'unauthorized':
       return 401
     case 'invalid_request':
+    case 'invalid_parent':
       return 400
     case 'document_not_found':
+    case 'not_found':
       return 404
+    case 'duplicate_entity':
     case 'space_db_not_ready':
       return 409
     case 'backend_not_implemented':

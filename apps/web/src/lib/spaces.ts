@@ -1,6 +1,7 @@
 import type { AppDb } from '../db'
 import { spaces, userPreferences } from '../db/schema'
 import { and, eq, sql } from 'drizzle-orm'
+import { insertDefaultReport } from './reports/default-report'
 
 /**
  * Promote a Space from 'setup_incomplete' to 'active'. Idempotent: the WHERE
@@ -107,6 +108,11 @@ export async function createSpaceForOrg(
       })
       .returning({ id: spaces.id, name: spaces.name })
 
+    await insertDefaultReport(tx, {
+      spaceId: created.id,
+      spaceName: created.name,
+    })
+
     await tx
       .insert(userPreferences)
       .values({
@@ -131,6 +137,28 @@ export interface SwitchSpaceInput {
   userId: string
   organizationId: string
   spaceId: string
+}
+
+export async function renameSpace(
+  db: AppDb,
+  input: { spaceId: string; organizationId: string; name: string },
+): Promise<{ id: string; name: string }> {
+  const name = validateSpaceName(input.name)
+  const [updated] = await db
+    .update(spaces)
+    .set({ name, modifiedAt: new Date() })
+    .where(
+      and(eq(spaces.id, input.spaceId), eq(spaces.organizationId, input.organizationId)),
+    )
+    .returning({ id: spaces.id, name: spaces.name })
+
+  if (!updated) {
+    throw new SpaceError({
+      kind: 'forbidden',
+      message: 'That Space is not available.',
+    })
+  }
+  return updated
 }
 
 export async function switchActiveSpace(

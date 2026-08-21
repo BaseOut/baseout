@@ -1,0 +1,1810 @@
+---
+/**
+ * DataMedia — the Data page's **Attachments** tab (openspec `media-library`).
+ *
+ * Baseout's backup pipeline downloads the BYTES of every Airtable attachment, because Airtable's
+ * own attachment URLs expire ~2 hours after the API returns them. Until now those files were
+ * invisible: no surface in either repo listed them. This is that surface.
+ *
+ * Deliberately NOT a DAM. No upload, no edit, no albums, no sharing links, no transforms, no
+ * batch/multi-select. It is a backup MIRROR, and a tab inside a page must not try to be a product.
+ *
+ * Decisions this file encodes (all settled before it was written):
+ *  · Label is **Attachments** — the word the founder uses and the word `backup-runs.ts` already
+ *    uses (`attachmentCount`). Not "Media", which promises a consumer DAM we do not ship.
+ *  · Its own scope, defaulting to ALL bases. The totals strip answers a SPACE-level question
+ *    ("what is eating my 20 GB" — literally Airtable's Team-plan per-base cap), so inheriting a
+ *    locked single-base scope from Browse would answer the wrong question.
+ *  · **Listing is the default**, gallery is the alternative (`pattern-media-gallery`). Grid-first
+ *    looks obvious for files and is wrong here: a backup holds PDFs, CSVs and ZIPs alongside
+ *    images, so it would open on a matrix of glyphs and misrepresent the product.
+ *  · **Paged, never virtualized** — the source spec asked for a virtualized grid; the catalog
+ *    settled the idiom the other way and the app runs ONE `TablePager` everywhere.
+ *  · File type is the format chip stamped in the thumbnail (`pattern-media-thumb`) plus a **Type**
+ *    column carrying one of five CATEGORY glyphs (`KIND_ICON`). NOT a per-row badge — a category
+ *    pill on every row is the exact noise the Comments status column was rebuilt to remove.
+ *    The column is called Type because the FACET that filters it is called Type: a filter and its
+ *    column must share one word or the user never connects them (Oleh 2026-07-31). Only the
+ *    user-visible strings moved; `MediaKind` / `KIND_LABEL` / `data-kind` / `mdkind` are internal
+ *    and were left alone rather than churned to say the same thing.
+ *  · Totals are three NUMBERS, not a meter. Every product that draws a storage bar hangs an
+ *    Upgrade CTA on it, which collides with the standing "no tier-gating in product UI" decision,
+ *    and a bar asserts a denominator this product does not have.
+ *  · **An attachment has ONE source** (founder, 2026-08-03). The Where column renders it in FULL —
+ *    base › table › field › record, or base › table › record for a comment attachment, which has no
+ *    field because Airtable's comment payload carries none. This replaced a `trails[]` array and a
+ *    `+N` dedup chip, which described a deduplication model Airtable does not have: an attachment
+ *    id lives in exactly one place. Every segment is navigable (see the click wiring below).
+ *  · Size filtering is one-sided THRESHOLDS, never a two-handle range. Windows Explorer and Gmail
+ *    both model size as thresholds because the question is always "what is big", and size data is
+ *    log-distributed — a slider is unusable and does not survive a URL.
+ *
+ * HONESTY: `storage`, `checksum`, `capturedAt`, `lastSeenAt` are OUR contract and the engine that
+ * would emit them (`server-media-index`) is unfiled. Nothing on this surface claims a fact the
+ * engine cannot supply. In particular there is no "referenced by a lookup field" block: a lookup
+ * CAN surface the same file elsewhere, but the engine cannot tell us where, so no copy implies it.
+ */
+import { fmtDayShort } from '../../lib/time';
+import FacetFilter, { type FacetGroup } from '../schema/FacetFilter.astro';
+import { groupByWorkspace } from '../schema/workspaceGroups';
+import ExportControl from '../patterns/ExportControl.astro';
+import DateRangePicker from '../ui/DateRangePicker.astro';
+import TablePager from '../ui/TablePager.astro';
+import MediaThumb from './MediaThumb.astro';
+import EmptyState from '../ui/EmptyState.astro';
+import { KIND_LABEL, KIND_ICON, fmtSize, displayName, storeMarksHtml } from './mediaFormat';
+import { entityIconMarkup, entityIconClass } from '../schema/entityIcon';
+import type { DataBase, DataTable, DataRecord, MediaAsset } from './dataTypes';
+
+interface Props {
+  bases: DataBase[];
+  tables: DataTable[];
+  /** Every captured attachment in the Space — field AND comment files, deduped by the engine. */
+  assets: MediaAsset[];
+  /** Records in this backup — resolves a trail's record to its primary-field name. */
+  records: DataRecord[];
+  /** The Space's latest capture. Anchors the "Captured in last run" date preset. */
+  lastSyncedAt?: string;
+}
+const { bases, tables, assets, records, lastSyncedAt } = Astro.props;
+
+const baseName = Object.fromEntries(bases.map((b) => [b.id, b.name]));
+const tableName = Object.fromEntries(tables.map((t) => [t.id, t.name]));
+const fieldName = Object.fromEntries(tables.flatMap((t) => t.fields.map((f) => [f.id, f.name])));
+const recPrimary = Object.fromEntries(records.map((r) => [r.id, r.primary]));
+const multiBase = bases.length > 1;
+
+/**
+ * The listing's date is DAY + MONTH only ("Jul 14"), not "Jul 14, 2026". The year is the least
+ * informative third of the string on a surface whose default sort is newest-first, and the column
+ * is a scanning aid, not the record of when the file was captured — the file panel still prints the
+ * full date (`fmtDay` in MediaPanel), so nothing is lost, it is only not repeated 50 times a page.
+ * `tabular-nums` stays on the cell (`.md-num`) so the shortened column still scans as a column.
+ */
+const SOURCE_LABEL: Record<MediaAsset['sourceKind'], string> = { field: 'Field', comment: 'Comment' };
+
+/**
+ * STORAGE, as one mark per place the bytes actually live. Low cardinality — Baseout, a provider,
+ * or both — so the column was 148px of repeated prose ("Baseout + Google Drive") answering a
+ * yes/no/both question. One mark per copy says the same thing at a glance and the full wording
+ * rides along in the tooltip and in the accessible name, so no reading of it is lost.
+ *
+ * The marks are the REAL brand marks (2026-08-03), not two grey Lucide outlines: `lucide--database`
+ * and `lucide--cloud` differed only in silhouette, which is something the reader decodes rather
+ * than recognises. The mapping, the theme-pairing of Baseout's own mark and the `lucide--cloud`
+ * fallback for a provider we hold no asset for all live in ONE place — `storeMarksHtml` in
+ * ./mediaFormat, next to the other file→mark mappings — rather than in this frontmatter, which
+ * stays thin on purpose (a union-heavy `.astro` frontmatter has broken the esbuild build here).
+ */
+
+/**
+ * One row per asset, with everything the row, the filters, the gallery AND the panel need already
+ * resolved into data attributes. There is deliberately no second JSON snapshot of the assets: the
+ * gallery tiles and the panel body are both built from these rows at runtime, so the three
+ * projections cannot drift and the volume fixture does not ship the same 10,000 objects twice.
+ */
+const rows = assets.map((a) => {
+  const s = a.source;
+  /**
+   * THE SOURCE, resolved once for the row, the panel and the crumbs. Short keys because this ships
+   * as a `data-` attribute on every row: `b/t/f/r` are NAMES, `bi/ti/fi/ri` the ids behind them
+   * (every segment is navigable), `u` the record's Airtable URL.
+   *
+   * `f` is UNDEFINED for a comment attachment — genuinely absent, not the string "Comment". The
+   * renderer omits the segment entirely; a placeholder segment would assert a field that does not
+   * exist in Airtable's payload. The row's `data-fields` mirrors that absence as `''`, and BOTH the
+   * Fields facet and Group-by-field read it: a sentinel there would put a fake field into a filter
+   * menu and into a group header, which is the same lie twice.
+   */
+  const src = {
+    b: baseName[s.baseId] ?? '',
+    t: tableName[s.tableId] ?? '',
+    ...(s.fieldId ? { f: fieldName[s.fieldId] ?? '', fi: s.fieldId } : {}),
+    // The record's PRIMARY VALUE, or '' — never the key. `recPrimary` is built from the records
+    // this backup captured, so a miss means exactly one thing: the record is not in this backup,
+    // and the UI says so in words. Falling back to `s.recordId` printed `rec_tblDeals_missing`
+    // on screen, which is the raw-identifier leak the Comments work established a rule against
+    // (and the same reason the panel omits a metadata row rather than printing "Unknown").
+    r: recPrimary[s.recordId] ?? '',
+    bi: s.baseId,
+    ti: s.tableId,
+    ri: s.recordId,
+    // Present only when the record is still reachable. Record-level by verification against
+    // Airtable's docs — there is no documented per-attachment deep link (see AssetSource).
+    u: s.airtableUrl ?? '',
+  };
+  // Storage TOKENS drive both the facet and the row label. An asset stored in both places carries
+  // all three tokens, so it survives a "Baseout" filter, a "Google Drive" filter and a "Both" one.
+  const tokens: string[] = [];
+  if (a.storage.baseout) tokens.push('baseout');
+  if (a.storage.provider) tokens.push(a.storage.provider);
+  if (a.storage.baseout && a.storage.provider) tokens.push('both');
+  const storeLabel = a.storage.baseout && a.storage.providerLabel
+    ? `Baseout + ${a.storage.providerLabel}`
+    : a.storage.baseout
+      ? 'Baseout'
+      : a.storage.providerLabel ?? 'Not stored';
+  return {
+    a,
+    name: displayName(a),
+    kindLabel: KIND_LABEL[a.kind],
+    kindIcon: KIND_ICON[a.kind],
+    sizeText: fmtSize(a.size),
+    sourceLabel: SOURCE_LABEL[a.sourceKind],
+    src,
+    tokens: tokens.join(' '),
+    storeLabel,
+    storeMarks: storeMarksHtml(a.storage),
+    capturedText: fmtDayShort(a.capturedAt),
+  };
+});
+
+// ── Facets. Every one is `pattern-faceted-filter`; every multi one is a TOGGLE set, never radios.
+const baseGroups: FacetGroup[] = groupByWorkspace(bases).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  items: g.items.map((b) => ({ value: b.id, label: b.name })),
+}));
+const usedTableIds = new Set(assets.map((a) => a.source.tableId));
+const tableGroups: FacetGroup[] = bases
+  .map((b) => ({
+    label: multiBase ? b.name : undefined,
+    items: tables.filter((t) => t.baseId === b.id && usedTableIds.has(t.id)).map((t) => ({ value: t.id, label: t.name })),
+  }))
+  .filter((g) => g.items.length);
+/**
+ * FIELDS — the filter half of the founder's ask (2026-08-03: "we could filter down to a specific
+ * field and then we'd see all the things according to that"). The display half already shipped as
+ * the Where column's field segment; this is what makes it actionable.
+ *
+ * Two rules, both borrowed rather than invented:
+ *  · Only fields that ACTUALLY HOLD captured attachments are offered. The Tables facet above scopes
+ *    itself the same way (`usedTableIds`) — a field with no files is a row you can only ever use to
+ *    empty the list.
+ *  · Options are GROUPED BY THEIR TABLE, the way the Bases facet groups its options by workspace.
+ *    Field names repeat hard across tables ("Name", "Status", "Attachments"), so an ungrouped list
+ *    of 40 identical-looking labels tells you nothing about which one you are picking. The heading
+ *    carries the base too when the Space holds more than one, because a table name can repeat
+ *    across bases exactly as a field name repeats across tables.
+ *
+ * A COMMENT attachment contributes nothing here: Airtable's comment payload carries no field id, so
+ * there is no honest option to add. See the filter in the script for what that means when the facet
+ * is active, and `.md-nomatch` for the sentence that stops it reading as a bug.
+ */
+const usedFieldIds = new Set(assets.map((a) => a.source.fieldId).filter(Boolean) as string[]);
+const fieldGroups: FacetGroup[] = bases
+  .flatMap((b) => tables.filter((t) => t.baseId === b.id).map((t) => ({ b, t })))
+  .map(({ b, t }) => ({
+    label: multiBase ? `${b.name} › ${t.name}` : t.name,
+    items: t.fields.filter((f) => usedFieldIds.has(f.id)).map((f) => ({ value: f.id, label: f.name })),
+  }))
+  .filter((g) => g.items.length);
+/**
+ * GROUP BY — the founder's second ask ("what I think is missing is being able to group things by
+ * base, table and field … we can see ACROSS tables and fields, but we want to be able to group by
+ * those"). Decisions, all settled before this was written:
+ *
+ *  · It is a CONTROL, not a third view mode. The tab already has a Table ⇄ Gallery switch; a third
+ *    segment there would conflate how the set is DRAWN with how it is ORGANISED, and grouping would
+ *    silently vanish the moment someone switched to the gallery. Grouping applies to BOTH
+ *    projections — it is the same idea as Schema Browse's Tree / Flat, expressed so it composes:
+ *    `None` is Flat, a grouping is Tree.
+ *  · NO grouping by record (Oleh 2026-08-03). A typical record carries one or two attachments, so
+ *    grouping by record yields thousands of groups of size one — a wall of headers, strictly worse
+ *    than no grouping at all. The record is the DESTINATION of the trail, not a level of it: it is
+ *    already the last Where segment and already clickable.
+ *  · Each group is its OWN framed card, not a header band inside one continuous table (Oleh
+ *    2026-08-03, rejecting the band this tab first shipped and naming Schema › Automations as the
+ *    look). The chrome is `.au-group` reused rather than re-derived: card + gap, a header BUTTON
+ *    with a rotating chevron, the concept glyph and the name, and each card carrying its OWN
+ *    column-header row. It deviates from Automations in exactly one place — the group's total SIZE
+ *    beside the count — because the storage bill is this tab's question.
+ *  · ONE pager at the bottom of the whole list, paging the ITEMS in group order. See the long note
+ *    in `apply()` for why the groups are not what is paged, and for the invariant that keeps a
+ *    split group honest.
+ *  · The `single` FacetFilter variant with `labelTrigger`, the same shape as the Size threshold —
+ *    not a segmented control and not a labelled button. Toolbar space is the binding constraint on
+ *    this row (measured 2026-08-03: 850px of controls in 1136px of page at a 1440 laptop), and a
+ *    third control SHAPE on a row that already has two would cost more than the pixels.
+ *  · It sits in `.sch-tb-right` beside the Table ⇄ Gallery switch, NOT at the end of the filters
+ *    (Oleh, 2026-08-03). Filters change WHAT is in the list; this changes HOW it is arranged, and
+ *    the toolbar's `search │ filters … → right cluster` grammar already draws that line. Same slot
+ *    Schema › Browse gives Tree / Flat. See the markup comment on the control itself.
+ */
+const groupGroups: FacetGroup[] = [{ items: [
+  { value: '', label: 'None' },
+  { value: 'base', label: 'Base', icon: entityIconClass('base') },
+  { value: 'table', label: 'Table', icon: entityIconClass('table') },
+  { value: 'field', label: 'Field', icon: entityIconClass('field') },
+] }];
+// The five options carry the SAME five glyphs the Type column does (KIND_ICON) — a column showing
+// category icons whose own filter shows none reads as two unrelated controls.
+const kindGroups: FacetGroup[] = [{
+  items: (['image', 'video', 'audio', 'document', 'other'] as const)
+    .map((k) => ({ value: k, label: KIND_LABEL[k], icon: KIND_ICON[k] })),
+}];
+// Source is what makes COMMENT attachments first-class: in Airtable a file on a comment is
+// invisible to every field-based tool, and it is a filterable peer here.
+const sourceGroups: FacetGroup[] = [{ items: [
+  { value: 'field', label: 'Field' },
+  { value: 'comment', label: 'Comment' },
+] }];
+const providers = [...new Map(assets.filter((a) => a.storage.provider)
+  .map((a) => [a.storage.provider!, a.storage.providerLabel ?? a.storage.provider!])).entries()];
+const storeGroups: FacetGroup[] = [{ items: [
+  { value: 'baseout', label: 'Baseout' },
+  ...providers.map(([v, l]) => ({ value: v, label: l })),
+  { value: 'both', label: 'Both' },
+] }];
+// THRESHOLDS, not a range (see the header note). Values are MB; '' = Any.
+const sizeGroups: FacetGroup[] = [{ items: [
+  { value: '', label: 'Any size' },
+  { value: '1', label: 'Larger than 1 MB' },
+  { value: '10', label: 'Larger than 10 MB' },
+  { value: '100', label: 'Larger than 100 MB' },
+  { value: '1024', label: 'Larger than 1 GB' },
+] }];
+// "Captured in last run" replaces the spec's "new since last visit" divider: that needs per-user
+// read tracking we do not have and cannot show on fixtures, and no file browser was found that
+// ships one. This answers the same founder question from data we already hold.
+const eventPresets = lastSyncedAt ? [{ label: 'Captured in last run', from: lastSyncedAt }] : [];
+
+// The Where column's four per-segment glyphs, all from the ONE `entityIcon.ts` mapping — base,
+// table, field and record already have entries there, so nothing is invented for this column.
+const BASE_IC = entityIconMarkup('base', { extraClass: 'md-loc-ic' });
+const TABLE_IC = entityIconMarkup('table', { extraClass: 'md-loc-ic' });
+const FIELD_IC = entityIconMarkup('field', { extraClass: 'md-loc-ic' });
+const RECORD_IC = entityIconMarkup('record', { extraClass: 'md-loc-ic' });
+const SEP_IC = '<span class="iconify lucide--chevron-right size-3 md-loc-sep" aria-hidden="true"></span>';
+// The comment marker sits in the slot a field would occupy, so the trail keeps one shape. It is
+// INERT on purpose: a comment is not an entity you can open, and the founder's model says a
+// comment attachment genuinely has no field — the point is to STATE that, not to invent a segment.
+const COMMENT_LOC_IC = '<span class="iconify lucide--message-square-text size-3 md-loc-ic" aria-hidden="true"></span>';
+---
+
+<div class="md" data-datamedia data-synced={lastSyncedAt ?? ''}>
+  {assets.length > 0 ? (
+    <div class="md-card">
+      {/* The frame goes around the TABLE ONLY — it starts at the column-header band, exactly like
+          Schema Browse. The toolbar and the totals sit outside it as bare bands (Oleh, 2026-07-31,
+          revising the earlier "one card holds everything" build: putting the controls inside the
+          table's own frame made them read as part of the table's header).
+
+          Frames are on `.md-listwrap` / `.md-gallery` below, not here. Both are the PADDING-free
+          variant of the shared rule but must NOT clip: the sticky column header needs no
+          overflow-scrolling ancestor, or the nearest scrollport becomes the box and the header
+          stops sticking.
+
+          This comment lives INSIDE the div on purpose: as the first thing in the ternary branch it
+          is not JSX children but a bare `{…}` expression, and esbuild rejects it — the documented
+          "Astro comment inside an expression" trap. typecheck stayed green; only `astro build`
+          caught it. */}
+      {/* Toolbar — the shared `.sch-tb` frame, same construction as every other Data tab. A tab
+          does NOT get its own toolbar shape. */}
+      <div class="sch-tb md-filters">
+        {/* THE SEARCH SAYS WHAT IT SEARCHES, AND THE `/` SHORTCUT SAYS IT EXISTS (D11 / J06-F1).
+            The placeholder read `Search files` while the haystack was narrower still — filename,
+            storage label, kind — so `Sales CRM` returned "No files match these filters." with
+            `Sales CRM` printed on all 221 rows. The haystack is fixed below (`searchText`); this is
+            the half of the fix that stops the reader having to discover the breadth by trial.
+            `data-sch-search` is the hook `wireSectionTabs` looks for — DataView already passes
+            `searchSelector: '[data-sch-search]'`, so the `/` shortcut worked on the changelog tab
+            and silently did nothing on this one. Same correction D10 made across the changelogs. */}
+        <label class="input input-sm sch-tb-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" placeholder="Search files, records, fields…" data-md-search data-sch-search aria-label="Search files, records and fields" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+        <FacetFilter label="Type" name="mdkind" groups={kindGroups} />
+        {multiBase && <FacetFilter label="Bases" name="mdbase" groups={baseGroups} groupToggles />}
+        <FacetFilter label="Tables" name="mdtable" groups={tableGroups} />
+        <FacetFilter label="Fields" name="mdfield" groups={fieldGroups} />
+        <FacetFilter label="Source" name="mdsource" groups={sourceGroups} />
+        <FacetFilter label="Storage" name="mdstore" groups={storeGroups} />
+        <FacetFilter single label="Size" name="mdsize" groups={sizeGroups} labelTrigger />
+        <DateRangePicker name="mddate" presets={[7, 30, 90]} eventPresets={eventPresets} anchor={lastSyncedAt ?? null} />
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-md-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+        <div class="sch-tb-right">
+          <ExportControl tab="attachments" format="csv" noun="files" total={assets.length} rowSelector="[data-md-row]" />
+          {/* The cluster holds two different KINDS of control and the divider says so (Oleh,
+              2026-08-03): Export is an ACTION that leaves with your data, while Group by and the
+              projection switch only change how the same data is arranged on screen. The same
+              `.sch-tb-div` already separates search from the filters, so the row reads in three
+              parts rather than as one undifferentiated run of buttons. */}
+          <span class="sch-tb-div" aria-hidden="true"></span>
+          {/* GROUP BY LIVES IN THE RIGHT CLUSTER, NOT ON THE FILTER ROW (Oleh, 2026-08-03).
+              It first shipped at the end of the filters, which reads as a claim it narrows the set.
+              It does not: the filters change WHAT is in the list, this changes HOW the list is
+              arranged, and the toolbar grammar (`search │ filters … → right cluster`) already
+              encodes exactly that split. The precedent is Schema › Browse, which puts its
+              Tree / Flat mode switch in this same cluster — conceptually the identical control
+              (`None` is Flat, a grouping is Tree; see the Group-by note in the frontmatter).
+              Placed BETWEEN Export and the projection switch: Export is an action, these two are
+              display state, so the two "how this is shown" controls sit adjacent while the
+              projection switch keeps the far-right slot it holds on every other surface.
+              It stays an ordinary single-select FacetFilter — moving a control is not a reason to
+              give it a third shape on a row that already carries two.
+              Two behaviours the move must not touch, both keyed on the facet NAME and so
+              position-independent: Clear does not reset it (`facets` filters out `mdgroup`), and it
+              is absent from the `active` expression, so grouping alone never shows Clear nor flips
+              the totals sub-label. Grouping still applies to BOTH projections. */}
+          {/* `end` = open the menu right-aligned. Without it the panel is left-aligned to a trigger
+              that now sits near the right edge, so it ran off the viewport (Oleh saw it clipped).
+              FacetFilter already carries this prop for exactly this case — the fix is to use it,
+              not to nudge the panel with a bespoke offset. */}
+          <FacetFilter single end label="Group by" name="mdgroup" groups={groupGroups} labelTrigger />
+          {/* listing ⇄ gallery — the canonical segmented control, icon-only, far right of the
+              toolbar row (the near-universal placement). Explicitly NOT a tab: these are two
+              projections of ONE state, and switching must never reset a filter, sort or page. */}
+          <div class="join sch-modeswitch md-modes" role="group" aria-label="Projection">
+            <button type="button" class="btn btn-sm join-item sch-mode-active md-mode tooltip tooltip-bottom" data-md-view="list" data-tip="Listing" aria-label="Listing">
+              <span class="iconify lucide--list size-4" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="btn btn-sm join-item md-mode tooltip tooltip-bottom" data-md-view="grid" data-tip="Gallery" aria-label="Gallery">
+              <span class="iconify lucide--layout-grid size-4" aria-hidden="true"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Totals — three numbers as TEXT (`pattern-metric-tiles`, the shared .hm-kpi tiles). No bar,
+          no ring, no meter: a meter asserts a denominator this product does not have, and every
+          product that draws one hangs an Upgrade CTA off it. The sub-label names the filter state
+          in words, so "3.1 GB" is never ambiguous about what it is 3.1 GB OF. */}
+      <div class="hm-kpis hm-kpis-3 md-totals">
+        <div class="hm-kpi">
+          <div class="hm-kpi-top"><span class="hm-kpi-k">Files</span><span class="iconify lucide--paperclip hm-kpi-ic" aria-hidden="true"></span></div>
+          <span class="hm-kpi-v" data-md-tot-files>0</span>
+          <span class="hm-kpi-sub" data-md-tot-scope>in this Space</span>
+        </div>
+        <div class="hm-kpi">
+          <div class="hm-kpi-top"><span class="hm-kpi-k">Total size</span><span class="iconify lucide--hard-drive hm-kpi-ic" aria-hidden="true"></span></div>
+          <span class="hm-kpi-v" data-md-tot-size>0</span>
+          <span class="hm-kpi-sub" data-md-tot-note>across every captured file</span>
+        </div>
+        <div class="hm-kpi">
+          {/* Average is here because it answers "many small files or a few monsters" — the only
+              question the other two numbers cannot answer between them. */}
+          <div class="hm-kpi-top"><span class="hm-kpi-k">Average size</span><span class="iconify lucide--scale hm-kpi-ic" aria-hidden="true"></span></div>
+          <span class="hm-kpi-v" data-md-tot-avg>0</span>
+          <span class="hm-kpi-sub" data-md-tot-avgnote>per file</span>
+        </div>
+      </div>
+
+      {/* ── Listing (default projection) — the catalog table primitive at `table-sm` density with
+          click-sort headers. Size and date sort, because "what is big" and "what is new" are the
+          two questions this tab exists for. */}
+      {/* `data-narrow-pan` (S08-F4) — the shared narrow scroller and the `minmax(max-content, 1fr)`
+          track that keeps a header the same width as its rows once the container scrolls. The audit
+          found the attribute had gone to four Schema containers on 2026-08-11 and to none of the
+          four Data tabs; this is the third. `data-grid-fit` stays: it answers a different question
+          (how tall the scrollport is), and the two do not overlap. */}
+      <div class="tbl-frame md-listwrap" data-grid-fit data-narrow-pan data-md-listing>
+        <table class="table table-sm md-table" data-md-flat>
+          {/* `tbl-colhead` = the shared small-caps column-label treatment (global.css), the same
+              one the changelog grid and the comments feed wear. */}
+          <thead class="tbl-colhead">
+            <tr>
+              <th class="md-th-thumb"><span class="sr-only">Preview</span></th>
+              <th><button type="button" class="md-sort" data-md-sort="name">Filename<span class="iconify lucide--chevrons-up-down size-3 md-sort-ic" aria-hidden="true"></span></button></th>
+              <th><button type="button" class="md-sort" data-md-sort="kind">Type<span class="iconify lucide--chevrons-up-down size-3 md-sort-ic" aria-hidden="true"></span></button></th>
+              <th class="md-num md-th-size"><button type="button" class="md-sort" data-md-sort="size">Size<span class="iconify lucide--chevrons-up-down size-3 md-sort-ic" aria-hidden="true"></span></button></th>
+              {/* NO "Source" column. It was 85px restating what the column beside it already draws:
+                  a FIELD attachment's trail carries a field segment, a COMMENT attachment's does
+                  not, because Airtable's comment payload has no field id. The distinction is
+                  therefore visible in Where on every row, and a column that repeats its neighbour
+                  in one word is the cheapest 85px on a listing that did not fit a 1440 laptop
+                  (measured 2026-08-03: 1407px of table into 1136px of page, so the PAGE scrolled
+                  sideways). The Source FACET stays in the toolbar — filtering to comment
+                  attachments is the thing this surface exists to make possible, and that is a
+                  different job from printing the answer 50 times. `data-source` /
+                  `data-sourcelabel` stay on the row: the facet filters on the first and the file
+                  panel prints "Comment attachment" from the second. */}
+              {/* WHERE sorts by the RECORD — the last segment of the trail, which is the segment
+                  the founder named (video 2026-08-03: "if we could sort by the where … then it
+                  would sort by the record name … it would at least give you everything sorted by
+                  record"). Sorting on the whole trail string would sort by BASE, which the base
+                  facet and Group-by-base already answer; the record is the level nothing else on
+                  this tab clusters by. */}
+              <th><button type="button" class="md-sort" data-md-sort="where">Where<span class="iconify lucide--chevrons-up-down size-3 md-sort-ic" aria-hidden="true"></span></button></th>
+              <th class="md-th-store"><button type="button" class="md-sort" data-md-sort="storage">Storage<span class="iconify lucide--chevrons-up-down size-3 md-sort-ic" aria-hidden="true"></span></button></th>
+              <th class="md-th-when"><button type="button" class="md-sort" data-md-sort="date">In backup<span class="iconify lucide--chevrons-up-down size-3 md-sort-ic" aria-hidden="true"></span></button></th>
+              <th class="md-th-go"></th>
+            </tr>
+          </thead>
+          <tbody data-md-rows>
+            {rows.map((r) => (
+              <tr
+                class="md-row row-clickable"
+                data-md-row
+                data-id={r.a.id}
+                data-name={r.name}
+                data-kind={r.a.kind}
+                data-kindlabel={r.kindLabel}
+                data-kindicon={r.kindIcon}
+                data-source={r.a.sourceKind}
+                data-sourcelabel={r.sourceLabel}
+                data-size={r.a.size ?? ''}
+                data-sizetext={r.sizeText}
+                data-date={r.a.capturedAt}
+                data-datetext={r.capturedText}
+                data-lastseen={r.a.lastSeenAt}
+                data-bases={r.src.bi}
+                data-tables={r.src.ti}
+                {/* The ＋ picker groups by TABLE and needs the NAME, not just the id — reading it
+                    back out of the Where-trail markup would couple the picker to that layout. */}
+                data-basename={r.src.b}
+                data-tablename={r.src.t}
+                data-fields={r.src.fi ?? ''}
+                data-store={r.tokens}
+                data-storelabel={r.storeLabel}
+                data-baseout={r.a.storage.baseout ? '1' : ''}
+                data-provider={r.a.storage.providerLabel ?? ''}
+                data-type={r.a.type ?? ''}
+                data-thumb={r.a.thumbUrl ?? ''}
+                data-dims={r.a.width && r.a.height ? `${r.a.width} × ${r.a.height}` : ''}
+                data-src={JSON.stringify(r.src)}
+              >
+                <td class="md-td-thumb"><MediaThumb asset={r.a} size="sm" tip={false} /></td>
+                <td class="md-c-name"><span class="md-name">{r.name}</span></td>
+                {/* Glyph + label. Our own rule allows a glyph where the row KIND varies, and here
+                    it does. On a row with NO preview this category icon does sit near the
+                    thumbnail's format glyph — accepted, because on a row WITH a preview the
+                    thumbnail is a picture and this column is the only place the category appears
+                    at all. */}
+                <td class="md-c-kind"><span class="md-kind"><span class={`iconify ${r.kindIcon} size-4 md-kind-ic`} aria-hidden="true"></span>{r.kindLabel}</span></td>
+                {/* An absent size is Airtable withholding it, not zero — an em dash says so. */}
+                <td class="md-num md-td-size mono-data">{r.sizeText || '—'}</td>
+                {/* WHERE — the file's ONE source, rendered in full: base › table › field › record,
+                    or base › table › record when the attachment hangs off a comment (Airtable's
+                    comment payload carries no field id, so that segment is genuinely absent).
+
+                    Every segment is a control, and EVERY one of them lands in MediaPanel's OWN
+                    stack: base / table / field via `data-md-openentity` → `data:openMediaEntity`,
+                    the record via `data-md-openrec` → `data:openMediaRecord`. Deliberately NOT
+                    `data-entity-open` (which the Schema EntityPanel answers from a document-level
+                    delegate) and never `data:openRecord` (the separate RecordPanel drawer): either
+                    one raises a SECOND fixed drawer over the first — two rails, two ＋ buttons.
+                    MediaPanel opens the full entity panel itself, in the stack you are already in.
+
+                    Truncation order follows the changelog grid's rule: the BASE never truncates (it
+                    is the orientation anchor), the table yields first — see `.md-loc-t` below. */}
+                <td class="md-c-trail">
+                  <div class="md-trailrow">
+                    <span class="md-loc">
+                      {/* Every segment degrades the way the record does: a name we cannot resolve
+                          renders WORDED and inert, never the key. The record got this treatment
+                          first; base / table / field printed `tbl…` / `fld…` until review caught
+                          that the new segments had quietly reintroduced the raw-identifier leak.
+                          A base or table can leave the backup schema exactly as a record can. */}
+                      {r.src.b ? (
+                        <button type="button" class="md-locseg md-loc-b" data-md-openentity={r.src.bi}><Fragment set:html={BASE_IC} /><span class="md-locname">{r.src.b}</span></button>
+                      ) : (
+                        <span class="md-locseg md-loc-b md-loc-gone"><Fragment set:html={BASE_IC} /><span class="md-locname">Base not in this backup</span></span>
+                      )}
+                      <Fragment set:html={SEP_IC} />
+                      {r.src.t ? (
+                        <button type="button" class="md-locseg md-loc-t" data-md-openentity={r.src.ti}><Fragment set:html={TABLE_IC} /><span class="md-locname">{r.src.t}</span></button>
+                      ) : (
+                        <span class="md-locseg md-loc-t md-loc-gone"><Fragment set:html={TABLE_IC} /><span class="md-locname">Table not in this backup</span></span>
+                      )}
+                      <Fragment set:html={SEP_IC} />
+                      {r.src.fi ? (
+                        r.src.f ? (
+                          <button type="button" class="md-locseg md-loc-f" data-md-openentity={r.src.fi}><Fragment set:html={FIELD_IC} /><span class="md-locname">{r.src.f}</span></button>
+                        ) : (
+                          <span class="md-locseg md-loc-f md-loc-gone"><Fragment set:html={FIELD_IC} /><span class="md-locname">Field not in this backup</span></span>
+                        )
+                      ) : (
+                        <span class="md-locseg md-loc-c tooltip" data-tip="This file came in on a comment, not a field"><Fragment set:html={COMMENT_LOC_IC} /><span class="md-locname">Comment</span></span>
+                      )}
+                      <Fragment set:html={SEP_IC} />
+                      {r.src.r ? (
+                        <button type="button" class="md-locseg md-loc-r" data-md-openrec={r.src.ri}><Fragment set:html={RECORD_IC} /><span class="md-locname">{r.src.r}</span></button>
+                      ) : (
+                        /* No primary value → the record is not in this backup. Say that, never the
+                           key: `rec_tblDeals_missing` on screen is the raw-identifier leak the
+                           Comments work established a rule against. Inert, because there is
+                           nothing to open. */
+                        <span class="md-locseg md-loc-r md-loc-gone"><Fragment set:html={RECORD_IC} /><span class="md-locname">Record not in this backup</span></span>
+                      )}
+                    </span>
+                  </div>
+                </td>
+                {/* Decision 9 STANDS — where the bytes live is still legible on the ROW, the
+                    visible answer to Airtable's expiring URLs. Its WIDTH changed when the words
+                    became glyphs, and the glyphs then became the real brand MARKS (2026-08-03).
+                    Neither change touched what this cell says: the full wording is on the daisyUI
+                    `tooltip` (never a native `title=`) AND in a visually-hidden span, so the
+                    accessibility tree reads "Baseout + Google Drive" exactly as the column did
+                    when it printed those words — this is not an icon-only cell to a screen reader,
+                    it is a labelled one that happens to draw a mark.
+                    `set:html` because the marks are an <img> pair (Baseout is theme-paired) built
+                    by the shared `storeMarksHtml`; the string is composed from fixed asset paths
+                    and literal class names, never from asset data. */}
+                <td class="md-c-store">
+                  <span class="md-store tooltip tooltip-left" data-tip={r.storeLabel}>
+                    <Fragment set:html={r.storeMarks} />
+                    <span class="sr-only">{r.storeLabel}</span>
+                  </span>
+                </td>
+                <td class="md-num mono-data md-c-date">{r.capturedText}</td>
+                <td class="md-td-go"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {/* GROUPED listing lives HERE, as a sibling of the flat table and INSIDE the same wrapper,
+            so the one pager below stays the pager of the whole list in both arrangements (Oleh
+            2026-08-03, matching Schema › Automations). While grouping is on, the flat table is
+            hidden and this wrapper's own frame is neutralised (`.is-grouped`) — each group card
+            carries its own frame, exactly like `.au-group`. */}
+        <div class="grp-list" data-md-groups hidden></div>
+        {/* ONE PAGER LADDER (D11 / J06-F12). This was `25 / 50 / 100 @50` — a third vocabulary
+            inside one section, against `10 / 20 / 50 @20` on both changelogs and on Comments. The
+            ladder is the changelogs', because they are the reference surfaces and three of the four
+            feeds already agreed on it. The gallery below keeps `24 / 48 / 96`; that is the ONE
+            documented exception and it is now written into the catalog rather than left as a third
+            undocumented set — see `pattern-media-gallery`. */}
+        <TablePager name="mdlist" sizes={[10, 20, 50]} selected={20} />
+      </div>
+
+      {/* ── Gallery — the SAME rows, drawn as tiles (`pattern-media-gallery`). Built at runtime from
+          the listing rows so the two projections cannot drift and the volume fixture does not ship
+          10,000 objects twice. Fixed tile height, fixed track, no masonry, no hover-overlay verbs:
+          a tile opens the same panel a row opens. */}
+      <div class="tbl-frame md-gallery" data-md-gallery hidden>
+        <div class="md-grid" data-md-tiles></div>
+        {/* The gallery's grouped arrangement — the SAME group cards the listing draws, each holding
+            its own tile grid instead of its own table. Same reason it is a sibling: one pager. */}
+        <div class="grp-list" data-md-ggroups hidden></div>
+        <TablePager name="mdgrid" sizes={[24, 48, 96]} selected={48} />
+      </div>
+
+      {/* Two absences, two sentences. Collapsing them is how a working filter gets read as a
+          broken backup. */}
+      <div class="md-nomatch" data-md-nomatch hidden>
+        <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
+        <p>No files match these filters.</p>
+        {/* THE THIRD SENTENCE. A comment attachment hangs off no field (Airtable's comment payload
+            carries no field id), so the moment the Fields facet is doing anything, every comment
+            file is outside the question being asked — which on screen looks exactly like a backup
+            that lost them. This line, shown only while that facet is active, is the difference
+            between a filter the user understands and a bug they report. It names the cause and the
+            undo; it does not apologise. */}
+        <p class="md-nomatch-note" data-md-nomatch-field hidden>Comment attachments have no field, so a Fields filter leaves them out. Clear <strong>Fields</strong> to bring them back.</p>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-md-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+      </div>
+    </div>
+  ) : (
+    <EmptyState
+      icon="lucide--paperclip"
+      title="No attachments captured yet"
+      description="Files attached to records and comments in Airtable are downloaded with each backup and listed here — Airtable's own attachment links expire about two hours after they are issued, so the copy Baseout keeps is the one that lasts."
+    />
+  )}
+</div>
+
+<style is:global>
+  /* Structural pieces come from the shared frames: `.sch-tb` (toolbar), `.hm-kpi*` (metric tiles),
+     `.tpg` (pager), `.row-clickable`/`.row-go` (row actions), `.md-thumb` (MediaThumb, is:global).
+     Only what is genuinely this tab's own lives here. `.md-grid`/`.md-tile` are NOT here — the
+     gallery body is innerHTML at runtime, so those rules must be global (see the second block). */
+  .md { display: flex; flex-direction: column; gap: 16px; }
+  /* No padding and no border here any more: the card is just the vertical rhythm between the
+     toolbar, the totals and the framed table. 16px keeps it on the 4px grid. */
+  .md-card { display: flex; flex-direction: column; gap: 16px; }
+  /* The totals are their own object again now that they sit OUTSIDE the table's frame — the
+     catalog `.hm-kpi` tiles keep their own border, exactly as on Space Home. */
+  .md-totals { margin-top: 0; }
+
+  /* The table's frame: identity only (border · radius · background from `.tbl-frame`), never
+     `overflow`, because a clipping ancestor would make itself the scrollport and kill the sticky
+     column header below. Inner padding is the table's own cell padding. */
+  /*
+   * The scrollport this box spent two rounds NOT getting (2026-08-03), now built — see lib/gridFit.ts.
+   * The note that stood here listed three reasons a one-line `overflow-x: auto` was not the fix, and
+   * they were right; each is answered rather than ignored:
+   *   · the pager scrolling away with the rows — it is not inside this box, it is a later sibling,
+   *     and gridFit reserves the height of everything that follows;
+   *   · the offset being a magic number coupled to the topbar + tabs + toolbar + totals heights —
+   *     it is measured from this element's own document position and re-measured whenever anything
+   *     above it resizes, so there is no number to drift;
+   *   · one tab scrolling differently from the rest — the module is shared, and Records is on it too.
+   * With a real vertical scrollport, `position: sticky` on the header resolves against THIS box and
+   * horizontal scrolling comes for free, which was the conclusion that note reached.
+   */
+  .md-listwrap { width: 100%; }
+  .md-gallery { padding: 16px; }
+  /* GROUPED: the wrapper stops being a frame and becomes a plain stack, because each group card
+     brings its own (`.grp`, the `.au-group` treatment). A frame around framed cards is the
+     "band inside one continuous table" look this rebuild replaced, one level out. The pager stays
+     inside the wrapper either way, so it remains the pager of the WHOLE list.
+     Two classes deep so it outranks `.tbl-frame` (one class) without `!important`. */
+  .md-listwrap.is-grouped, .md-gallery.is-grouped { border: 0; background: none; padding: 0; }
+  /* `max-content` + `min-width: 100%`, so the table STOPS SQUEEZING and starts panning.
+     `width: 100%` meant auto layout distributed a shortfall across the fixed columns instead of
+     overflowing the wrapper, which is why the three header fixes below did not take: asked for
+     6.25rem, Size resolved to 100 and Storage to 78 against the 84 it was given. A column that is
+     told a width and then given less is not a budget, it is a rounding error with a comment.
+     `.md-listwrap` has carried `overflow-x: auto` all along — it simply never had anything to
+     scroll, because the table refused to be wider than it. This is the same answer Automations and
+     Relationships took: columns keep what they need, the container pans. */
+  .md-table { font-size: var(--t-14); width: max-content; min-width: 100%; }
+  /* Sticky header — the table scrolls inside the PAGE, not inside its own box, so the header
+     sticks to the viewport-level scroll. This is why the card must not clip: an
+     `overflow: hidden` ancestor would become the nearest scrollport and kill this silently.
+     The band background is base-200 (the distinct header band the rest of the app has); this
+     is the ONLY rule that sets a background on these cells — nothing later re-sets it. */
+  .md-table thead th { position: sticky; top: 0; z-index: 2; background: var(--color-base-200); }
+  /* EVERY cell is one line. A dense admin table is scannable because the row height is constant,
+     and the only thing that ever broke that here was a cell wrapping — measured 49 / 53 / 56px
+     across the first ten rows before this rule (2026-07-31). Each cell below either truncates with
+     an ellipsis or is short by construction, so nothing is lost to the clip. */
+  .md-table tbody td { white-space: nowrap; }
+  /* The floor the 32px thumbnail + table-sm's 8px vertical padding already produce (32+16 = 48;
+     49px on screen once the row's 1px bottom border is counted). Stated rather than inferred, so a
+     later cell change cannot silently shorten the row.
+
+     The two `:not()`s this rule used to carry are GONE with the header band: a group header is no
+     longer a <tr> inside this table, it is the head of its own card, and the "Show N more" row no
+     longer exists at all. So the rule is unconditional again — and it deliberately still reaches
+     the rows a group card holds, because Astro scopes it by appending `[data-astro-cid-…]` to the
+     `tr` ONLY (never to the ancestors). The rows are build-time nodes and carry that attribute
+     wherever they are moved, and a group card's table carries the `.md-table` class, so every
+     ancestor in the selector still matches: one 49px row height in both arrangements, from one
+     rule. */
+  .md-table tbody tr { height: 48px; }
+  .md-th-thumb { width: 48px; }
+  .md-th-go { width: 20px; }
+  /* The Size column IS the storage-bill lens — the one column this listing exists to be sorted by.
+     `tabular-nums` is set HERE rather than left to `.mono-data` on the cell, so the HEADER aligns
+     with its own column too and no future markup change can drop it. */
+  /* `.md-num` and the `.md-sort*` set moved to the is:global block below — a group card's column
+     header row is built at RUNTIME and carries both, and a scoped rule would never reach it. They
+     are `.md-`-prefixed and nothing in daisyUI competes for those names, so global costs nothing. */
+  /* Sized for the longest realistic value ("999.9 MB" ≈ 65px at 14px) plus table-sm's 12px side
+     padding, on the 4px grid. Auto table layout had settled it at 66px, which split "2.4 MB" over
+     two lines. */
+  /* 6rem, not 7: at 1440 the column budget cleared its container by TWO pixels, which is not a fit —
+     any label change, longer locale or scrollbar width would have put the page back into horizontal
+     scroll. The longest realistic value ("999.9 MB") measures ~86px against 96px here, so the extra
+     rem was slack, not safety. Measured after the change: 18px of headroom. */
+  /* Storage asks for its label's width and no more, so that any slack the table has left over goes
+     to Where (the column that truncates) rather than to a column holding two 16px glyphs. `width`
+     in auto layout is a request: if "STORAGE" measures wider, min-content still wins, which is the
+     correct failure. Still 5rem after the header became a sort BUTTON on 2026-08-04: the sort glyph
+     is out of flow (see `.md-sort-ic` in the global block) and adds nothing to this column's
+     intrinsic width, so the label is still the only thing this column is paying for. */
+  .md-th-store { width: 5rem; }
+  .md-th-size, .md-td-size { width: 6rem; min-width: 6rem; }
+  /* `In backup` had no class, so it was the one column with no way to answer back when the
+     `Captured` → `In backup` rename (J06-F14) made its label longer. It has one now and asks for
+     what the label needs — 5.75rem — rather than taking whatever auto layout has left. Its VALUES
+     were never the constraint; the heading is the widest thing in this column. */
+  .md-th-when { width: 5.75rem; }
+
+  .md-td-thumb { width: 48px; padding-right: 0; }
+  .md-td-go { width: 20px; }
+  /* CAPPED at 15rem / 240px (was 22rem / 352px, and it measured all 352). Filename was simply the
+     widest column on the listing, it already ellipsizes, and 240px still shows ~34 characters —
+     enough to tell two exports of the same report apart, which is the job. The full name is the
+     panel's first line and the row's own tooltip-free hover target. Part of the 2026-08-03 budget
+     that got the table under a 1440 laptop without shortening the source trail.
+     LOAD-BEARING, and measured: with this cap the listing is 1134px inside a 1136px container, so
+     it is the 2px that keep the page off a horizontal scrollbar. Deleting or loosening it lets
+     Filename resolve to 428px and the page scrolls sideways by 170px — which is exactly what a
+     malformed comment above this rule caused on 2026-08-04, with both gates green. */
+  .md-c-name { max-width: 15rem; }
+  .md-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 560; }
+  .md-c-kind, .md-c-store { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  /* Storage is now MARKS (see the cell). Its floor is the "STORAGE" column label itself, not the
+     content — two 16px marks and a 4px gap are 36px, the label is wider — so the column costs
+     roughly 78px instead of the 148px "Baseout + Google Drive" was buying. `.tooltip` sets
+     `display: inline-block`, which is why the wrapper is an inner span and never the <td>.
+     The selector is two classes deep ON PURPOSE: daisyUI's own `.tooltip` sets `display:
+     inline-block` at the same specificity, so a bare `.md-store` would be a source-order coin
+     flip between two equal rules. */
+  .md-c-store .md-store { display: inline-flex; align-items: center; gap: 4px; line-height: 1; }
+  /* The marks THEMSELVES are styled in the is:global block below, not here: they arrive through
+     `set:html`, and Astro only stamps its scope attribute on elements it rendered itself. A scoped
+     rule for them would silently never apply — both gates would still be green. */
+  /* Glyph + label on one baseline. The flex lives on an INNER span, never on the <td>: a
+     `display: flex` table cell drops out of the table layout algorithm and takes its column
+     width with it. The icon is quieter than the word — the word is the value, the glyph is
+     the scanning aid. */
+  .md-kind { display: inline-flex; align-items: center; gap: 8px; }
+  .md-kind-ic { flex: none; opacity: .7; }
+  .md-c-date { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  /* Four levels need more room than the two this column used to carry, and it is now the column
+     that answers the tab's central question ("what exactly is this file attached to"). 26rem on the
+     4px grid; the segments below truncate inside it rather than wrapping. */
+  .md-c-trail { max-width: 26rem; }
+  .md-trailrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  /* `gap: 0` on purpose: the 4px rhythm between a name and its chevron now comes from each
+     segment's own 4px side padding, so the hover wash has a hit box without any negative margin
+     eating the gap (a -4px inline margin against a 4px gap made adjacent segments overlap). */
+  .md-loc { display: inline-flex; align-items: center; gap: 0; min-width: 0; flex: 0 1 auto; overflow: hidden; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .md-loc-sep { opacity: .4; flex: none; }
+  .md-loc-ic { opacity: .7; flex: none; }
+  /* A navigating segment is a REAL control, not text that happens to respond — a pointer plus a
+     ghost-hover wash, the same treatment the panel's crumbs wear. Only the BLOCK margin is negative
+     (it cancels the vertical padding), so the 48px row height is unchanged. */
+  .md-locseg { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font: inherit; color: inherit; border-radius: var(--r-4); padding: 2px 4px; margin-block: -2px; } /* ds-ok: 2px optical hit-box inset on a 4px-grid control */
+  button.md-locseg { cursor: pointer; }
+  button.md-locseg:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  button.md-locseg:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .md-locname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* TRUNCATION ORDER (the rule the changelog grid set). The BASE never truncates — it is the
+     orientation anchor, and a half-named base tells you nothing about where you are. The TABLE
+     yields first (shrink 6), then the field (3), then the record (1): the record's primary value is
+     the most specific thing in the trail and the last thing worth losing. */
+  .md-loc-b { flex: 0 0 auto; }
+  .md-loc-t { flex: 0 6 auto; min-width: 0; }
+  .md-loc-f { flex: 0 3 auto; min-width: 0; }
+  .md-loc-r { flex: 0 1 auto; min-width: 0; }
+  /* The record left backup scope: stated in words, muted, and not a control. */
+  /* The comment marker reads as a FACT, not a target: muted, no hover, default cursor. It shares
+     the segment shape so the trail does not change rhythm between a field file and a comment file. */
+  .md-locseg.md-loc-c { color: oklch(from var(--color-base-content) l c h / .65); cursor: default; }
+  .md-locseg.md-loc-c:hover { background: none; }
+
+  .md-loc-gone { font-style: italic; color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .md-nomatch { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 48px 24px; }
+  .md-nomatch p { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); }
+  /* Quieter and one step down the 14/12 scale — it explains the sentence above it, it is not a
+     second headline. `max-width` keeps it to one comfortable measure rather than a full-width line
+     under a centred stack. Selector is `p.md-nomatch-note` INSIDE `.md-nomatch` so it outranks the
+     14px rule directly above — a bare `.md-nomatch-note` is one class against one class + one
+     element and silently loses. */
+  .md-nomatch p.md-nomatch-note { font-size: var(--t-12); max-width: 52ch; opacity: .85; }
+  .md-nomatch p.md-nomatch-note[hidden] { display: none; }
+  /* PLACED LAST, and that placement is the fix rather than tidiness: this block first sat beside
+     `.md-table`, which is ABOVE `.md-table tbody tr { height: 48px }` and `.md-c-name`, so at equal
+     specificity it lost on source order and did nothing — the row stayed 49px and Filename stayed
+     240. A media query changes WHEN a rule is considered, never whether it wins. */
+  /* ── NARROW ────────────────────────────────────────────────────────────────────────────────
+     Eight columns will not fit 459px at any size that keeps them readable, so this pans like every
+     other listing in the app. What changes is only what a narrow row can afford: the source trail
+     is the widest column here and the one that already truncates, so it gives the most; the row
+     drops to the 40px rhythm the family uses below the boundary. */
+  @media (max-width: 1279.98px) {
+    /* NO ROW-HEIGHT RULE HERE, and the absence is deliberate. The other listings drop to a 40px
+       rhythm below the boundary; this one measured 49 before and after an attempt to force 40,
+       because the row's height is not the rule's to give — a 48px PREVIEW THUMBNAIL sets it, and
+       the thumbnail is the reason an attachments listing is a listing rather than a table of names.
+       A rule that does nothing is worse than no rule: it reads as a decision that was made. */
+    .md-table :is(th, td) { padding-inline: 8px; }
+    /* The source trail measured 398px — the widest column here by far, and the biggest single
+       contributor to the pan. It is a base ▸ table ▸ field ▸ record path and it already truncates
+       from the RIGHT end (the base is the orientation anchor and never yields), so 15rem keeps the
+       part that says where you are and drops the part the panel repeats. Pan 2.2 → 1.7 screens. */
+    .md-c-trail { max-width: 15rem; }
+    /* Filename's cap, tightened. `.md-c-name` is the cell's own `max-width` (15rem at desktop, the
+       measured 2026-08-03 budget); 11rem still shows ~25 characters, which is enough to tell two
+       exports of the same report apart — the job the cap was sized for — and the full name is the
+       panel's first line either way. The source trail is not touched: it is the column that carries
+       WHERE a file lives, and shortening it at the width where orientation matters most would be
+       the wrong saving. */
+    .md-c-name { max-width: 11rem; }
+  }
+
+</style>
+
+<style is:global>
+  /* is:global: the gallery body is written as innerHTML, which a scoped style block never reaches.
+     Unique `.md-` prefix, per the app's convention for runtime-built markup. */
+  .md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 12px; }
+  /* `[hidden]` is a UA rule (one attribute), so a CLASS that sets display beats it and the element
+     stays visible. Grouping hides both bodies, so both need this stated. */
+  .md-grid[hidden], .md-table[hidden] { display: none; }
+  /* Right-aligned numeric cells + the sortable column-header button. Global rather than scoped
+     because a group card's header row is runtime markup (see the note in the scoped block).
+     Each selector keeps a `.md-table` ancestor so it is (0,2,0) — the same specificity the scoped
+     version had via its `[data-astro-cid-…]`, so nothing in daisyUI's own table rules can now
+     outrank it. Both the flat table and every group card's table carry `.md-table`. */
+  .md-table .md-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .md-table .md-sort { display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; cursor: pointer; position: relative; }
+  .md-table .md-sort:hover { color: var(--color-base-content); }
+  /* The sort glyph is OUT OF FLOW, and that is load-bearing rather than cosmetic.
+     This listing sits 2px inside its container at 1440 (1134 in 1136), and two of the columns —
+     Storage and Captured — are sized by their HEADER, not their cells. So an in-flow 12px glyph
+     plus its 4px gap put 16px onto each of those two columns and pushed the page into horizontal
+     scroll (measured 2026-08-04: +32px in the flat table). Absolute positioning means the
+     affordance costs the column NOTHING: every header's intrinsic width is its label, exactly as
+     it was when three of these columns were plain text.
+     It hangs into the cell's own 12px padding-right, 4px clear of the label and 8px clear of the
+     next column's text, so it never collides with the neighbour. `left: 100%` resolves against the
+     button (hence `position: relative` above), never against the sticky <th>.
+     All SIX headers are treated identically — the two added on 2026-08-04 are not special-cased,
+     and the neutral chevron still shows on unsorted columns, so nothing shifts when the sort moves
+     and no column silently becomes the wide one. */
+  .md-table .md-sort-ic {
+    opacity: .35;
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    margin-left: 4px;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .md-table .md-sort.is-sorted .md-sort-ic { opacity: .9; color: var(--color-primary); }
+  /* ── STORAGE MARKS ────────────────────────────────────────────────────────────────────────────
+     is:global because the cell's contents come from `storeMarksHtml` via `set:html`, which Astro
+     does not stamp with a scope attribute — a scoped rule here would apply to nothing while both
+     gates stayed green. Each selector keeps the `.md-store` wrapper as an ancestor so it lands at
+     (0,2,0), the same weight the scoped version carried through its `[data-astro-cid-…]`.
+
+     16px on both paths: `size-4` is what the Lucide fallbacks carry, and the brand <img>s state the
+     same box in CSS as well as in their width/height attributes — an SVG with no intrinsic size
+     lays out at its viewBox otherwise, which would move a row height that is 49px and is not this
+     change's to move. No `opacity` on a brand mark: its colour is the entire reason it is there,
+     unlike the grey glyph it replaced (which keeps its .7, being decoration beside a word). */
+  .md-store .md-store-ic { flex: none; opacity: .7; }
+  .md-store .md-store-mk { flex: none; width: 16px; height: 16px; object-fit: contain; }
+  .md-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; cursor: pointer; text-align: left; }
+  .md-tile:hover .md-thumb { border-color: var(--color-primary); }
+  /* One line, clamped, 14px — then a single 12px meta line in the `PDF · 13.5 KB` form. The two-step
+     14/12 scale the Data surfaces already use; no third size creeps in here. */
+  .md-tile-name { font-size: var(--t-14); font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .md-tile-meta { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* THE RECORD LINE (D11 / J06-F4) — a second 12px meta line, so the gallery answers "which record
+     is this on" without the reader switching back to the listing. No third type size: it is the
+     same 12px the line above it uses, one step quieter still, because the format/size line is the
+     tile's own description and this is where the file LIVES.
+     `.md-loc-gone` is restated here rather than reused from the scoped block: the tiles are
+     innerHTML, and Astro stamps its scope attribute only on what it rendered itself, so the scoped
+     rule reaches the LISTING's copy of that class and never this one. Same italic + .55 register,
+     which is the point — one absence, worded and drawn one way on both projections. */
+  .md-tile-loc { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .md-tile-loc.md-loc-gone { font-style: italic; color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* ── GROUP CHROME (Group by: base / table / field) ────────────────────────────────────────────
+     THE CARD ITSELF IS NO LONGER HERE (2026-08-04). `.grp-list` / `.grp` / `.grp-head` /
+     `.grp-caret` / `.grp-ic` / `.grp-name` / `.grp-meta` / `.grp-body` moved to styles/global.css,
+     because Data ▸ Comments was about to become the THIRD copy of the same card (after
+     SchemaAutomations' `.au-group` and this file's `.md-group`) and a third copy is how the first
+     two drift. The markup here is unchanged in shape — only the class names now point at the shared
+     block. What stays below is what is genuinely THIS listing's: the meta line's own two parts, the
+     card table's fixed columns, and the gallery card's tile-grid inset.
+
+     THE PATTERN IS SCHEMA › AUTOMATIONS, not a band inside one continuous table — Oleh rejected the
+     band on 2026-08-03 and named Automations as the look. The rationale for each shared metric now
+     lives beside the rules, in global.css.
+
+     ONE header treatment, two hosts: the listing's card holds a <table>, the gallery's holds a tile
+     grid, and both build the header from the SAME `headHtml()`. Two projections of one state must
+     not grow two different-looking headers of the same thing. */
+
+  /* THE ONE DELIBERATE DEVIATION from Automations, which has nothing on the right of its header:
+     the count AND the total bytes of the group, from the same `fmtBytes` / `toLocaleString()` the
+     totals strip uses. That is what makes the storage-bill lens work per base, per table and per
+     field — the question the strip answers for the whole filtered set, asked one level down, which
+     is the reason grouping was asked for at all. It describes the WHOLE group, never the slice this
+     page happens to show (see `paintGroups`). The shared `.grp-meta` supplies the placement and the
+     type; these two rules are only what this surface puts INSIDE it.
+     Automations' plain count beside the NAME is deliberately not also drawn: it would print the
+     same number twice in one 32px header. This meta line is that count, plus the size. */
+  .md-ghead-sep { opacity: .4; }
+  .md-ghead-sz { font-weight: 600; color: oklch(from var(--color-base-content) l c h / .85); }
+  /* "continued" — the marker D10 gave a split day heading, in the same muted-italic register the
+     app uses for a stated absence. It is a fact about the PAGE, not about the group, so it is the
+     quietest thing in the meta line. */
+  .md-ghead-cont { font-style: italic; color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* Each card carries its OWN column-header row (Automations does the same). Two consequences it
+     also settles for us: `table-layout: fixed` + explicit column widths, or every card would size
+     its columns from its own content and the cards would not line up; and the header is NOT sticky
+     — it belongs to its card, and a stack of sticky bands in one viewport-level scrollport would
+     pile on top of each other. `.tbl-colhead` (global) supplies the small-caps type. */
+  .md-gtbl { table-layout: fixed; }
+  /* THE SEPARATOR ABOVE THE COLUMN LABELS BELONGS TO THE COLUMN ROW, NOT TO THE HEADER BAND.
+     Taken from the source this card was copied from — SchemaAutomations.astro,
+     `.au-tbl thead th { … border-top: 1px solid oklch(from var(--color-base-300) l c h / .65) }` —
+     where `thead th` and `td` carry the SAME `border-top`, i.e. every row in the card draws its own
+     top rule and the column row is just the first of them. The copy landed here with only the
+     bottom half of that (`border-bottom`), so the labels floated directly on the tinted title band
+     with nothing between them (Oleh, 2026-08-03: "у хедера з назвами колонок немає зверху лінії").
+     Stated as border-TOP on the same element Automations states it on, so the two surfaces cannot
+     drift apart again: a change to the rule has one obvious counterpart to make.
+     Token converted, exactly as this card's other Automations metrics were (rem → px above): the
+     line uses THIS card's existing hairline, `var(--color-base-300)`, so the column row is bracketed
+     by two identical rules rather than a .6-alpha one above and a solid one below.
+     Row rhythm is untouched — this adds 1px to the HEADER's height, and `.md-table tbody tr`
+     (49px on screen, 48px for a card's last row where daisyUI drops the bottom border) is a
+     separate rule that this selector never reaches. */
+  .md-gtbl thead th {
+    background: var(--color-base-200);
+    border-top: 1px solid var(--color-base-300);
+    border-bottom: 1px solid var(--color-base-300);
+  }
+  /* Column widths, in the same order as the flat table's <thead>, matched to the widths that table
+     already asks for. Where (5th) is left to take the remainder — it is the column that truncates. */
+  .md-gcol-thumb { width: 48px; }
+  .md-gcol-name { width: 240px; }
+  .md-gcol-kind { width: 96px; }
+  .md-gcol-size { width: 96px; }
+  .md-gcol-store { width: 80px; }
+  .md-gcol-date { width: 88px; }
+  .md-gcol-go { width: 20px; }
+
+  /* The gallery card's body: the same tile grid the ungrouped gallery draws, inset by the card. */
+  .md-gbody-grid { padding: 12px; }
+</style>
+
+<script>
+  import { mountRefineCollapse } from '../../lib/refineCollapse';
+  import { createPager } from '../ui/tablePager';
+  import { mediaThumbHtml, formatLabel } from './mediaFormat';
+  import { mountClipTips } from '../../lib/clipTips';
+  import { wireViewState, facetField, facetSingleField, dateRangeField, inputField } from '../ui/viewState';
+  import { wireRowKeys } from '../../lib/wireRowKeys';
+
+  function wireDataMedia() {
+    const rootEl = document.querySelector<HTMLElement>('[data-datamedia]');
+    if (!rootEl || rootEl.dataset.mdWired) return;
+    rootEl.dataset.mdWired = '1';
+    const listingEl = rootEl.querySelector<HTMLElement>('[data-md-listing]');
+    if (!listingEl) return;
+    /**
+     * Re-bound as already-narrowed consts. `apply()` / `paintTotals()` / `paintSortHeads()` are
+     * HOISTED function declarations, so as far as the checker is concerned they are callable before
+     * the guards above ever run and every `root.` / `listing.` inside them re-raises "possibly
+     * null". Binding once here is the fix for all of them at the source rather than an assertion
+     * sprinkled at each use (checked with `scriptcheck`, which is the only gate that reads these
+     * blocks at all).
+     */
+    const root = rootEl;
+    const listing = listingEl;
+
+    const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-md-row]'));
+    // D07 — every asset id the server rendered, captured before the list is filtered or paged, so
+    // `?asset=` reaches a file on page 6 as readily as one on page 1. See the note in DataComments.
+    const allAssetIds = new Set(rows.map((r) => r.dataset.id || ''));
+    const tbody = root.querySelector<HTMLElement>('[data-md-rows]')!;
+    const gallery = root.querySelector<HTMLElement>('[data-md-gallery]')!;
+    const tiles = root.querySelector<HTMLElement>('[data-md-tiles]')!;
+    // The flat body of each projection, and the grouped body beside it. Exactly one of each pair is
+    // shown; the pager sits after both, so it is the pager of the list either way.
+    const flatTable = root.querySelector<HTMLElement>('[data-md-flat]')!;
+    const groupsEl = root.querySelector<HTMLElement>('[data-md-groups]')!;
+    const ggroups = root.querySelector<HTMLElement>('[data-md-ggroups]')!;
+    const searchInput = root.querySelector<HTMLInputElement>('[data-md-search]');
+    const noMatch = root.querySelector<HTMLElement>('[data-md-nomatch]');
+    const noMatchField = root.querySelector<HTMLElement>('[data-md-nomatch-field]');
+    const clears = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-md-clear]'));
+    // `mdgroup` is deliberately NOT in this list. Clear resets FILTERS, and grouping is not one —
+    // it narrows nothing, it only rearranges what survived. Clear does not reset the projection
+    // switch either, and for exactly the same reason: both are how the set is shown, not which set.
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('.ff[data-facet], [data-dr]'))
+      .filter((f) => f.dataset.facet !== 'mdgroup');
+    // `searchText` is BUILT LOWER DOWN, beside `srcOf`, because it now reads the parsed source —
+    // see the note there. It is only ever read inside `apply()`, which first runs at the end of
+    // init, so the later declaration is not a hazard.
+
+    // ── Filter state. Multi facets carry a HIDDEN set (the shared `facetchange` contract); Size is
+    // a single-select threshold; the date range is the shared `daterangechange` pair.
+    const hidden: Record<string, Set<string>> = {
+      mdkind: new Set(), mdbase: new Set(), mdtable: new Set(), mdfield: new Set(), mdsource: new Set(), mdstore: new Set(),
+    };
+    let sizeMin = '';          // MB threshold, '' = any
+    let from: string | null = null;
+    let to: string | null = null;
+    let query = '';
+    let sortKey = 'date';
+    let sortDir: 1 | -1 = -1;  // newest first — the default question is "what just arrived"
+    let view: 'list' | 'grid' = 'list';
+    // '' | 'base' | 'table' | 'field'. NOT a third view mode and NOT persisted: grouping answers a
+    // question you are asking right now ("which base is eating the storage"), where the
+    // list/gallery choice is a lasting preference about how you like to read files.
+    let groupBy = '';
+    // D07 — set once `wireViewState` has restored; until then nothing writes, so the first paint
+    // never invents a query string for a page the user has not touched.
+    let urlReady = false;
+    let syncUrl: () => void = () => {};
+    // The asset the address currently names. Read by the `asset` field below; set when one opens.
+    let openAssetId = '';
+
+    // The toggle is remembered per user, so a second visit honours the choice (the DEFAULT is the
+    // listing: a backup holds documents and archives, so grid-first opens on a wall of glyphs).
+    try {
+      const v = localStorage.getItem('data-md-view');
+      if (v === 'grid' || v === 'list') view = v;
+    } catch { /* blocked storage — the default is a fine answer */ }
+
+    // Two pagers, one per projection, because the page SIZES differ (rows vs tiles). Filters, sort
+    // and the totals are shared state; only the window differs.
+    const listPager = createPager({ root, name: 'mdlist', sizes: [10, 20, 50], defaultSize: 20, storageKey: 'data-mdlist-pagesize', onChange: () => apply() });
+    const gridPager = createPager({ root, name: 'mdgrid', sizes: [24, 48, 96], defaultSize: 48, storageKey: 'data-mdgrid-pagesize', onChange: () => apply() });
+
+    /**
+     * CLIP TOOLTIPS (D11 / J06-F8, 2026-08-10) — the shared `lib/clipTips.ts`, MOUNTED, not rewritten.
+     *
+     * This tab had no clip detector at all: a 72-character filename rendered
+     * `quarterly-compliance-report-fin…` at 224px against a 404px string, with no `data-tip`, no
+     * `title` and nothing on any ancestor — on the one surface whose reader arrived holding the
+     * fragment that got cut off. Comments had the machinery and D10 extracted it, so the fix here
+     * is a mount. Writing a second copy is the failure the extraction was performed to prevent.
+     *
+     * WHAT IS WALKED. The `rows()` function returns the table rows AND the gallery tiles, because
+     * the tiles are the projection where clipping is WORSE — a tile's name box is 112px against the
+     * listing's 224 — and they are rebuilt as innerHTML on every paint, which is exactly why `rows`
+     * is a function rather than an array. A tile is not a table row, but nothing in clipTips cares:
+     * it walks a container for a selector.
+     *
+     * `.md-locname` is in the list even though it measured 0-clipped at 1440 today. That is the
+     * changelog's lesson written down in PARKED §12: a cap is not proof it fits, and the Where
+     * column is the first thing to lose room when a panel opens or the window narrows. The observer
+     * costs nothing on a cell that fits — it removes the attribute — and the alternative is a rule
+     * that is true only at one width.
+     *
+     * `observe` is the CARD, not the table: the listing and the gallery are siblings inside it, and
+     * a projection switch changes which one has width without resizing either wrapper.
+     */
+    const clipTips = mountClipTips({
+      observe: root,
+      rows: () => [...rows, ...Array.from(root.querySelectorAll<HTMLElement>('[data-md-tile]'))],
+      selector: '.md-name, .md-locname, .md-tile-name, .md-tile-meta, .md-tile-loc',
+    });
+
+    const bytes = (r: HTMLElement) => Number(r.dataset.size || 0);
+    const anyVisible = (csv: string | undefined, set: Set<string>) => {
+      const ids = (csv || '').split(' ').filter(Boolean);
+      if (!ids.length) return true;
+      return ids.some((id) => !set.has(id));
+    };
+
+    const fmtBytes = (n: number): string => {
+      if (!n) return '0 B';
+      if (n < 1024) return `${n} B`;
+      const kb = n / 1024;
+      if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`;
+      const mb = kb / 1024;
+      if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+      const gb = mb / 1024;
+      return `${gb.toFixed(gb < 10 ? 1 : 0)} GB`;
+    };
+
+    const SORT: Record<string, (r: HTMLElement) => string | number> = {
+      name: (r) => (r.dataset.name || '').toLowerCase(),
+      kind: (r) => r.dataset.kindlabel || '',
+      size: (r) => bytes(r),
+      // WHERE = the RECORD NAME, lower-cased exactly as `name` is, so the two name-shaped keys
+      // compare the same way. The value is read out of `srcOf` — the SAME parsed `data-src` object
+      // the Where column's record segment renders from (`src.r`, the record's primary value) —
+      // rather than from a second attribute derived a second time. That is deliberate on two
+      // counts: this row already refuses to carry attributes it can derive (see `srcOf`'s comment
+      // about 10,000 rows), and a separate `data-record` would be free to drift out of step with
+      // the segment on screen, which is the exact failure a sort header must not have.
+      //
+      // NO RECORD (`src.r === ''` → the row prints "Record not in this backup") sorts to the END
+      // of the default ascending pass, via a sentinel above every real character. Those rows are
+      // the ones you can do the least with, so they belong after the named ones; and a plain ''
+      // would have pinned them to the TOP, which is the worst place for them. Reversing the sort
+      // reverses them too — descending means reversed, not "empties re-pinned".
+      //
+      // Within one record the browser's stable sort keeps the rows in their served order, so a
+      // record's files stay in the order the row set already had rather than being reshuffled.
+      where: (r) => (srcOf.get(r)?.r || '\uffff').toLowerCase(),
+      // STORAGE = the label the cell itself shows ("Baseout + Google Drive" / "Baseout" /
+      // "Not stored"), already on the row for the panel. Sorting the LABEL and not the `data-store`
+      // tokens is what makes the sorted column read as sorted: tokens are a multi-value filter set
+      // ("baseout dropbox both"), whose order is the facet's business, not the reader's.
+      // `storeLabel` is never empty ('Not stored' is the fallback), and the `|| ''` is only there
+      // so a hand-edited row cannot throw.
+      storage: (r) => (r.dataset.storelabel || '').toLowerCase(),
+      // No `source` sorter any more — the column it sorted is gone, and a sort key with no header
+      // to click is dead weight. Source is still a FILTER (the `mdsource` facet), which is the
+      // question people actually ask of it: "show me only the comment attachments".
+      date: (r) => r.dataset.date || '',
+    };
+
+    function paintSortHeads() {
+      root.querySelectorAll<HTMLElement>('[data-md-sort]').forEach((h) => {
+        const on = h.dataset.mdSort === sortKey;
+        h.classList.toggle('is-sorted', on);
+        const ic = h.querySelector<HTMLElement>('.md-sort-ic');
+        if (ic) ic.className = `iconify ${on ? (sortDir === 1 ? 'lucide--arrow-up' : 'lucide--arrow-down') : 'lucide--chevrons-up-down'} size-3 md-sort-ic`;
+      });
+    }
+
+    const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+
+    /**
+     * A TILE CARRIES ITS RECORD (D11 / J06-F4, 2026-08-10).
+     *
+     * The gallery used to be filename + `JPG · 2.4 MB`, and switching projection therefore deleted
+     * the Where column — the only answer to "which record is this file on", which is the question
+     * this whole tab exists for. And the projection PERSISTS across sessions, so a returning user
+     * could land, by a choice made weeks ago, in the mode that cannot answer it.
+     *
+     * The tile still does not repeat the whole trail: four segments would not fit a 112px tile and
+     * `pattern-media-gallery` is right that a tile is a picture and a name. It carries the LAST
+     * segment — the record's primary value, the most specific thing in the trail and the one the
+     * founder named as what you sort by. Base / table / field stay in the panel, one click away, as
+     * they already were.
+     *
+     * A row whose record left the backup keeps the listing's exact wording in the listing's muted
+     * italic register, rather than going blank — an empty second line would read as a tile that
+     * failed to load its meta, which is the opposite of what is true.
+     */
+    function tileHtml(r: HTMLElement) {
+      const a = { id: r.dataset.id!, filename: r.dataset.name, type: r.dataset.type, thumbUrl: r.dataset.thumb || undefined };
+      const meta = [formatLabel(a), r.dataset.sizetext].filter(Boolean).join(' · ');
+      const rec = srcOf.get(r)?.r || '';
+      const loc = rec
+        ? `<span class="md-tile-loc">${esc(rec)}</span>`
+        : `<span class="md-tile-loc md-loc-gone">Record not in this backup</span>`;
+      // A tile is a BUTTON, not a div with a click handler — it opens the same panel a row opens
+      // and must be reachable the same way.
+      return `<button type="button" class="md-tile" data-md-tile="${r.dataset.id}">${mediaThumbHtml(a, { size: 'lg' })}<span class="md-tile-name">${esc(r.dataset.name || '')}</span><span class="md-tile-meta">${meta}</span>${loc}</button>`;
+    }
+    function paintTiles(win: HTMLElement[]) {
+      tiles.innerHTML = win.map(tileHtml).join('');
+    }
+
+    // ── GROUPING ────────────────────────────────────────────────────────────────────────────────
+    /**
+     * The row's source, parsed ONCE per row instead of once per render. `data-src` already carries
+     * every name and id the Where column needed, so grouping adds no second snapshot of the assets
+     * and no extra per-row attributes beyond `data-fields` — which matters at 10,000 rows.
+     */
+    // `r` (the record's PRIMARY VALUE) is in this type because the `where` sorter above reads it —
+    // the same field the Where column's record segment renders. The map is declared here, in the
+    // grouping block it was written for, and SORT only closes over it: every sorter runs from
+    // `apply()`, which is first called at the very end of init, long after this line.
+    type Src = { b?: string; t?: string; f?: string; r?: string; bi?: string; ti?: string; fi?: string };
+    const srcOf = new Map<HTMLElement, Src>(rows.map((r) => {
+      try { return [r, JSON.parse(r.dataset.src || '{}') as Src]; } catch { return [r, {} as Src]; }
+    }));
+
+    /**
+     * THE SEARCH HAYSTACK — everything the row RENDERS (D11 / J06-F1, 2026-08-10).
+     *
+     * It used to be `name + storeLabel + kindLabel`. So `Sales CRM` — printed on all 221 rows, in
+     * the Where column, in a base segment you can click — returned *"No files match these
+     * filters."* Measured before this change: `Sales CRM` 0 of 221, `Companies` 0, `Acme Acme` 0,
+     * with the answer to each on screen. The sibling tab, one click away, matched all three.
+     * That is the defect this whole convergence was named after: the same query succeeds on one
+     * tab and fails on the other while the answer is painted on the screen.
+     *
+     * The four names are added from `srcOf` — the SAME parsed `data-src` the Where column renders
+     * from and the `where` sorter already reads — not from four new attributes. So the haystack
+     * cannot drift from the trail: there is one source for both, and a row that prints a base is a
+     * row you can find by that base.
+     *
+     * WHY NOT `textContent`, which is how Comments does it. Comments takes the row's whole text,
+     * which is the broader rule and the one that made it the reference here — but it also sweeps in
+     * the time cell, so `PM` matches every comment in the feed. This row would have added the size
+     * and the date the same way (`MB`, `Jul`), and a haystack that matches on units is a search
+     * that cannot say no. The named join gets the outcome the rule asks for — search matches what
+     * the row renders — without the noise. What is deliberately NOT in it: the size text, the
+     * captured date and the `—` placeholders, none of which anyone searches for by string.
+     *
+     * The two WORDED ABSENCES are in, and on purpose: a row that says "Record not in this backup"
+     * is findable by that sentence, which is the only handle those rows have.
+     */
+    const searchText = new Map(rows.map((r) => {
+      const s = srcOf.get(r) ?? {};
+      const where = [s.b, s.t, s.f, s.r].filter(Boolean).join(' ');
+      const gone = [s.b ? '' : 'Base not in this backup', s.t ? '' : 'Table not in this backup',
+        s.fi && !s.f ? 'Field not in this backup' : '', s.r ? '' : 'Record not in this backup'].filter(Boolean).join(' ');
+      return [r, `${r.dataset.name} ${r.dataset.storelabel} ${r.dataset.kindlabel} ${where} ${gone}`.toLowerCase()];
+    }));
+
+    /**
+     * Does this Space's ATTACHMENT set span more than one base? Derived from the rows rather than
+     * passed down from the frontmatter, because a script block cannot read props — and derived from
+     * the assets rather than from `bases.length`, which is the more useful question anyway: a table
+     * group only needs its base printed when two bases are actually in play on this tab.
+     */
+    const multiBaseRt = new Set(rows.map((r) => r.dataset.bases || '')).size > 1;
+
+    /** Concept glyphs, straight from `entityIcon.ts`'s mapping — the same ones the Where column
+     *  draws, so a "Table" group header and a table segment are visibly the same concept. */
+    const GROUP_IC: Record<string, string> = {
+      base: 'lucide--database concept-ic-base',
+      table: 'lucide--table-2 concept-ic-table',
+      field: 'lucide--tag concept-ic-field',
+    };
+    /** The comment bucket's glyph is the app's comment glyph, not a field glyph — it is not a field. */
+    const COMMENT_IC = 'lucide--message-square-text';
+
+    type Group = { key: string; label: string; icon: string; last: boolean; items: HTMLElement[] };
+    /**
+     * Which group a row belongs to, and what that group is CALLED.
+     *
+     * Labels are qualified upward exactly as far as ambiguity demands: a table name repeats across
+     * bases and a field name repeats across tables, so a table group carries its base (when the
+     * Space has more than one) and a field group always carries its table. An unqualified wall of
+     * "Name" / "Status" headers would be worse than no grouping.
+     *
+     * A row whose base/table/field left the backup keeps the Where column's exact wording, so the
+     * two surfaces never disagree about the same missing thing — and never print the raw key.
+     */
+    function groupOf(r: HTMLElement): { key: string; label: string; icon: string; last: boolean } {
+      const s = srcOf.get(r) ?? {};
+      if (groupBy === 'base') {
+        return { key: `b:${s.bi ?? ''}`, label: s.b || 'Base not in this backup', icon: GROUP_IC.base, last: false };
+      }
+      if (groupBy === 'table') {
+        const t = s.t || 'Table not in this backup';
+        return { key: `t:${s.ti ?? ''}`, label: multiBaseRt && s.b ? `${s.b} › ${t}` : t, icon: GROUP_IC.table, last: false };
+      }
+      // FIELD. A comment attachment has no field and must not be invented one — it gets ONE honest
+      // group, named for what these files are rather than for what they lack ("Comment attachments",
+      // not "No field"), and it sorts LAST because it is the exception the reader meets after the
+      // fields, not a field that happens to start with C.
+      if (!s.fi) return { key: 'f:__comment__', label: 'Comment attachments', icon: COMMENT_IC, last: true };
+      const f = s.f || 'Field not in this backup';
+      // Qualified the SAME distance as the Fields facet's headings and the Table groups above — a
+      // field group is a table group with one more level, so if the table needed its base to be
+      // unambiguous, the field does too. Two bases can both hold a Contacts ▸ Name, and two
+      // identical headers over different files is the failure grouping exists to prevent.
+      const qual = [multiBaseRt ? s.b : '', s.t].filter(Boolean).join(' › ');
+      return { key: `f:${s.fi}`, label: qual ? `${qual} › ${f}` : f, icon: GROUP_IC.field, last: false };
+    }
+
+    /**
+     * COLLAPSE state, keyed by group key. Automations does not persist its collapse either (no
+     * storage key in schemaAutomations.ts), and that is followed rather than re-decided: a fold is
+     * about the question you are asking right now, like the grouping itself, which is also not
+     * persisted. It DOES survive a repaint inside the session — the cards are rebuilt on every
+     * filter, sort and page change, so without this set every fold would silently pop open the
+     * moment the user typed in the search box.
+     *
+     * A collapsed group still spends its rows against the page: collapse hides what a group shows,
+     * it does not remove the group's files from the list. Anything else would make the pager's
+     * "1–50 of 1,240" depend on which cards happen to be folded.
+     */
+    const collapsed = new Set<string>();
+
+    /** Count + total bytes for one group — the numbers a group header exists to carry. Formatted by
+     *  the SAME helpers `paintTotals` uses, so "3.1 GB" in a header and "3.1 GB" in the totals strip
+     *  are the same string produced the same way. Files with no recorded size are counted but
+     *  excluded from the sum, exactly as the totals do; a group in which NOTHING has a size shows an
+     *  em dash rather than a confident "0 B". */
+    function groupMeta(items: HTMLElement[], drawn = items.length) {
+      const sized = items.filter((r) => bytes(r) > 0);
+      const total = sized.reduce((n, r) => n + bytes(r), 0);
+      const noun = items.length === 1 ? 'file' : 'files';
+      return {
+        // THE COUNT NAMES BOTH NUMBERS WHEN THEY DIFFER (D11 / J06-F5b, 2026-08-10).
+        //
+        // It used to be the whole group's count alone, defended above as the invariant that makes a
+        // paged grouping honest. J06 measured what the reader actually gets from that: a card
+        // reading "39 comments" over 20 rows with "1–20 of 547" underneath — three numbers, none of
+        // which explains the others. D10 settled the sibling case the other way, printing the count
+        // the heading is ACTUALLY heading.
+        //
+        // Both are right about the thing they protect, and the disagreement was only ever about
+        // printing one number. So both are printed, and the form says which is which: "12 of 45
+        // files" when the page holds part of the group, "45 files" when it holds all of it. The
+        // reader can count the rows and get 12; the storage lens still gets 45.
+        //
+        // THE SIZE IS ALWAYS THE WHOLE GROUP'S, and that is the point of the column: "which base is
+        // eating the 20 GB" is not a question about this page. It never carries a slice number,
+        // which is why it needs no "of".
+        count: drawn < items.length
+          ? `${drawn.toLocaleString()} of ${items.length.toLocaleString()} ${noun}`
+          : `${items.length.toLocaleString()} ${noun}`,
+        size: sized.length ? fmtBytes(total) : '—',
+      };
+    }
+    /**
+     * The group card's HEAD — the `.au-group-head` shape from Schema › Automations: a BUTTON
+     * carrying the chevron, the concept glyph and the name, so collapse is one focusable control.
+     *
+     * `m` is computed from `g.items`, which is the WHOLE group, never the slice this page draws.
+     * That is the load-bearing property of the whole arrangement: a header may sit above 12 rows
+     * and still say "45 files · 82 MB", and it is telling the truth about the group. A header that
+     * said "12 files" because that is all that fit would be a lie, and it is the failure this
+     * comment exists to stop someone "fixing" the counts into.
+     */
+    const headHtml = (g: Group, drawn: HTMLElement[]) => {
+      const m = groupMeta(g.items, drawn.length);
+      const open = !collapsed.has(g.key);
+      // "· continued" — the same marker D10 put on a split day heading, for the same reason: the
+      // pager windows ITEMS in group order, so a group can start on the previous page, and a card
+      // that opens mid-group with no marker reads as a smaller group rather than as the rest of a
+      // bigger one. Read off `g.items` (the whole MATCHED group) against what is drawn, never off
+      // the DOM, so a filter that removes a group's opening rows does not read as a split.
+      const carried = g.items.length > 0 && drawn.length > 0 && drawn[0] !== g.items[0];
+      return `<button type="button" class="grp-head" data-md-twist aria-expanded="${open}">`
+        + `<span class="iconify lucide--chevron-down size-4 grp-caret" aria-hidden="true"></span>`
+        + `<span class="iconify ${g.icon} size-4 grp-ic" aria-hidden="true"></span>`
+        + `<span class="grp-name">${esc(g.label)}</span>`
+        + `<span class="grp-meta"><span class="md-ghead-n">${m.count}</span>`
+        + `<span class="md-ghead-sep" aria-hidden="true">·</span><span class="md-ghead-sz">${m.size}</span>`
+        + (carried ? `<span class="md-ghead-sep" aria-hidden="true">·</span><span class="md-ghead-cont">continued</span>` : '')
+        + `</span></button>`;
+    };
+
+    /**
+     * The card's OWN column-header row (point 3 of the Automations pattern). Same labels, same sort
+     * keys and same `.md-sort` buttons as the flat table's <thead> — the click is delegated, so a
+     * runtime-built header sorts the whole list exactly as the flat one does.
+     *
+     * `<colgroup>` + `table-layout: fixed` (in the global block) is what makes the columns line up
+     * ACROSS cards. Automations solves the identical problem the identical way; without it each
+     * card would size its columns from its own content and the stack would read as ragged.
+     */
+    // Wrapped in an explicit <colgroup>: the parser would imply one around bare <col>s, but an
+    // implied element is not something to rely on inside an innerHTML string.
+    const GCOLS = '<colgroup>' + ['thumb', 'name', 'kind', 'size', 'where', 'store', 'date', 'go']
+      .map((c) => (c === 'where' ? '<col />' : `<col class="md-gcol-${c}" />`)).join('') + '</colgroup>';
+    const sortTh = (key: string, label: string, cls = '') =>
+      `<th class="${cls}"><button type="button" class="md-sort" data-md-sort="${key}">${label}`
+      + `<span class="iconify lucide--chevrons-up-down size-3 md-sort-ic" aria-hidden="true"></span></button></th>`;
+    const GTHEAD = `<thead class="tbl-colhead"><tr>`
+      + `<th><span class="sr-only">Preview</span></th>`
+      + sortTh('name', 'Filename')
+      + sortTh('kind', 'Type')
+      + sortTh('size', 'Size', 'md-num')
+      + sortTh('where', 'Where')
+      + sortTh('storage', 'Storage')
+      + sortTh('date', 'Captured')
+      + `<th></th></tr></thead>`;
+
+    /**
+     * Bucket the matched rows into groups.
+     *
+     * ORDER: alphabetical by the header label, with the comment bucket pinned last. Alphabetical is
+     * derived from what is on screen rather than from a second server-rendered ordering table, and
+     * because a field label leads with its table name it also clusters fields by table for free.
+     */
+    function buildGroups(matched: HTMLElement[]): Group[] {
+      const byKey = new Map<string, Group>();
+      for (const r of matched) {
+        const g = groupOf(r);
+        let e = byKey.get(g.key);
+        if (!e) byKey.set(g.key, (e = { ...g, items: [] }));
+        e.items.push(r);
+      }
+      return [...byKey.values()].sort((a, b) =>
+        a.last === b.last ? a.label.localeCompare(b.label) : (a.last ? 1 : -1));
+    }
+
+    /**
+     * Draw the page's worth of group cards, in whichever projection is live.
+     *
+     * `ordered` is every group in the matched set; `win` is the page. A group with nothing on this
+     * page draws no card — but its files are still counted in the header of the card it DOES get on
+     * whichever page holds them, because the meta comes from `g.items`, not from `win`.
+     */
+    function paintGroups(ordered: Group[], win: HTMLElement[]) {
+      const inWin = new Set(win);
+      if (view === 'list') {
+        groupsEl.textContent = '';
+        for (const g of ordered) {
+          const items = g.items.filter((r) => inWin.has(r));
+          if (!items.length) continue;
+          const card = document.createElement('div');
+          card.className = 'grp';
+          card.dataset.mdGroup = g.key;
+          if (collapsed.has(g.key)) card.setAttribute('data-collapsed', '');
+          card.innerHTML = `${headHtml(g, items)}<table class="table table-sm md-table md-gtbl grp-body">${GCOLS}${GTHEAD}<tbody data-md-gbody></tbody></table>`;
+          const body = card.querySelector<HTMLElement>('[data-md-gbody]')!;
+          // The rows are MOVED, not cloned — they are the model for every projection and they carry
+          // their own listeners. `apply()` reclaims them before this runs, so nothing is stranded.
+          items.forEach((r) => { r.hidden = false; body.appendChild(r); });
+          groupsEl.appendChild(card);
+        }
+      } else {
+        const html: string[] = [];
+        for (const g of ordered) {
+          const items = g.items.filter((r) => inWin.has(r));
+          if (!items.length) continue;
+          html.push(`<div class="grp" data-md-group="${esc(g.key)}"${collapsed.has(g.key) ? ' data-collapsed' : ''}>`
+            + headHtml(g, items)
+            + `<div class="md-grid grp-body md-gbody-grid">${items.map(tileHtml).join('')}</div></div>`);
+        }
+        ggroups.innerHTML = html.join('');
+      }
+    }
+
+    function paintTotals(matched: HTMLElement[], filtered: boolean) {
+      // Files with NO size are counted as files but excluded from the byte sums — averaging over a
+      // denominator that includes unknown-size files would quietly understate every number.
+      const sized = matched.filter((r) => bytes(r) > 0);
+      const total = sized.reduce((n, r) => n + bytes(r), 0);
+      const set = (sel: string, text: string) => { const el = root.querySelector<HTMLElement>(sel); if (el) el.textContent = text; };
+      set('[data-md-tot-files]', matched.length.toLocaleString());
+      set('[data-md-tot-size]', fmtBytes(total));
+      set('[data-md-tot-avg]', sized.length ? fmtBytes(Math.round(total / sized.length)) : '—');
+      // The sub-label NAMES the filter state, so a number is never ambiguous about what it counts.
+      set('[data-md-tot-scope]', filtered ? 'matching your filters' : 'in this Space');
+      set('[data-md-tot-note]', filtered ? 'across the matching files' : 'across every captured file');
+      const unsized = matched.length - sized.length;
+      set('[data-md-tot-avgnote]', unsized ? `per file · ${unsized.toLocaleString()} with no size recorded` : 'per file');
+    }
+
+    function apply() {
+      const active = !!(query || sizeMin || from || to || Object.values(hidden).some((s) => s.size));
+      const matched: HTMLElement[] = [];
+      rows.forEach((r) => {
+        let ok = true;
+        if (hidden.mdkind.has(r.dataset.kind || '')) ok = false;
+        if (hidden.mdsource.has(r.dataset.source || '')) ok = false;
+        if (ok && hidden.mdbase.size && !anyVisible(r.dataset.bases, hidden.mdbase)) ok = false;
+        if (ok && hidden.mdtable.size && !anyVisible(r.dataset.tables, hidden.mdtable)) ok = false;
+        // FIELDS. Written out rather than routed through `anyVisible`, because the two disagree on
+        // exactly the case that matters: `anyVisible` treats "no ids" as "always visible", which
+        // would keep every COMMENT attachment in the list no matter which fields were selected.
+        //
+        // The honest answer is the opposite. A comment attachment hangs off no field at all, so once
+        // the user has narrowed to a set of fields, a file with no field is not in that set — it is
+        // not a field they deselected, it is a file the question does not reach. Keeping them would
+        // mean "Fields: Notes" returned files that are not in Notes and not in any field.
+        //
+        // So they drop out, and `.md-nomatch`'s third sentence says so in words when the list ends
+        // up empty. The Source facet is the control that brings them back on their own terms.
+        if (ok && hidden.mdfield.size) {
+          const fid = r.dataset.fields || '';
+          if (!fid || hidden.mdfield.has(fid)) ok = false;
+        }
+        if (ok && hidden.mdstore.size && !anyVisible(r.dataset.store, hidden.mdstore)) ok = false;
+        // A one-sided threshold. A file with no recorded size cannot satisfy "larger than N" — it
+        // drops out rather than being guessed into the answer.
+        if (ok && sizeMin) { const b = bytes(r); if (!b || b < Number(sizeMin) * 1024 * 1024) ok = false; }
+        if (ok && from && (r.dataset.date || '') < from) ok = false;
+        if (ok && to && (r.dataset.date || '').slice(0, 10) > to) ok = false;
+        if (ok && query && !(searchText.get(r) || '').includes(query)) ok = false;
+        r.hidden = true;
+        // The match flag is the CONTRACT the panel's ＋ picker reads: `hidden` cannot serve, because
+        // it also encodes the pagination window (and in grid view every row stays hidden). A picker
+        // that offered page-2 files while claiming to search "your filtered set" would be lying.
+        r.dataset.mdMatch = ok ? '1' : '';
+        if (ok) matched.push(r);
+      });
+      const get = SORT[sortKey];
+      matched.sort((a, b) => {
+        const x = get(a), y = get(b);
+        return (x < y ? -1 : x > y ? 1 : 0) * sortDir;
+      });
+      // Group cards are rebuilt from scratch every pass, never patched: they are derived entirely
+      // from the matched set, and a header carrying a stale count is worse than no header. Reclaim
+      // the rows they hold FIRST — they are the model, and clearing the cards with rows still
+      // inside would delete them from the document (the `rows` array would then reference detached
+      // nodes and the flat table would come back empty). Bounded by one page, not by the set.
+      if (groupsEl.firstChild) {
+        groupsEl.querySelectorAll('[data-md-row]').forEach((r) => tbody.appendChild(r));
+        groupsEl.textContent = '';
+      }
+      // Which arrangement each projection is showing. `is-grouped` neutralises the wrapper's own
+      // frame, because in this arrangement the frames belong to the cards.
+      const grouped = !!groupBy;
+      listing.classList.toggle('is-grouped', grouped);
+      gallery.classList.toggle('is-grouped', grouped);
+      flatTable.hidden = grouped;
+      tiles.hidden = grouped;
+      groupsEl.hidden = !grouped;
+      ggroups.hidden = !grouped;
+
+      if (!groupBy) {
+        // Re-append in sorted order — the rows are the model for both projections, so the table's
+        // DOM order IS the sort.
+        matched.forEach((r) => tbody.appendChild(r));
+
+        const pager = view === 'list' ? listPager : gridPager;
+        const win = pager.window(matched);
+        if (view === 'list') win.forEach((r) => (r.hidden = false));
+        else paintTiles(win);
+
+        // Only the inactive projection's pager is hidden; the active one paints itself in window().
+        const otherWrap = root.querySelector<HTMLElement>(`[data-pager="${view === 'list' ? 'mdgrid' : 'mdlist'}"]`);
+        if (otherWrap) otherWrap.hidden = true;
+      } else {
+        /**
+         * GROUPED — AND PAGED. This reverses what shipped in 094aff5 ("grouping switches the pager
+         * off and caps each group with Show N more"), on Oleh's call of 2026-08-03: one pager at the
+         * bottom of the whole list, exactly as Schema › Automations has it.
+         *
+         * WHAT IS PAGED, and why: the ITEMS, in group order — never the groups.
+         *  · Paging the GROUPS bounds nothing. Group by base over a 10,000-row fixture is three
+         *    groups; one "page" would then be 10,000 rows, which is the problem the pager exists
+         *    to solve. Group by field is 16 groups of wildly unequal size, so page 1 would be a
+         *    handful of rows and page 2 would be four thousand.
+         *  · Paging the items keeps the pager's one sentence true everywhere in the app: "1–50 of
+         *    1,240" counts FILES, the same unit the totals strip counts and the same unit the
+         *    ungrouped listing counts. A pager that silently switched to counting groups when a
+         *    facet changed would be a second meaning for one control.
+         *
+         * The cost, stated rather than hidden: A GROUP CAN BE SPLIT ACROSS PAGES. Ordering the
+         * items by group before windowing makes that the rare boundary case instead of the norm —
+         * a page is a contiguous run of whole groups plus, at most, a partial one at each end,
+         * rather than 16 three-row cards repeated on every page (which is what paging the
+         * SORT order would have produced).
+         *
+         * And the invariant that makes the split honest: EVERY GROUP HEADER'S COUNT AND SIZE
+         * DESCRIBE THE WHOLE GROUP. `groupMeta` is fed `g.items` — the complete bucket out of the
+         * matched set — while only `win` is drawn. So the second page of a 45-file group opens on
+         * a card that still says "45 files · 82 MB" above the 12 rows it holds, which is true. The
+         * tree rule this replaces (`decision-tree-showmore-not-pager`) is about HIERARCHIES, where
+         * paging orphans children from ancestors that carry their own meaning; a one-level grouping
+         * has no children to orphan — every row's header is re-drawn on every page it appears on.
+         *
+         * Sorting is untouched: `matched` arrives already sorted, bucketing preserves that order
+         * inside every group, and the cards' own column headers sort the whole list.
+         */
+        const ordered = buildGroups(matched);
+        const pager = view === 'list' ? listPager : gridPager;
+        const win = pager.window(ordered.flatMap((g) => g.items));
+        paintGroups(ordered, win);
+        // Same as ungrouped: only the INACTIVE projection's pager is hidden; the active one paints
+        // itself inside window(). `pagerWraps` no longer hides both — grouping keeps its pager.
+        const otherWrap = root.querySelector<HTMLElement>(`[data-pager="${view === 'list' ? 'mdgrid' : 'mdlist'}"]`);
+        if (otherWrap) otherWrap.hidden = true;
+      }
+
+      listing.hidden = view !== 'list' || matched.length === 0;
+      gallery.hidden = view !== 'grid' || matched.length === 0;
+      if (noMatch) noMatch.hidden = matched.length !== 0;
+      // The sentence that stops a working Fields filter reading as a lost backup — shown only while
+      // that facet is actually doing something.
+      if (noMatchField) noMatchField.hidden = hidden.mdfield.size === 0;
+      clears.forEach((c) => (c.hidden = !active));
+      paintTotals(matched, active);
+      paintSortHeads();
+      // Re-measure after the window, the projection or the grouping changed: a row hidden by the
+      // pager measures 0 wide and loses its tip, and the tiles above were rebuilt from scratch. The
+      // ResizeObserver cannot see either — nothing changed size.
+      clipTips.recheck();
+      // D07 — one write, at the one point every state change already funnels through. Hooking the
+      // eight individual listeners instead would have been eight chances to miss one.
+      if (urlReady) syncUrl();
+    }
+
+    // ── Events ────────────────────────────────────────────────────────────────
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; hidden?: string[]; value?: string };
+      if (d.hidden && hidden[d.name]) { hidden[d.name] = new Set(d.hidden); }
+      else if (d.value !== undefined && d.name === 'mdsize') { sizeMin = d.value; }
+      // Group by is the one facet on this row that filters nothing. It still resets the pagers,
+      // because it re-orders the whole list and page 4 of the old order means nothing in the new
+      // one. It also drops every fold: the keys belong to the dimension being left behind.
+      else if (d.value !== undefined && d.name === 'mdgroup') { groupBy = d.value; collapsed.clear(); }
+      else return;
+      listPager.reset(); gridPager.reset(); apply();
+    });
+    root.addEventListener('daterangechange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; from: string | null; to: string | null };
+      if (d.name !== 'mddate') return;
+      from = d.from; to = d.to;
+      listPager.reset(); gridPager.reset(); apply();
+    });
+    searchInput?.addEventListener('input', () => {
+      query = searchInput.value.trim().toLowerCase();
+      listPager.reset(); gridPager.reset(); apply();
+    });
+    clears.forEach((c) => c.addEventListener('click', () => {
+      query = ''; sizeMin = ''; from = null; to = null;
+      if (searchInput) searchInput.value = '';
+      Object.values(hidden).forEach((s) => s.clear());
+      // `facets` excludes mdgroup by construction — Clear empties the filters and leaves the
+      // grouping standing, the same way it leaves the list/gallery choice standing.
+      facets.forEach((f) => f.dispatchEvent(new CustomEvent('facetreset')));
+      listPager.reset(); gridPager.reset(); apply();
+    }));
+
+    /**
+     * SORT + COLLAPSE, both DELEGATED from the root, because every group card is built at runtime:
+     * a card's own column-header row carries the same `[data-md-sort]` buttons the flat table does,
+     * and per-element wiring at start-up would leave them dead.
+     *
+     * Collapse is pure CSS state (`[data-collapsed]` on the card, exactly as `.au-group` does it),
+     * so it does NOT repaint — the fold is remembered in `collapsed` only so a later repaint can
+     * restore it.
+     */
+    root.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      const twist = t.closest<HTMLElement>('[data-md-twist]');
+      if (twist) {
+        const card = twist.closest<HTMLElement>('.grp');
+        const key = card?.dataset.mdGroup;
+        if (!card || !key) return;
+        const wasCollapsed = collapsed.has(key);
+        if (wasCollapsed) { collapsed.delete(key); card.removeAttribute('data-collapsed'); }
+        else { collapsed.add(key); card.setAttribute('data-collapsed', ''); }
+        // Expanded IS the new state when it was collapsed a moment ago.
+        twist.setAttribute('aria-expanded', String(wasCollapsed));
+        return;
+      }
+      const h = t.closest<HTMLElement>('[data-md-sort]');
+      if (!h) return;
+      const k = h.dataset.mdSort!;
+      // Size and date open DESCENDING — "largest first" and "newest first" are the questions people
+      // actually click those headers to ask. Everything else opens ASCENDING, and the two new keys
+      // both belong on that side: `where` is a name (A→Z, like Filename, and it puts the records we
+      // could not resolve at the bottom rather than the top), and `storage` is a label with no
+      // magnitude — there is no "biggest" storage, so there is no descending question to default to.
+      // A→Z simply clusters the destinations (measured: Amazon S3 → Baseout → Baseout + … → Not
+      // stored), which is the whole job: see every file that lives in one place, together.
+      if (sortKey === k) sortDir = sortDir === 1 ? -1 : 1;
+      else { sortKey = k; sortDir = k === 'size' || k === 'date' ? -1 : 1; }
+      listPager.reset(); gridPager.reset(); apply();
+    });
+
+    const modes = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-md-view]'));
+    const setView = (v: 'list' | 'grid') => {
+      view = v;
+      try { localStorage.setItem('data-md-view', v); } catch { /* a preference, not correctness */ }
+      modes.forEach((m) => m.classList.toggle('sch-mode-active', m.dataset.mdView === v));
+      // Deliberately NOT resetting the pagers: switching projection must never reset a filter, a
+      // sort or a page. It is one state drawn two ways.
+      apply();
+    };
+    modes.forEach((m) => m.addEventListener('click', () => setView(m.dataset.mdView as 'list' | 'grid')));
+
+    // A row and a tile open the SAME panel — identical semantics in both projections, which is what
+    // `pattern-media-gallery` promises in writing. That now includes the OPEN-BESIDE gesture: a
+    // plain click lands in the anchor, ⌘/Ctrl-click or middle-click opens a new panel beside
+    // (`pattern-multi-panel-drawer`). Wiring copied from DataChangelog rather than re-invented.
+    const openAsset = (id: string | undefined, beside: boolean) => {
+      if (!id) return;
+      // The address follows what is open, the same way `?tab=` follows the visible panel.
+      openAssetId = id;
+      syncUrl();
+      document.dispatchEvent(new CustomEvent('data:openAsset', { detail: { id, beside } }));
+    };
+    const isBeside = (ev: MouseEvent) => ev.metaKey || ev.ctrlKey || ev.button === 1;
+
+    // ── The Where column's segments are their own destinations, ALL of them in MediaPanel's stack ──
+    // base / table / field used to carry `data-entity-open`, whose only handler is a DOCUMENT-level
+    // delegate inside the Schema EntityPanel — so clicking a file's Base raised that drawer's stack
+    // over this tab's: two fixed sheets, two rails, two ＋ buttons. Both kinds now go out as events
+    // MediaPanel owns (`data:openMediaEntity` / `data:openMediaRecord`), never `data-entity-open`
+    // and never `data:openRecord` (the separate RecordPanel drawer). MediaPanel opens the FULL
+    // entity panel — same `.ep-sheet`, same `makeEntityPanel` controller — as a panel of ITS stack.
+    // Either way the click must not ALSO open the asset panel behind it — hence `segAt`. Nothing
+    // here calls stopPropagation; the row simply declines a click that landed on a segment, which is
+    // what keeps one gesture from opening two panels.
+    const segAt = (e: Event) => (e.target as HTMLElement).closest<HTMLElement>('[data-md-openentity], [data-md-openrec]');
+    const openSrcRecord = (id: string, beside: boolean) =>
+      document.dispatchEvent(new CustomEvent('data:openMediaRecord', { detail: { id, beside } }));
+    const openSrcEntity = (id: string, beside: boolean) =>
+      document.dispatchEvent(new CustomEvent('data:openMediaEntity', { detail: { id, beside } }));
+    /** Route one segment click; returns true when it was a segment (so the row must stand down). */
+    const openSeg = (ev: Event, beside: boolean) => {
+      const seg = segAt(ev); if (!seg) return false;
+      const rec = seg.dataset.mdOpenrec;
+      if (rec) openSrcRecord(rec, beside); else openSrcEntity(seg.dataset.mdOpenentity!, beside);
+      return true;
+    };
+    // Delegated from `listing`, the wrapper that holds BOTH the flat table and the group cards —
+    // not from `tbody`, which is only the flat arrangement's body. Under grouping the rows live in
+    // each card's own <tbody>, so a `tbody`-bound delegate would silently stop routing Where-column
+    // clicks the moment a grouping was chosen.
+    listing.addEventListener('click', (ev) => {
+      if (openSeg(ev, isBeside(ev as MouseEvent))) ev.preventDefault();
+    });
+    listing.addEventListener('auxclick', (ev) => {
+      const me = ev as MouseEvent; if (me.button !== 1) return;
+      if (openSeg(ev, true)) me.preventDefault();
+    });
+    listing.addEventListener('mousedown', (ev) => { if ((ev as MouseEvent).button === 1 && segAt(ev)) ev.preventDefault(); });
+
+    rows.forEach((r) => {
+      r.addEventListener('click', (ev) => { if (segAt(ev)) return; openAsset(r.dataset.id, isBeside(ev as MouseEvent)); });
+      // Middle-click: suppress the browser's autoscroll puck before it swallows the gesture.
+      r.addEventListener('mousedown', (ev) => { if ((ev as MouseEvent).button === 1) ev.preventDefault(); });
+      r.addEventListener('auxclick', (ev) => { if (segAt(ev)) return; if ((ev as MouseEvent).button === 1) { ev.preventDefault(); openAsset(r.dataset.id, true); } });
+      r.tabIndex = 0;
+      r.setAttribute('role', 'button');
+    });
+    /**
+     * D46 — Enter/Space from the ONE implementation, delegated from `listing`.
+     *
+     * `listing` and not `tbody`, for the reason spelled out on the click delegate above: under a
+     * grouping the rows live in each card's own <tbody>, so a tbody-bound wire stops covering them.
+     * The per-row copy this replaces was worse than that — it only ever saw the rows the SSR pass
+     * painted, and this tab re-renders on search, six facets, a size threshold, a date window, a
+     * grouping and a pager.
+     *
+     * `skip: segAt` mirrors the click path exactly (a Where-column segment is a real <button>), and
+     * `ev` is forwarded so ⌘/Ctrl-Enter opens beside.
+     */
+    wireRowKeys(listing, {
+      rowSelector: '[data-md-row]',
+      skip: (ev) => !!segAt(ev),
+      onActivate: (row, ev) => openAsset(row.dataset.id, ev.metaKey || ev.ctrlKey),
+    });
+    // Same move for the gallery: delegate from the projection's wrapper, not from the flat tile
+    // grid, because a grouped gallery draws its tiles inside each card's own grid.
+    const tileAt = (e: Event) => (e.target as HTMLElement).closest<HTMLElement>('[data-md-tile]');
+    gallery.addEventListener('click', (e) => {
+      const t = tileAt(e); if (t) openAsset(t.dataset.mdTile, isBeside(e as MouseEvent));
+    });
+    gallery.addEventListener('mousedown', (e) => { if ((e as MouseEvent).button === 1 && tileAt(e)) e.preventDefault(); });
+    gallery.addEventListener('auxclick', (e) => { const t = tileAt(e); if (t && (e as MouseEvent).button === 1) { e.preventDefault(); openAsset(t.dataset.mdTile, true); } });
+
+    setView(view);
+
+    /**
+     * D07 item 4 — THE VIEW IS IN THE URL.
+     *
+     * Everything the toolbar does — the search, the six facets, the size threshold, the date window
+     * and the grouping — round-trips through `?`, so a filtered Attachments view is a link. Before
+     * this, `/data?tab=attachments` was the deepest thing anyone could send: the tab was addressable
+     * (sectionTabs) and nothing under it was, which is the asymmetry J06-F7 filed.
+     *
+     * `restore()` drives the CONTROLS, which emit their normal `facetchange` / `daterangechange` /
+     * `input`, so the filtering path is the one that already existed. `urlReady` is what stops the
+     * first paint from writing: an untouched page keeps its bare URL, and only a change the user
+     * made puts anything in it.
+     *
+     * `?asset=` addresses the FILE. The tab could locate an attachment and then had no way to hand
+     * it over, which is the half of J06-F7 that a filter cannot answer — a colleague needs the item,
+     * not the query that found it. It opens through the SAME `data:openAsset` contract a click uses.
+     */
+    const vs = wireViewState([
+      // Every key is the control's own `name`, which is already tab-unique (`md*` / `cm*`). Both
+      // tabs are wired on the same page at the same time, so a bare `q` would have been one box
+      // filtering two lists and two writers fighting over one param.
+      inputField('mdq', searchInput),
+      facetField(root, 'mdkind'), facetField(root, 'mdbase'), facetField(root, 'mdtable'),
+      facetField(root, 'mdfield'), facetField(root, 'mdsource'), facetField(root, 'mdstore'),
+      facetSingleField(root, 'mdsize'),
+      dateRangeField(root, 'mddate'),
+      facetSingleField(root, 'mdgroup'),
+      { key: 'asset', get: () => openAssetId, set: (v) => { openAssetId = v; } },
+    ]);
+    vs.restore();
+    urlReady = true;
+    syncUrl = () => vs.sync();
+
+    // The open is DEFERRED past `load` (measured: `DOMContentLoaded` was NOT late enough — the
+    // Attachments host happened to be wired by then and the Comments one was not, so the same code
+    // worked on one tab and silently did nothing on the other). The panel
+    // host registers its `data:openAsset` listener in its OWN bundled module, and module scripts
+    // run as separate tasks in an order nothing here controls — dispatching during this function
+    // fired into a document that had no listener yet, so the link silently did nothing while every
+    // gate stayed green. Verified by opening the link in a FRESH tab: the panel stack persists in
+    // `sessionStorage`, so a reused tab shows a panel that the previous click left behind and reads
+    // exactly like a working deep link.
+    const afterHosts = (fn: () => void) => {
+      if (document.readyState === 'complete') setTimeout(fn, 0);
+      else window.addEventListener('load', () => setTimeout(fn, 0), { once: true });
+    };
+    // An `asset` naming a file this listing does not hold is DROPPED rather than left in the URL
+    // describing a panel that never opened.
+    if (openAssetId && allAssetIds.has(openAssetId)) {
+      const wanted = openAssetId;
+      afterHosts(() => openAsset(wanted, false));
+    } else if (openAssetId) { openAssetId = ''; vs.sync(); }
+  }
+  wireDataMedia();
+  document.addEventListener('astro:after-swap', wireDataMedia);
+
+    // Every facet plus the date range. `Group by` and the Table/Gallery switch stay in the row —
+    // they are not filters; they change how the same set is DRAWN, and folding a view switch into a
+    // Filter menu makes it unfindable (Oleh: keep them, 2026-08-05).
+    {
+      const tb = document.querySelector<HTMLElement>('.sch-tb.md-filters');
+      if (tb) mountRefineCollapse({ toolbar: tb, selectors: ['[data-facet]', '.dr'], always: true });
+    }
+</script>

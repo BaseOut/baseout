@@ -9,6 +9,10 @@ import { createBackupEngine } from '../../../lib/backup-engine'
 import { resolveEntitlements } from '../../../lib/entitlements/resolve'
 import { checkCreationCap } from '../../../lib/entitlements/enforce-create'
 import {
+  buildInternalSpaceReadyDeps,
+  ensureInternalSpaceReady,
+} from '../../../lib/internal-space-ready'
+import {
   extractSessionTokenCookie,
   invalidateSessionCache,
 } from '../../../lib/session-cache'
@@ -84,24 +88,34 @@ export const POST: APIRoute = async ({ request, locals }) => {
     })
     invalidateSessionCache(sessionToken)
 
-    // Provision the Space's dedicated per-Space DB. The engine owns the
-    // per-Space DB lifecycle (web never connects to it), so this goes over the
-    // service binding. Best-effort: the Space row is already committed; a
-    // provisioning failure is recorded on space_databases (status='error') for
-    // retry, not fatal to Space creation. records_enabled=false — the DB always
-    // exists for schema/attachments; the record tables turn on with dynamic mode.
+    // Provision the Space's dedicated per-Space DB. Internal @openside.com-owned
+    // orgs get full dynamic access immediately; everyone else keeps the
+    // schema-only bootstrap posture. Best-effort: the Space row is committed.
     let provisioning = 'skipped'
-    if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
-      const engine = createBackupEngine({
-        binding: env.BACKUP_ENGINE,
-        internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
-      })
+    const engine =
+      env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+        ? createBackupEngine({
+            binding: env.BACKUP_ENGINE,
+            internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+          })
+        : null
+    if (engine) {
       const result = await engine.provisionDatabase(created.id, {
         backend: 'managed_pg',
         recordsEnabled: false,
         provisionedByUserId: locals.user.id,
       })
       provisioning = result.ok ? result.status : result.code
+    }
+    try {
+      await ensureInternalSpaceReady(
+        { organizationId: orgId, spaceId: created.id, userId: locals.user.id },
+        buildInternalSpaceReadyDeps(locals.db, engine),
+      )
+      provisioning = 'internal_ready'
+    } catch {
+      // Same stance as initial provisioning: config/DB readiness can be retried
+      // on config save or first backup, and must not fail Space creation.
     }
 
     return jsonResponse({ ok: true, space: created, provisioning }, 200)
