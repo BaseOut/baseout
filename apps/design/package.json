@@ -15,7 +15,7 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@astrojs/node": "^11.0.0",
+    "@astrojs/node": "^11.0.2",
     "@astrojs/react": "^6.0.0",
     "@dagrejs/dagre": "^3.0.0",
     "@fortawesome/fontawesome-free": "^6.7.2",
