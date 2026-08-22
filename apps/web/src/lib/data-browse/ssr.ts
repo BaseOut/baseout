@@ -95,24 +95,35 @@ export function emptyDataPagePayload(): DataPageEnginePayload {
 export async function loadDataPageFromEngine(
   engine: DataPageEngine,
   spaceId: string,
-  opts: { docsLevel: SchemaDocsLevel },
+  opts: {
+    docsLevel: SchemaDocsLevel
+    includeSecondary?: boolean
+    landingTableIdHint?: string | Promise<string | undefined>
+  },
 ): Promise<DataPageEnginePayload> {
   const out = emptyDataPagePayload()
+  const includeSecondary = opts.includeSecondary !== false
 
   const schemaP = engine.getSchema(spaceId)
+  const hintP = Promise.resolve(opts.landingTableIdHint)
+  const hintedRecordsP = !includeSecondary
+    ? hintP.then((h) => (h ? engine.getDataRecords(spaceId, h, { limit: 50 }) : null))
+    : Promise.resolve(null)
   const docsP =
-    opts.docsLevel !== 'none'
+    includeSecondary && opts.docsLevel !== 'none'
       ? engine.listDocuments(spaceId)
       : Promise.resolve(null)
   const threadsP =
-    opts.docsLevel !== 'none'
+    includeSecondary && opts.docsLevel !== 'none'
       ? engine.listChatThreads(spaceId, false)
       : Promise.resolve(null)
 
-  const [schemaRes, docsRes, threadsRes] = await Promise.all([
+  const [schemaRes, docsRes, threadsRes, hintedRecs, hint] = await Promise.all([
     schemaP,
     docsP,
     threadsP,
+    hintedRecordsP,
+    hintP,
   ])
 
   if (docsRes?.ok) out.docs = docsRes.documents
@@ -128,20 +139,33 @@ export async function loadDataPageFromEngine(
   out.landingTableId = mapped.tables[0]?.id
 
   const landingTableId = out.landingTableId
-  const browse =
-    landingTableId != null
-      ? Promise.all([
-          engine.getDataRecords(spaceId, landingTableId, { limit: 50 }),
-          engine.getDataChangelog(spaceId, { limit: 50 }),
-          engine.getMedia(spaceId, { limit: 50 }),
-        ])
-      : Promise.resolve(null)
+  if (!landingTableId) return out
+
+  if (!includeSecondary) {
+    const recRes =
+      hint && hint === landingTableId && hintedRecs?.ok
+        ? hintedRecs
+        : await engine.getDataRecords(spaceId, landingTableId, { limit: 50 })
+    if (recRes.ok) {
+      out.records = mapRecords(
+        recRes.records,
+        landingTableId,
+        mapped.primaryByTable[landingTableId],
+      )
+      out.recordsNextCursor = recRes.nextCursor
+    }
+    return out
+  }
+
+  const browse = Promise.all([
+    engine.getDataRecords(spaceId, landingTableId, { limit: 50 }),
+    engine.getDataChangelog(spaceId, { limit: 50 }),
+    engine.getMedia(spaceId, { limit: 50 }),
+  ])
   const commentsP = engine.getDataComments(spaceId, { limit: 50 })
 
   const [browseRes, commentsRes] = await Promise.all([browse, commentsP])
   if (commentsRes.ok) out.comments = mapComments(commentsRes.comments)
-
-  if (!browseRes || !landingTableId) return out
 
   const [recRes, rollupRes, mediaRes] = browseRes
   if (recRes.ok) {

@@ -1,0 +1,162 @@
+---
+/**
+ * Data page body — server:defer so the shell swaps even if the engine is slow.
+ * First paint is getSchema + landing records only (no secondary fan-out).
+ */
+import { env } from 'cloudflare:workers';
+import DataView from '../views/DataView.astro';
+import EmptyState from '../components/ui/EmptyState.astro';
+import { createBackupEngine } from '../lib/backup-engine';
+import { emptyDataPagePayload, loadDataPageFromEngine } from '../lib/data-browse/ssr';
+import { peekDataPageSnapshot, rememberDataPageSnapshot } from '../lib/data-browse/page-snapshot';
+import { getSchemaCached, peekLandingTableId } from '../lib/schema-docs/schema-snapshot-cache';
+import { buildDataDocsEntities, dataBasesToHealthBases } from '../components/data/dataToSchema';
+import type { DocsTabEntity } from '../components/islands/DocsTab';
+import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
+import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
+import type { DataMode } from '../components/data/dataTypes';
+import { backupRuns, backupConfigurations } from '../db/schema/core';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
+
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+const engineBinding = env.BACKUP_ENGINE;
+const engineToken = env.BACKUP_ENGINE_INTERNAL_TOKEN;
+const rawEngine =
+  spaceId && engineBinding && engineToken
+    ? createBackupEngine({
+        binding: engineBinding,
+        internalToken: engineToken,
+      })
+    : null;
+const engine = rawEngine
+  ? {
+      getSchema: (id: string) => getSchemaCached(id, () => rawEngine.getSchema(id)),
+      getDataRecords: (
+        sid: string,
+        tableId: string,
+        query?: { limit?: number },
+      ) => rawEngine.getDataRecords(sid, tableId, query),
+      getDataChangelog: (
+        sid: string,
+        query?: { limit?: number; runId?: string; changeType?: string },
+      ) => rawEngine.getDataChangelog(sid, query),
+      getMedia: (sid: string, query?: { limit?: number }) => rawEngine.getMedia(sid, query),
+      getDataComments: (sid: string, query?: { limit?: number }) =>
+        rawEngine.getDataComments(sid, query),
+      listDocuments: (sid: string) => rawEngine.listDocuments(sid),
+      listChatThreads: (sid: string, includeArchived?: boolean) =>
+        rawEngine.listChatThreads(sid, includeArchived),
+    }
+  : null;
+
+const docsLevelP: Promise<SchemaDocsLevel> =
+  db && orgId ? resolveSchemaDocsLevel(db, orgId) : Promise.resolve('none');
+
+const latestRunQuery =
+  db && spaceId
+    ? db
+        .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
+        .from(backupRuns)
+        .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
+        .orderBy(desc(backupRuns.completedAt))
+        .limit(1)
+    : Promise.resolve([] as { id: string; completedAt: Date | null }[]);
+const modeQuery =
+  db && spaceId
+    ? db
+        .select({ mode: backupConfigurations.mode })
+        .from(backupConfigurations)
+        .where(eq(backupConfigurations.spaceId, spaceId))
+        .limit(1)
+    : Promise.resolve([] as { mode: string | null }[]);
+
+const cachedPayload = spaceId ? peekDataPageSnapshot(spaceId) : undefined;
+const payloadP = cachedPayload
+  ? Promise.resolve(cachedPayload)
+  : engine && spaceId
+    ? loadDataPageFromEngine(engine, spaceId, {
+        docsLevel: 'none',
+        includeSecondary: false,
+        landingTableIdHint: peekLandingTableId(spaceId),
+      }).then((loaded) => {
+        rememberDataPageSnapshot(spaceId, loaded);
+        return loaded;
+      })
+    : Promise.resolve(emptyDataPagePayload());
+
+const [docsLevel, payload, latestRows, cfgRows] = await Promise.all([
+  docsLevelP,
+  payloadP,
+  latestRunQuery,
+  modeQuery,
+]);
+const aiEnabled = docsLevel === 'manual_ai';
+
+const {
+  managedPg,
+  bases,
+  tables,
+  records,
+  comments,
+  changelog,
+  runTotals,
+  assets,
+  docs,
+  chatThreads,
+  landingTableId,
+  primaryByTable,
+  recordsNextCursor,
+} = payload;
+
+const docEntities: DocsTabEntity[] = buildDataDocsEntities(bases, tables, { records });
+const healthBases = dataBasesToHealthBases(bases);
+void chatThreads;
+
+const latest = latestRows[0];
+const lastSyncedAt = latest?.completedAt?.toISOString() ?? null;
+const lastSyncedRunId = latest?.id ?? null;
+
+let mode: DataMode = 'dynamic';
+const cfgMode = cfgRows[0]?.mode;
+if (cfgMode === 'static' || cfgMode === 'dynamic' || cfgMode === 'both') {
+  mode = cfgMode;
+}
+
+const hasData = tables.length > 0 || lastSyncedAt !== null;
+---
+
+{!spaceId ? (
+    <EmptyState
+      icon="lucide--folder"
+      title="No active Space"
+      description="Select a Space to browse its backed-up data."
+    />
+  ) : (
+    <DataView
+      hasData={hasData}
+      lastSyncedAt={lastSyncedAt}
+      lastSyncedRunId={lastSyncedRunId}
+      managedPg={managedPg}
+      mode={mode}
+      spaceId={spaceId}
+      bases={bases}
+      tables={tables}
+      records={records}
+      comments={comments}
+      changelog={changelog}
+      runTotals={runTotals}
+      assets={assets}
+      landingTableId={landingTableId}
+      primaryByTable={primaryByTable}
+      recordsNextCursor={recordsNextCursor}
+      loadState="ready"
+      docsLevel={docsLevel}
+      aiEnabled={aiEnabled}
+      docs={docs}
+      docEntities={docEntities}
+      healthBases={healthBases}
+    />
+  )}

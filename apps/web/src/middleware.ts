@@ -10,6 +10,8 @@ import {
   extractSessionTokenCookie,
   SESSION_CACHE,
   SESSION_TTL_MS,
+  readSessionCacheL2,
+  writeSessionCacheL2,
 } from "./lib/session-cache";
 import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
 import { isLocalDevHost } from "./lib/oauth/local-dev-secure";
@@ -18,7 +20,7 @@ import { resolveLoginCallback } from "./lib/return-to";
 import { handleAccountCreated } from "./lib/signup/account-created";
 import { handleMagicLinkRequested, handleSessionCreated } from "./lib/auth-events";
 import { handleTwoFactorEvent } from "./lib/two-factor/events";
-import { handleSsoAccountLinked } from "./lib/airtable/sso-linked";
+import { applyNavSnapshotHeaders } from "./lib/nav-snapshot";
 
 // /embed is public by design (shared-embed-protocol): an unauthenticated
 // embed renders its own minimal sign-in prompt (sign-in happens top-level via
@@ -201,6 +203,12 @@ const handleRequest = defineMiddleware(async (context, next) => {
   context.locals.db = db;
   context.locals.auth = auth;
 
+  const snapshot = (res: Response): Response =>
+    applyNavSnapshotHeaders(res, {
+      method: context.request.method,
+      pathname: context.url.pathname,
+    });
+
   const cookieHeader = context.request.headers.get('cookie') ?? '';
   const sessionToken = extractSessionTokenCookie(cookieHeader);
   const isAuthApi = context.url.pathname.startsWith('/api/auth/');
@@ -217,7 +225,29 @@ const handleRequest = defineMiddleware(async (context, next) => {
         return gate;
       }
       try {
-        return await next();
+        return snapshot(await next());
+      } finally {
+        context.locals.cfContext.waitUntil(sql.end({ timeout: 5 }));
+      }
+    }
+    const l2 = await readSessionCacheL2(sessionToken);
+    if (l2) {
+      context.locals.user = l2.user;
+      context.locals.session = l2.session;
+      context.locals.account = l2.account;
+      SESSION_CACHE.set(sessionToken, {
+        user: l2.user,
+        session: l2.session,
+        account: l2.account,
+        expiresAt: Date.now() + SESSION_TTL_MS,
+      });
+      const gate = applyOnboardingGate(context);
+      if (gate) {
+        context.locals.cfContext.waitUntil(sql.end({ timeout: 5 }));
+        return gate;
+      }
+      try {
+        return snapshot(await next());
       } finally {
         context.locals.cfContext.waitUntil(sql.end({ timeout: 5 }));
       }
@@ -269,6 +299,13 @@ const handleRequest = defineMiddleware(async (context, next) => {
           account: context.locals.account,
           expiresAt: Date.now() + SESSION_TTL_MS,
         });
+        context.locals.cfContext.waitUntil(
+          writeSessionCacheL2(sessionToken, {
+            user: context.locals.user,
+            session: context.locals.session,
+            account: context.locals.account,
+          }),
+        );
       }
     } else {
       context.locals.user = null;
@@ -304,7 +341,7 @@ const handleRequest = defineMiddleware(async (context, next) => {
       ));
     }
 
-    return withAuthCookies(await next());
+    return snapshot(withAuthCookies(await next()));
   } finally {
     context.locals.cfContext.waitUntil(sql.end({ timeout: 5 }));
   }

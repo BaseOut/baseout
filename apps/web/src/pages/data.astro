@@ -1,146 +1,18 @@
 ---
 /**
- * /data — the Data page (Slice A / web-data-page + web-data-docs-chat). Space-scoped;
- * auth via middleware like every interior page. Mirrors /schema's loader shape and adds:
- *
- *  - `getSchema` decides `managedPg` — the per-Space read routes are managed_pg-only, so a
- *    readable schema means the Data read API can serve this Space; a 501
- *    (`backend_not_implemented`) means it cannot, and the record-data tabs render their
- *    honest managed-Postgres / LockedTab state (never fixtures).
- *  - `mode` from `backup_configurations.mode` when present (else `dynamic` with honest
- *    degrade on 501). Static Spaces get StaticImport / LockedTab on record-data panels.
- *  - `hasData` (show the tabs at all) = captured tables exist OR a backup has succeeded.
- *  - When available, page-1 Records + Changelog sample + Attachments + Comments are read
- *    through the engine and mapped via `lib/data-browse/map`. Deeper pagination / filters
- *    ride the `/api/spaces/:id/data/*` proxies (setButtonLoading on any network-waiting button).
- *  - Docs + Chat: `listDocuments` + `listChatThreads` (ChatTab still client-refreshes threads
- *    like Schema) + Docs entitlement / Pro+ AI gate via resolveSchemaDocsLevel.
+ * /data — shell first; engine-backed body loads via server:defer.
  */
-import { env } from 'cloudflare:workers';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import DataView from '../views/DataView.astro';
-import EmptyState from '../components/ui/EmptyState.astro';
+import DataBody from '../layouts/DataBody.astro';
 import { getBreadcrumbs } from '../lib/config';
-import { createBackupEngine } from '../lib/backup-engine';
-import { emptyDataPagePayload, loadDataPageFromEngine } from '../lib/data-browse/ssr';
-import { buildDataDocsEntities, dataBasesToHealthBases } from '../components/data/dataToSchema';
-import type { DocsTabEntity } from '../components/islands/DocsTab';
-import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
-import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
-import type { DataMode } from '../components/data/dataTypes';
-import { backupRuns, backupConfigurations } from '../db/schema/core';
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 const breadcrumbs = getBreadcrumbs('/data');
-const { account, db } = Astro.locals;
-const orgId = account?.organization?.id ?? null;
-const spaceId = account?.space?.id ?? null;
-
-let docsLevel: SchemaDocsLevel = 'none';
-if (db && orgId) docsLevel = await resolveSchemaDocsLevel(db, orgId);
-const aiEnabled = docsLevel === 'manual_ai';
-
-const engine =
-  spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
-    ? createBackupEngine({
-        binding: env.BACKUP_ENGINE,
-        internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
-      })
-    : null;
-
-const latestRunQuery =
-  db && spaceId
-    ? db
-        .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
-        .from(backupRuns)
-        .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
-        .orderBy(desc(backupRuns.completedAt))
-        .limit(1)
-    : Promise.resolve([] as { id: string; completedAt: Date | null }[]);
-const modeQuery =
-  db && spaceId
-    ? db
-        .select({ mode: backupConfigurations.mode })
-        .from(backupConfigurations)
-        .where(eq(backupConfigurations.spaceId, spaceId))
-        .limit(1)
-    : Promise.resolve([] as { mode: string | null }[]);
-
-const [payload, latestRows, cfgRows] = await Promise.all([
-  engine && spaceId
-    ? loadDataPageFromEngine(engine, spaceId, { docsLevel })
-    : Promise.resolve(emptyDataPagePayload()),
-  latestRunQuery,
-  modeQuery,
-]);
-
-const {
-  managedPg,
-  bases,
-  tables,
-  records,
-  comments,
-  changelog,
-  runTotals,
-  assets,
-  docs,
-  chatThreads,
-  landingTableId,
-  primaryByTable,
-  recordsNextCursor,
-} = payload;
-
-const docEntities: DocsTabEntity[] = buildDataDocsEntities(bases, tables, { records });
-const healthBases = dataBasesToHealthBases(bases);
-// chatThreads SSR-loaded for entitlement/warmth; ChatTab client-refreshes like Schema (D4).
-void chatThreads;
-
-const latest = latestRows[0];
-const lastSyncedAt = latest?.completedAt?.toISOString() ?? null;
-const lastSyncedRunId = latest?.id ?? null;
-
-let mode: DataMode = 'dynamic';
-const cfgMode = cfgRows[0]?.mode;
-if (cfgMode === 'static' || cfgMode === 'dynamic' || cfgMode === 'both') {
-  mode = cfgMode;
-}
-
-// Show the tab shell when there is anything to browse: captured tables, or a succeeded backup
-// (a non-managed_pg Space with backups still gets the shell + the managed-Postgres explainer).
-const hasData = tables.length > 0 || lastSyncedAt !== null;
 ---
 
 <SidebarLayout pageTitle="Data" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  {!spaceId ? (
-    <EmptyState
-      icon="lucide--folder"
-      title="No active Space"
-      description="Select a Space to browse its backed-up data."
-    />
-  ) : (
-    <DataView
-      hasData={hasData}
-      lastSyncedAt={lastSyncedAt}
-      lastSyncedRunId={lastSyncedRunId}
-      managedPg={managedPg}
-      mode={mode}
-      spaceId={spaceId}
-      bases={bases}
-      tables={tables}
-      records={records}
-      comments={comments}
-      changelog={changelog}
-      runTotals={runTotals}
-      assets={assets}
-      landingTableId={landingTableId}
-      primaryByTable={primaryByTable}
-      recordsNextCursor={recordsNextCursor}
-      loadState="ready"
-      docsLevel={docsLevel}
-      aiEnabled={aiEnabled}
-      docs={docs}
-      docEntities={docEntities}
-      healthBases={healthBases}
-    />
-  )}
+  <DataBody server:defer>
+    <div class="flex min-h-[40vh] items-center justify-center" slot="fallback">
+      <span class="loading loading-spinner loading-lg" aria-label="Loading Data"></span>
+    </div>
+  </DataBody>
 </SidebarLayout>

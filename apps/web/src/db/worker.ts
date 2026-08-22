@@ -20,7 +20,10 @@ export type AppDb = PostgresJsDatabase<typeof schema>
 export function createDb(connectionString: string): { db: AppDb; sql: Sql } {
   const sql = postgres(connectionString, {
     prepare: false,
-    max: 5,
+    fetch_types: false,
+    // One socket per request: Hyperdrive connect is the expensive part.
+    // Promise.all still pipelines on this connection instead of opening five.
+    max: 1,
     connection: {
       search_path: 'baseout,public',
     },

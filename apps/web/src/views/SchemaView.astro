@@ -64,6 +64,8 @@ interface Props {
   lastBackupAt?: string | null
   /** Optional run id for the stamp (D09) — omit rather than invent. */
   lastBackupRunId?: string | null
+  /** When true, Health / Changelog / Relationships render as loading slots filled by SchemaAux. */
+  deferAux?: boolean
 }
 
 const {
@@ -78,6 +80,7 @@ const {
   state: _state,
   lastBackupAt = null,
   lastBackupRunId = null,
+  deferAux = false,
 } = Astro.props
 
 const hasSchema = schema.bases.length > 0
@@ -261,7 +264,13 @@ const asOfStamp = lastBackupRunId && stampWhen
       </div>
 
       <div class="sch-panel" data-panel="relationships" hidden>
-        <RelationshipsTab hasSchema={hasSchema} relationships={relationships} bases={browseBases} />
+        {deferAux ? (
+          <div data-schema-aux-slot="relationships" class="flex min-h-[20vh] items-center justify-center">
+            <span class="loading loading-spinner" aria-label="Loading relationships"></span>
+          </div>
+        ) : (
+          <RelationshipsTab hasSchema={hasSchema} relationships={relationships} bases={browseBases} />
+        )}
       </div>
 
       <div class="sch-panel" data-panel="automations" hidden>
@@ -273,23 +282,35 @@ const asOfStamp = lastBackupRunId && stampWhen
       </div>
 
       <div class="sch-panel" data-panel="changelog" hidden>
-        <ChangelogTab
-          hasSchema={hasSchema}
-          entries={changelogEntries}
-          baseId={clBaseId}
-          tableId={clTableId}
-          baseWorkspace={clBaseWorkspace}
-          asOf={lastBackupAt}
-        />
+        {deferAux ? (
+          <div data-schema-aux-slot="changelog" class="flex min-h-[20vh] items-center justify-center">
+            <span class="loading loading-spinner" aria-label="Loading changelog"></span>
+          </div>
+        ) : (
+          <ChangelogTab
+            hasSchema={hasSchema}
+            entries={changelogEntries}
+            baseId={clBaseId}
+            tableId={clTableId}
+            baseWorkspace={clBaseWorkspace}
+            asOf={lastBackupAt}
+          />
+        )}
       </div>
 
       <div class="sch-panel" data-panel="health" hidden>
-        <HealthTab
-          hasSchema={hasSchema}
-          health={healthRows}
-          aiState={aiState}
-          overrideTargets={healthOverrideTargets}
-        />
+        {deferAux ? (
+          <div data-schema-aux-slot="health" class="flex min-h-[20vh] items-center justify-center">
+            <span class="loading loading-spinner" aria-label="Loading health"></span>
+          </div>
+        ) : (
+          <HealthTab
+            hasSchema={hasSchema}
+            health={healthRows}
+            aiState={aiState}
+            overrideTargets={healthOverrideTargets}
+          />
+        )}
       </div>
 
       <div class="sch-panel" data-panel="docs" hidden>
@@ -312,7 +333,11 @@ const asOfStamp = lastBackupRunId && stampWhen
         aiState={aiState}
       />
       {hasSchema && (
-        <RelationshipPanel relationships={relationships} tables={relTables} bases={browseBases} />
+        deferAux ? (
+          <div data-schema-aux-slot="rel-panel"></div>
+        ) : (
+          <RelationshipPanel relationships={relationships} tables={relTables} bases={browseBases} />
+        )
       )}
       <QuickAskDock
         threads={[]}

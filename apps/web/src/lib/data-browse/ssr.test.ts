@@ -228,4 +228,78 @@ describe('loadDataPageFromEngine', () => {
     deleted.resolve(emptyRows('deleted'))
     await pending
   })
+
+  it('first paint skips documents, comments, media, and changelog samples', async () => {
+    const calls: string[] = []
+    const engine: DataPageEngine = {
+      getSchema: async () => {
+        calls.push('schema')
+        return schemaOk()
+      },
+      listDocuments: async () => {
+        calls.push('docs')
+        return { ok: true, documents: [] }
+      },
+      listChatThreads: async () => {
+        calls.push('threads')
+        return { ok: true, threads: [] }
+      },
+      getDataRecords: async () => {
+        calls.push('records')
+        return emptyRecords
+      },
+      getDataChangelog: async () => {
+        calls.push('changelog')
+        return { ok: true, mode: 'rollup', runs: [], nextCursor: null }
+      },
+      getMedia: async () => {
+        calls.push('media')
+        return emptyMedia
+      },
+      getDataComments: async () => {
+        calls.push('comments')
+        return emptyComments
+      },
+    }
+    await loadDataPageFromEngine(engine, 'space-1', {
+      docsLevel: 'manual',
+      includeSecondary: false,
+    })
+    expect(calls.sort()).toEqual(['records', 'schema'])
+  })
+
+  it('overlaps records with schema when a landing table hint is provided', async () => {
+    const schema = deferred<GetSchemaResult>()
+    const records = deferred<GetDataRecordsResult>()
+    const started: string[] = []
+
+    const engine: DataPageEngine = {
+      getSchema: async () => {
+        started.push('schema')
+        return schema.promise
+      },
+      listDocuments: async () => ({ ok: true, documents: [] }),
+      listChatThreads: async () => ({ ok: true, threads: [] }),
+      getDataRecords: async (_space, tableId) => {
+        started.push(`records:${tableId}`)
+        return records.promise
+      },
+      getDataChangelog: async () => ({ ok: true, mode: 'rollup', runs: [], nextCursor: null }),
+      getMedia: async () => emptyMedia,
+      getDataComments: async () => emptyComments,
+    }
+
+    const pending = loadDataPageFromEngine(engine, 'space-1', {
+      docsLevel: 'none',
+      includeSecondary: false,
+      landingTableIdHint: 'tbl1',
+    })
+    await Promise.resolve()
+    expect(started.sort()).toEqual(['records:tbl1', 'schema'])
+
+    schema.resolve(schemaOk())
+    records.resolve(emptyRecords)
+    const result = await pending
+    expect(result.landingTableId).toBe('tbl1')
+  })
 })

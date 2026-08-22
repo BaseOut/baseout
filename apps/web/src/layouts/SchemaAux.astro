@@ -1,0 +1,141 @@
+---
+/**
+ * Schema Health / Changelog / Relationships — O(bases) engine fan-out after first paint.
+ */
+import { env } from 'cloudflare:workers';
+import RelationshipsTab from '../views/schema/RelationshipsTab.astro';
+import ChangelogTab from '../views/schema/ChangelogTab.astro';
+import HealthTab from '../views/schema/HealthTab.astro';
+import RelationshipPanel from '../components/schema/RelationshipPanel.astro';
+import { createBackupEngine } from '../lib/backup-engine';
+import { loadSchemaAuxTabs } from '../lib/schema-docs/load-aux';
+import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
+import { atBases } from '../db/schema/core';
+import { eq } from 'drizzle-orm';
+import type { SchemaRelationship } from '../lib/schema-docs/adapt-relationships';
+import type { TipChangelogEntry } from '../lib/schema-docs/adapt-changelog';
+import type { TipBaseHealth } from '../lib/schema-docs/adapt-health';
+
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+let skip = true;
+let hasSchema = false;
+let relationships: SchemaRelationship[] = [];
+let changelogEntries: TipChangelogEntry[] = [];
+let healthRows: TipBaseHealth[] = [];
+let browseBases: { id: string; name: string; workspaceId?: string; workspaceName?: string }[] = [];
+let relTables: { id: string; name: string; baseId: string }[] = [];
+let clBaseId: Record<string, string> = {};
+let clTableId: Record<string, string> = {};
+let clBaseWorkspace: Record<string, { workspaceId?: string; workspaceName?: string }> = {};
+let healthOverrideTargets: { id: string; label: string; kind: string }[] = [];
+let aiState: 'ready' | 'locked' | 'no-credits' = 'locked';
+
+if (spaceId && orgId && db && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  const level = await resolveSchemaDocsLevel(db, orgId);
+  if (level !== 'none') {
+    const engine = createBackupEngine({
+      binding: env.BACKUP_ENGINE,
+      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    });
+    const wsRows = await db
+      .select({
+        atBaseId: atBases.atBaseId,
+        name: atBases.name,
+        workspaceId: atBases.workspaceId,
+        workspaceName: atBases.workspaceName,
+      })
+      .from(atBases)
+      .where(eq(atBases.spaceId, spaceId));
+    const bases = wsRows.map((r) => ({ baseId: r.atBaseId, name: r.name }));
+    hasSchema = bases.length > 0;
+    if (hasSchema) {
+      const nameSchema = {
+        bases: bases.map((b) => ({ baseId: b.baseId, name: b.name })),
+        tables: [],
+        fields: [],
+        views: [],
+      };
+      const aux = await loadSchemaAuxTabs(engine, spaceId, bases, nameSchema);
+      relationships = aux.relationships;
+      changelogEntries = aux.changelogEntries;
+      healthRows = aux.healthRows;
+      const baseWorkspaces = Object.fromEntries(
+        wsRows.map((r) => [r.atBaseId, { workspaceId: r.workspaceId, workspaceName: r.workspaceName }]),
+      );
+      browseBases = bases.map((b) => {
+        const ws = baseWorkspaces[b.baseId];
+        return {
+          id: b.baseId,
+          name: b.name,
+          workspaceId: ws?.workspaceId ?? undefined,
+          workspaceName: ws?.workspaceName ?? undefined,
+        };
+      });
+      clBaseId = Object.fromEntries(bases.map((b) => [b.name, b.baseId]));
+      clBaseWorkspace = Object.fromEntries(
+        bases.map((b) => {
+          const ws = baseWorkspaces[b.baseId];
+          return [
+            b.name,
+            {
+              workspaceId: ws?.workspaceId ?? undefined,
+              workspaceName: ws?.workspaceName ?? undefined,
+            },
+          ];
+        }),
+      );
+      healthOverrideTargets = bases.map((b) => ({ id: b.baseId, label: b.name, kind: 'base' }));
+      aiState = level === 'manual_ai' ? 'ready' : 'no-credits';
+      skip = false;
+    }
+  }
+}
+---
+
+{!skip && (
+  <div hidden id="schema-aux-source">
+    <div data-aux-target="relationships">
+      <RelationshipsTab hasSchema={hasSchema} relationships={relationships} bases={browseBases} />
+    </div>
+    <div data-aux-target="changelog">
+      <ChangelogTab
+        hasSchema={hasSchema}
+        entries={changelogEntries}
+        baseId={clBaseId}
+        tableId={clTableId}
+        baseWorkspace={clBaseWorkspace}
+        asOf={null}
+      />
+    </div>
+    <div data-aux-target="health">
+      <HealthTab
+        hasSchema={hasSchema}
+        health={healthRows}
+        aiState={aiState}
+        overrideTargets={healthOverrideTargets}
+      />
+    </div>
+    <div data-aux-target="rel-panel">
+      <RelationshipPanel relationships={relationships} tables={relTables} bases={browseBases} />
+    </div>
+  </div>
+)}
+
+{!skip && (
+  <script>
+    const src = document.getElementById('schema-aux-source')
+    if (src) {
+      src.querySelectorAll('[data-aux-target]').forEach((el) => {
+        const key = el.getAttribute('data-aux-target')
+        if (!key) return
+        const slot = document.querySelector(`[data-schema-aux-slot="${key}"]`)
+        if (!slot) return
+        slot.replaceWith(...el.childNodes)
+      })
+      src.remove()
+    }
+  </script>
+)}

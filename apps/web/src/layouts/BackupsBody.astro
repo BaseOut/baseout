@@ -1,0 +1,287 @@
+---
+/**
+ * Backups page body — server:defer so the shell can swap before run/config queries.
+ */
+import { and, desc, eq } from 'drizzle-orm';
+import Alert from '../components/ui/Alert.astro';
+import Card from '../components/ui/Card.astro';
+import Button from '../components/ui/Button.astro';
+import BackupsListView from '../views/BackupsListView.astro';
+import FrequencyPicker from '../components/backups/FrequencyPicker.astro';
+import RunBackupButton from '../components/patterns/RunBackupButton.astro';
+import { getIntegrationsState } from '../lib/integrations';
+import { describeDestination, isLocalDestination } from '../lib/backups/destination';
+import { webhookNeedsReauth } from '../lib/backups/webhook-attention';
+import { resolveCapabilities } from '../lib/capabilities/resolve';
+import { listRecentRuns } from '../lib/backup-runs/list';
+import type { BackupRunRowLike, IncludedBase } from '../lib/backup-runs/list';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
+import {
+  airtableWebhooks,
+  airtableWebhookSubscriptions,
+  atBases,
+  backupConfigurationBases,
+  backupConfigurations,
+  backupRuns,
+  connections,
+  spaceDatabases,
+} from '../db/schema';
+
+const { account, db } = Astro.locals;
+
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+const listBackupRuns = () =>
+  spaceId && db
+    ? listRecentRuns(spaceId, 25, {
+        fetchRuns: async (sid, lim) => {
+          const rows = await db
+            .select({
+              id: backupRuns.id,
+              status: backupRuns.status,
+              isTrial: backupRuns.isTrial,
+              triggeredBy: backupRuns.triggeredBy,
+              recordCount: backupRuns.recordCount,
+              tableCount: backupRuns.tableCount,
+              attachmentCount: backupRuns.attachmentCount,
+              startedAt: backupRuns.startedAt,
+              completedAt: backupRuns.completedAt,
+              errorMessage: backupRuns.errorMessage,
+              triggerRunIds: backupRuns.triggerRunIds,
+              createdAt: backupRuns.createdAt,
+              connectionId: backupRuns.connectionId,
+              connectionDisplayName: connections.displayName,
+              configStorageType: backupConfigurations.storageType,
+              configMode: backupConfigurations.mode,
+            })
+            .from(backupRuns)
+            .leftJoin(connections, eq(connections.id, backupRuns.connectionId))
+            .leftJoin(
+              backupConfigurations,
+              eq(backupConfigurations.spaceId, backupRuns.spaceId),
+            )
+            .where(eq(backupRuns.spaceId, sid))
+            .orderBy(desc(backupRuns.createdAt))
+            .limit(lim);
+          return rows as BackupRunRowLike[];
+        },
+        fetchIncludedBases: async (sid) => {
+          const rows = await db
+            .select({ id: atBases.id, name: atBases.name })
+            .from(backupConfigurationBases)
+            .innerJoin(
+              backupConfigurations,
+              eq(
+                backupConfigurations.id,
+                backupConfigurationBases.backupConfigurationId,
+              ),
+            )
+            .innerJoin(
+              atBases,
+              eq(atBases.id, backupConfigurationBases.atBaseId),
+            )
+            .where(
+              and(
+                eq(backupConfigurations.spaceId, sid),
+                eq(backupConfigurationBases.isIncluded, true),
+              ),
+            )
+            .orderBy(atBases.name);
+          return rows as IncludedBase[];
+        },
+      })
+    : Promise.resolve([] as BackupRunSummary[]);
+
+const [integrations, fetchedRuns] = await Promise.all([
+  orgId && spaceId ? getIntegrationsState(db, orgId, spaceId) : Promise.resolve(null),
+  listBackupRuns(),
+]);
+const airtable =
+  integrations?.connections.find((c) => c.platformSlug === 'airtable') ?? null;
+const hasAirtableConnection = airtable?.status === 'active';
+const initialRuns: BackupRunSummary[] = hasAirtableConnection ? fetchedRuns : [];
+
+const spaceName = account?.space?.name ?? null;
+
+// Where backups currently go (defaults to dev local-disk). Drives the header
+// indicator: shows the destination + a link to change it, or a setup prompt
+// when a chosen cloud provider isn't connected. The full picker lives in the
+// wizard at /integrations/configure.
+const storageType = integrations?.policy?.storageType ?? null;
+const destination =
+  spaceId && hasAirtableConnection
+    ? describeDestination(
+        storageType,
+        integrations?.storageDestinations.find((d) => d.type === storageType) ?? null,
+      )
+    : null;
+// When already on dev local-disk there's nothing to switch to; otherwise offer
+// a one-click switch so a Space stuck on an unconnected cloud provider can run.
+const onLocal = isLocalDestination(storageType);
+const CONFIGURE_HREF = '/integrations/configure';
+
+// ── web-instant-webhook: FrequencyPicker inputs + webhook attention state ──
+// Guarded + best-effort like the destination line: a read failure degrades to
+// no picker / no banner rather than breaking the Backups page.
+let pickerProps: {
+  frequency: 'monthly' | 'weekly' | 'daily' | 'instant';
+  webhookPollIntervalSeconds: number;
+  availableFrequencies: readonly ('monthly' | 'weekly' | 'daily' | 'instant')[];
+  dynamicDbReady: boolean;
+  webhookPollMinSeconds: number;
+} | null = null;
+let showWebhookReauthBanner = false;
+if (orgId && spaceId && db && hasAirtableConnection) {
+  try {
+    const caps = await resolveCapabilities(db, orgId, 'airtable');
+    const [configRow] = await db
+      .select({
+        frequency: backupConfigurations.frequency,
+        webhookPollIntervalSeconds: backupConfigurations.webhookPollIntervalSeconds,
+      })
+      .from(backupConfigurations)
+      .where(eq(backupConfigurations.spaceId, spaceId))
+      .limit(1);
+    // Dynamic-DB readiness: 'active' is the provisioned-terminal status in
+    // space_databases' vocabulary (the spec's shorthand "ready").
+    const [dbRow] = await db
+      .select({ status: spaceDatabases.status })
+      .from(spaceDatabases)
+      .where(eq(spaceDatabases.spaceId, spaceId))
+      .limit(1);
+    pickerProps = {
+      frequency: (integrations?.policy.frequency ?? configRow?.frequency ?? 'monthly') as
+        | 'monthly' | 'weekly' | 'daily' | 'instant',
+      webhookPollIntervalSeconds: configRow?.webhookPollIntervalSeconds ?? 900,
+      availableFrequencies: caps.capabilities.frequencies,
+      dynamicDbReady: dbRow?.status === 'active',
+      webhookPollMinSeconds: caps.capabilities.webhookPollMinSeconds,
+    };
+
+    // Attention banner: any of this Space's subscribed webhooks pending
+    // reauth pauses webhook-driven backups until reconnect.
+    // notifications_disabled is NOT surfaced (self-heals via the renewal cron).
+    const webhookRows = await db
+      .select({ status: airtableWebhooks.status })
+      .from(airtableWebhookSubscriptions)
+      .innerJoin(
+        airtableWebhooks,
+        eq(airtableWebhooks.id, airtableWebhookSubscriptions.webhookId),
+      )
+      .where(eq(airtableWebhookSubscriptions.spaceId, spaceId));
+    showWebhookReauthBanner = webhookNeedsReauth(webhookRows.map((r) => r.status));
+  } catch {
+    pickerProps = null;
+    showWebhookReauthBanner = false;
+  }
+}
+---
+
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <header class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <h1 class="text-2xl font-bold tracking-tight">Backups</h1>
+        <p class="text-sm text-base-content/60 mt-1">
+          {spaceName
+            ? `Every backup run for ${spaceName}. Open any run for its full detail.`
+            : 'Every backup run for this Space. Open any run for its full detail.'}
+        </p>
+        {destination && (
+          <div class="text-sm mt-2 flex items-center gap-2 flex-wrap">
+            {destination.needsSetup ? (
+              <span class="inline-flex items-center gap-1.5">
+                <span class="iconify lucide--triangle-alert size-4 text-warning" aria-hidden="true"></span>
+                <span class="text-base-content/70">{destination.label} isn't connected yet.</span>
+              </span>
+            ) : (
+              <span class="inline-flex items-center gap-1.5">
+                <span class="iconify lucide--hard-drive size-4 text-base-content/50" aria-hidden="true"></span>
+                <span class="text-base-content/70">Backing up to <span class="font-medium text-base-content">{destination.label}</span></span>
+              </span>
+            )}
+            {!onLocal && (
+              <Button type="button" variant="tonal" size="sm" data-use-local-dest>
+                Use dev local disk
+              </Button>
+            )}
+            <a href={CONFIGURE_HREF} class="link link-primary">
+              {destination.needsSetup ? 'Set up a cloud destination' : 'Change destination'}
+            </a>
+          </div>
+        )}
+      </div>
+      {spaceId && hasAirtableConnection && (
+        <RunBackupButton
+          spaceId={spaceId}
+          connectionStatus={airtable?.status ?? null}
+        />
+      )}
+    </header>
+
+    {!spaceId || !hasAirtableConnection ? (
+      <Card variant="outlined">
+        <p class="text-sm">
+          Connect Airtable on the
+          <a href="/integrations" class="link link-primary mx-1">Integrations</a>
+          page to start backing up your bases.
+        </p>
+      </Card>
+    ) : (
+      <>
+      {showWebhookReauthBanner && (
+        <Alert
+          variant="warning"
+          title="Webhook backups paused — reconnect required."
+          actionHref="/sources"
+          actionLabel="Reconnect"
+        >
+          A webhook for this Space was disconnected upstream. Instant backups
+          resume once the connection is restored; scheduled backups continue.
+        </Alert>
+      )}
+      {pickerProps && (
+        <FrequencyPicker
+          spaceId={spaceId}
+          frequency={pickerProps.frequency}
+          webhookPollIntervalSeconds={pickerProps.webhookPollIntervalSeconds}
+          availableFrequencies={pickerProps.availableFrequencies}
+          dynamicDbReady={pickerProps.dynamicDbReady}
+          webhookPollMinSeconds={pickerProps.webhookPollMinSeconds}
+        />
+      )}
+      <div data-backup-history data-space-id={spaceId}>
+        <BackupsListView runs={initialRuns} embedded={true} spaceId={spaceId} />
+        {/* Hydrates the $backupRuns store for the live-poll loop wired in
+            BackupsListView. Same JSON-script pattern as BackupHistoryWidget;
+            `<` is escaped so run data can't break out of the script tag. */}
+        <script
+          type="application/json"
+          data-backup-history-state
+          is:inline
+          set:html={JSON.stringify(initialRuns).replace(/</g, '\\u003c')}
+        />
+      </div>
+      </>
+    )}
+  </div>
+
+<script>
+  import { connectLocalFs } from '../lib/backups/connect-local-fs';
+  import { setButtonLoading } from '../lib/ui';
+
+  // One-click connect to the dev local-disk destination so backups can run
+  // without a cloud connection. Connects for the active Space (no body) and
+  // reloads. Delegated on document so it survives Astro ClientRouter navigations.
+  document.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest('[data-use-local-dest]');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    setButtonLoading(btn, true);
+    try {
+      const res = await connectLocalFs();
+      if (res.ok) window.location.reload();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+</script>

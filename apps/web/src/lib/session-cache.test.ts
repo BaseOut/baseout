@@ -4,6 +4,8 @@ import {
   invalidateSessionCache,
   SESSION_CACHE,
   SESSION_TTL_MS,
+  sessionCacheRequest,
+  parseCachedAuthPayload,
   type CachedAuth,
 } from './session-cache'
 
@@ -75,5 +77,25 @@ describe('invalidateSessionCache', () => {
     invalidateSessionCache('tok-d')
     expect(SESSION_CACHE.has('tok-d')).toBe(false)
     expect(SESSION_CACHE.has('tok-e')).toBe(true)
+  })
+})
+
+describe('session Cache API key', () => {
+  it('hashes the token so the raw cookie is not the cache URL', async () => {
+    const req = await sessionCacheRequest('secret-token')
+    expect(req.url).not.toContain('secret-token')
+    expect((await sessionCacheRequest('secret-token')).url).toBe(req.url)
+    expect((await sessionCacheRequest('other-token')).url).not.toBe(req.url)
+  })
+
+  it('round-trips a cached auth payload', () => {
+    const payload = {
+      user: { id: 'u1', name: 'Ada', email: 'ada@openside.com', image: null, termsAcceptedAt: null },
+      session: { id: 's1', userId: 'u1' },
+      account: null,
+    }
+    expect(parseCachedAuthPayload(JSON.stringify(payload))).toEqual(payload)
+    expect(parseCachedAuthPayload('not-json')).toBeNull()
+    expect(parseCachedAuthPayload('{}')).toBeNull()
   })
 })

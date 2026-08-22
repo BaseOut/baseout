@@ -1,0 +1,119 @@
+---
+/**
+ * Schema Browse / Visualize — getSchema only. Per-base tab fan-out lives in SchemaAux.
+ */
+import { env } from 'cloudflare:workers';
+import SchemaView from '../views/SchemaView.astro';
+import EmptyState from '../components/ui/EmptyState.astro';
+import { createBackupEngine } from '../lib/backup-engine';
+import { loadSchemaFirstPaint } from '../lib/schema-docs/first-paint';
+import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
+import { getSchemaCached } from '../lib/schema-docs/schema-snapshot-cache';
+import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
+import { atBases, backupRuns } from '../db/schema/core';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
+
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+const engineBinding = env.BACKUP_ENGINE;
+const engineToken = env.BACKUP_ENGINE_INTERNAL_TOKEN;
+const rawEngine =
+  spaceId && engineBinding && engineToken
+    ? createBackupEngine({
+        binding: engineBinding,
+        internalToken: engineToken,
+      })
+    : null;
+
+const levelP: Promise<SchemaDocsLevel> =
+  db && orgId ? resolveSchemaDocsLevel(db, orgId) : Promise.resolve('none');
+
+const firstP = rawEngine && spaceId
+  ? loadSchemaFirstPaint(
+      {
+        getSchema: (id: string) => getSchemaCached(id, () => rawEngine.getSchema(id)),
+      },
+      spaceId,
+    )
+  : Promise.resolve(null);
+
+const latestP =
+  db && spaceId
+    ? db
+        .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
+        .from(backupRuns)
+        .where(
+          and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)),
+        )
+        .orderBy(desc(backupRuns.completedAt))
+        .limit(1)
+    : Promise.resolve([] as { id: string; completedAt: Date | null }[]);
+
+const wsP =
+  db && spaceId
+    ? db
+        .select({
+          atBaseId: atBases.atBaseId,
+          workspaceId: atBases.workspaceId,
+          workspaceName: atBases.workspaceName,
+        })
+        .from(atBases)
+        .where(eq(atBases.spaceId, spaceId))
+    : Promise.resolve(
+        [] as { atBaseId: string; workspaceId: string | null; workspaceName: string | null }[],
+      );
+
+const [level, first, latestRows, wsRows] = await Promise.all([levelP, firstP, latestP, wsP]);
+
+let docs: Awaited<ReturnType<typeof loadSchemaFirstPaint>>['docs'] = [];
+let schema: Awaited<ReturnType<typeof loadSchemaFirstPaint>>['schema'] = {
+  bases: [],
+  tables: [],
+  fields: [],
+  views: [],
+};
+let viewState: Awaited<ReturnType<typeof loadSchemaFirstPaint>>['viewState'] = 'ok';
+if (level !== 'none' && spaceId && (!engineBinding || !engineToken)) viewState = 'unconfigured';
+if (first && level !== 'none') {
+  docs = first.docs;
+  schema = first.schema;
+  viewState = first.viewState;
+}
+
+const latest = latestRows[0];
+const lastBackupAt = latest?.completedAt?.toISOString() ?? null;
+const lastBackupRunId = latest?.id ?? null;
+const baseWorkspaces = Object.fromEntries(
+  wsRows.map((r) => [r.atBaseId, { workspaceId: r.workspaceId, workspaceName: r.workspaceName }]),
+);
+---
+
+{level === 'none' ? (
+  <EmptyState
+    icon="lucide--book-text"
+    title="Schema Docs is a Launch-plan feature"
+    description="Upgrade to Launch or above to browse and document your schema."
+    actionHref="/settings"
+    actionLabel="View plans"
+  />
+) : !spaceId ? (
+  <EmptyState
+    icon="lucide--folder"
+    title="No active Space"
+    description="Select a Space to view its schema."
+  />
+) : (
+  <SchemaView
+    spaceId={spaceId}
+    level={level}
+    docs={docs}
+    schema={schema}
+    baseWorkspaces={baseWorkspaces}
+    state={viewState}
+    lastBackupAt={lastBackupAt}
+    lastBackupRunId={lastBackupRunId}
+    deferAux={true}
+  />
+)}

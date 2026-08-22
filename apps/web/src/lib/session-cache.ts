@@ -32,4 +32,72 @@ export function extractSessionTokenCookie(cookieHeader: string): string | null {
 export function invalidateSessionCache(token: string | null | undefined): void {
   if (!token) return
   SESSION_CACHE.delete(token)
+  void deleteSessionCacheL2(token)
+}
+
+export const SESSION_CACHE_CONTROL = `private, max-age=${Math.floor(SESSION_TTL_MS / 1000)}`
+
+type SessionCachePayload = Pick<CachedAuth, 'user' | 'session' | 'account'>
+
+export async function sessionCacheRequest(token: string): Promise<Request> {
+  const buf = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(token),
+  )
+  const hex = [...new Uint8Array(buf)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+  return new Request(`https://session-cache.baseout.internal/${hex}`)
+}
+
+export function parseCachedAuthPayload(raw: string): SessionCachePayload | null {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || !('user' in parsed)) return null
+    const body = parsed as SessionCachePayload
+    return { user: body.user, session: body.session, account: body.account ?? null }
+  } catch {
+    return null
+  }
+}
+
+export async function readSessionCacheL2(
+  token: string,
+): Promise<SessionCachePayload | null> {
+  if (typeof caches === 'undefined') return null
+  try {
+    const hit = await caches.default.match(await sessionCacheRequest(token))
+    if (!hit) return null
+    return parseCachedAuthPayload(await hit.text())
+  } catch {
+    return null
+  }
+}
+
+export async function writeSessionCacheL2(
+  token: string,
+  value: SessionCachePayload,
+): Promise<void> {
+  if (typeof caches === 'undefined') return
+  try {
+    const req = await sessionCacheRequest(token)
+    const res = new Response(JSON.stringify(value), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': SESSION_CACHE_CONTROL,
+      },
+    })
+    await caches.default.put(req, res)
+  } catch {
+    // Isolate / Cache API unavailable — L1 Map still covers this Worker.
+  }
+}
+
+export async function deleteSessionCacheL2(token: string): Promise<void> {
+  if (typeof caches === 'undefined') return
+  try {
+    await caches.default.delete(await sessionCacheRequest(token))
+  } catch {
+    // Best-effort; L1 is already cleared.
+  }
 }
