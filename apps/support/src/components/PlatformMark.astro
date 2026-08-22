@@ -1,0 +1,54 @@
+---
+/**
+ * A platform's own brand mark, in its own colours.
+ *
+ * SEPARATE FROM `Icon.astro` ON PURPOSE. That component is the Lucide set, and the rule it enforces
+ * is that the portal uses one icon family. This is the sanctioned exception, and keeping it in its
+ * own component is what stops the exception quietly widening: anything reaching for a non-Lucide
+ * glyph has to come through a file whose name says it is a brand.
+ *
+ * IT WORE THE ACCENT FOR TWO ROUNDS, and both times that was wrong. First every mark was
+ * `currentColor`, so a row of three products read as three states of one thing. Then each got a
+ * single flat brand hue, which is right for Notion and wrong for the two whose marks are genuinely
+ * several colours. Now each renders exactly as its owner draws it, and `lib/platforms.ts` records
+ * where every value came from (Oleh, 2026-08-20).
+ *
+ * A MONOCHROME BRAND KEEPS `currentColor`. Notion's paths carry no fill, so the per-theme rule in
+ * `support.css` paints it near-black on light and white on dark, which is its brand rather than a
+ * departure from it.
+ *
+ * GRADIENT IDS ARE DOCUMENT-GLOBAL, and this component renders many times per page, so every
+ * instance gets its own suffix from `uniquifyMark`. The reasoning that used to sit here — that
+ * duplicate ids are harmless because the definitions are identical — was wrong and cost the ClickUp
+ * mark on the entire roadmap; the argument is recorded in full at `uniquifyMark` in
+ * `lib/platforms.ts`. The ids stay namespaced `bo-` so they cannot collide with anything Starlight
+ * or a page author emits.
+ */
+import { platform, uniquifyMark, nextMarkToken, type PlatformId } from '../lib/platforms';
+
+interface Props {
+  id: PlatformId;
+  size?: number;
+  class?: string;
+}
+
+const { id, size = 14, class: cls } = Astro.props;
+const p = platform(id);
+
+/* The token has to come from a real module: this frontmatter block re-runs for every instance, so
+   a counter declared here would reset each time. See `nextMarkToken`. */
+const mark = uniquifyMark(p.mark, nextMarkToken());
+---
+
+<svg
+  class:list={['bo-mark', `bo-mark-${id}`, cls]}
+  viewBox={mark.viewBox}
+  width={size}
+  height={size}
+  fill="currentColor"
+  role="img"
+  aria-label={p.name}
+>
+  {mark.defs && <defs set:html={mark.defs} />}
+  {mark.paths.map((path) => <path d={path.d} fill={path.fill} fill-opacity={path.opacity} />)}
+</svg>

@@ -1,0 +1,1151 @@
+---
+/**
+ * The landing page's body.
+ *
+ * THIS WAS VARIANT A, and it won (Oleh, 2026-08-20). Three candidates shipped behind a switch on
+ * 2026-08-19 so the choice could be made by reading rather than by describing: A path over product
+ * screenshots with the documentation as tiles, B the same without the path, C the same with the
+ * documentation as a list. The switch, the two losing components and `lib/landing-switch.ts` are
+ * deleted in the same commit that inlines this one, which is what they were built for.
+ *
+ * WHY IT WON, as far as the evidence goes: it is the only one of the three that answered all three
+ * complaints at once. It onboards (the path), it opens the roadmap (the strip), and it is not a wall
+ * of links (tiles and screenshots). Its cost is height, and the measured page is 2463px against
+ * B's 1978px.
+ *
+ * THE ORDER IS THE READER'S SEQUENCE. Which platform are you on, how do you set one up, where is
+ * everything, what is coming, and how do you reach a person. The chooser leads because the landing
+ * is the only screen where asking who you are is free; everywhere else the same question is a chip
+ * in the sidebar that starts with everything on.
+ *
+ * A DRAWS CARDS, SO IT CAN ADMIT AN EMPTY ROOM. `SHOW_DRAFT_FLAGS` is that switch: a card promises
+ * more than a link, and the reader is often here because a backup just failed. It is off while the
+ * documentation is still filling in, and it is one line to turn on.
+ *
+ * THE PER-CARD GLYPH is keyed by href and falls back to the band's own, so a doc link that moves
+ * loses its portrait and never loses its card.
+ *
+ * THE STEP STRIP NOW REACTS TO THE CHOOSER ABOVE IT, and the client's own words are the reason:
+ * "we have some selector, and it just picks where to start the integration". Naming your platform
+ * used to write the site-wide preference and navigate away, while every word on this page carried
+ * on as if nobody had answered. Step 1 now points at that platform's connecting page and each
+ * sentence takes that platform's noun, from the one `vocab` in `lib/platforms.ts`.
+ *
+ * NOTHING IS HIDDEN BY A CHOICE. This page is re-labelled and ADDED TO, never filtered: no section,
+ * link or count is ever taken away from a reader who named a platform. Hiding is what the sidebar
+ * chips do on a documentation page, where the reader is mid-task and already knows what they want.
+ * On the one screen a first visitor sees, subtracting is the wrong instrument.
+ *
+ * TWO VARIANTS SHIP TOGETHER behind the floating switch at the foot of this file, and
+ * `lib/shot-switch.ts` carries the argument for each. They differ by ONE thing: what clicking a
+ * platform card does. `reactive` — the card is a door and takes you to that platform's connecting
+ * page. `filter` — the card selects, the page stays, the steps take that platform's nouns and its
+ * own ten pages join the documentation directory below. Both write the SAME preference, so
+ * switching variant mid-session cannot leave a reader in a contradictory state.
+ *
+ * Both are server-rendered and the stylesheet decides which is seen, so switching costs no
+ * navigation; a pre-paint inline script stamps the choice on `<html>` BEFORE this markup is parsed,
+ * so the page cannot flash the other one. All of it is built to be deleted in one commit the moment
+ * the client picks.
+ */import { getCollection } from 'astro:content';
+import { BANDS, PLATFORM_TOPICS, ROADMAP_TILES, WAYS_OUT } from '../../lib/landing';
+import { STEPS, GLOSSARY_ROWS, bodyParts, nounReadings } from '../../lib/landing-steps';
+import { PLATFORMS } from '../../lib/platforms';
+import Icon from '../Icon.astro';
+import PlatformMark from '../PlatformMark.astro';
+import RequestCard from '../RequestCard.astro';
+import PlatformStart from '../PlatformStart.astro';
+import ShotSwitch from './ShotSwitch.astro';
+import type { IconName } from '../../lib/icons';
+
+/** See the header: on while A is a candidate would make it lose on the content, not the layout. */
+const SHOW_DRAFT_FLAGS = false;
+
+const CARD_ICON: Record<string, IconName> = {
+  '/start/getting-started/': 'play',
+  '/start/what-baseout-is/': 'shield-check',
+  '/start/how-baseout-is-organized/': 'list-checks',
+  '/start/signing-in/': 'log-in',
+
+  '/backups/how-backups-work/': 'database-backup',
+  '/backups/schedule-and-scope/': 'calendar',
+  '/backups/running-a-backup/': 'play',
+  '/backups/reading-a-run/': 'history',
+  '/backups/retention-and-cleanup/': 'clock',
+
+  '/restore/restoring-a-base/': 'rotate-ccw',
+  '/restore/attachments/': 'download',
+
+  '/connections/sources/': 'plug',
+  '/connections/destinations/': 'globe',
+  '/connections/reconnecting/': 'lock',
+
+  '/schema/': 'table-2',
+  '/data/records/': 'search',
+  '/data/attachments/': 'download',
+  '/data/presets-and-export/': 'square-arrow-out-up-right',
+
+  '/troubleshooting/backup-failed/': 'triangle-alert',
+  '/troubleshooting/connection-needs-reconnecting/': 'lock',
+  '/troubleshooting/missing-bases/': 'circle-slash',
+  '/troubleshooting/what-baseout-cannot-capture/': 'circle-dashed',
+};
+
+/**
+ * THE PER-PLATFORM HALF OF THE DIRECTORY, resolved against the real content collection.
+ *
+ * THE LABEL IS THE PAGE'S OWN `title`, read at build time rather than typed here. A link's text is
+ * the one thing it cannot afford to be wrong about, and the titles genuinely differ per platform in
+ * ways a template would get wrong: Airtable has "field types", Notion has "property types", and
+ * ClickUp splits its columns in two and says so in the title.
+ *
+ * A TOPIC WITH NO PAGE IS SKIPPED rather than rendered dark, so this block cannot mint a dead
+ * internal link — which is precisely the defect this app shipped last (`/chat` in the sidebar,
+ * 404 on all 41 pages, every other gate green).
+ */
+const docTitles = new Map<string, string>();
+for (const entry of await getCollection('docs')) docTitles.set(entry.id, entry.data.title);
+
+function platformTopics(bandKey: string, id: string) {
+  return PLATFORM_TOPICS.filter((t) => t.band === bandKey)
+    .map((t) => ({ ...t, title: docTitles.get(`platforms/${id}/${t.slug}`) }))
+    .filter((t): t is typeof t & { title: string } => Boolean(t.title));
+}
+
+/* THE ROADMAP CARD IS GONE FROM "STILL STUCK?" (Oleh, 2026-08-19), in all three variants, because
+   all three carry the roadmap strip: the board is already opened twice above, by three real request
+   rows and by the link beside their heading. A third route to the same page, dressed as one of the
+   things to do when the documentation failed you, is the page arguing with itself about what the
+   reader should do next. */
+const EXITS = WAYS_OUT.filter((w) => w.href !== '/roadmap/');
+
+/* AIRTABLE IS ABSENT FROM THIS LIST ON PURPOSE. It is the platform the screenshots ARE, so its
+   frame is the screenshot and it needs no substitute. The other two get their own vocabulary in the
+   same frame, because there is no ClickUp or Notion product screen and there will not be one: the
+   features do not exist yet, and a fabricated screenshot of a feature that does not exist is the
+   one mistake a support portal cannot recover from. */
+const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
+
+
+/* NO COUNT IN THE SUBHEAD. It said "22 pages", which is the number of links this block draws and
+   not the number of pages the documentation has (38, and the sidebar shows every one of them). A
+   reader who opens the sidebar catches the discrepancy in a second, and a support portal that is
+   caught being loose with a number it did not have to print has spent something it needs. */
+---
+
+{/* `not-content` is load-bearing, not tidiness. This renders inside `.sl-markdown-content`, whose
+    prose rhythm is a GENERAL-SIBLING rule: it puts `margin-top` on every second-and-later child of
+    every nested flex or grid box in here. Measured before it was added: steps 02 and 03 carried
+    `margin-top: 4px` and step 01 did not, so the row of three sat 4px out of true and the cause was
+    nowhere in this file. It is the same rule that made the roadmap board look crooked in August. */}
+{/* THE PRE-PAINT STAMP, and it is `is:inline` for the one reason that justifies an unchecked
+    script: a module script is deferred, so it runs AFTER this markup has painted, and both the
+    treatment switch and the platform re-labelling would be visible flipping. Stamped here, before
+    the strip below is even parsed, the browser has the answer at first paint and the stylesheet
+    does the rest. `lib/shot-switch.ts` and `lib/landing-strip.ts` are the authority a moment later
+    and will correct anything this cheap read got wrong; the two storage keys are repeated verbatim
+    because an inline script cannot import them.
+
+    Two platforms selected leaves the stamp OFF, which is the neutral copy: "which Bases or Spaces
+    to back up" is not a sentence, and a reader with two platforms on has not told us whose nouns
+    are theirs. */}
+<script is:inline>
+  (function () {
+    var r = document.documentElement;
+    try {
+      var q = new URLSearchParams(window.location.search);
+      var s = q.get('shots');
+      if (s !== 'filter' && s !== 'reactive') s = window.localStorage.getItem('bo-landing-shots');
+      r.dataset.shots = s === 'filter' || s === 'reactive' ? s : 'reactive';
+
+      var p = q.get('platform');
+      if (!p) {
+        var raw = window.localStorage.getItem('bo-platforms');
+        var list = raw ? JSON.parse(raw) : null;
+        p = Array.isArray(list) && list.length === 1 ? list[0] : null;
+      }
+      if (p === 'airtable' || p === 'clickup' || p === 'notion') r.dataset.shotPlatform = p;
+    } catch (e) {
+      r.dataset.shots = 'reactive';
+    }
+  })();
+</script>
+
+<div class="vb ja not-content">
+  <!-- 1 · WHO ARE YOU -->
+
+  <PlatformStart />
+
+  <!-- 2 · THE PATH -->
+
+  <section class="vb-sec vb-sec-lead" aria-labelledby="vb-path-h">
+    <div class="vb-head">
+      <h2 class="vb-h" id="vb-path-h">Set up a backup</h2>
+      <p class="vb-sub">Three steps, once per Space. Each one opens the page that covers it.</p>
+    </div>
+
+    <ol class="vb-steps">
+      {
+        STEPS.map((s) => {
+          const parts = bodyParts(s);
+          return (
+            <li class="vb-step">
+              <span class="vb-step-n" aria-hidden="true">{String(s.n).padStart(2, '0')}</span>
+              <h3 class="vb-step-title">
+                <a class="vb-step-link" href={s.href} data-step-link={String(s.n)}>
+                  {s.title}
+                  <span class="vb-arrow"><Icon name="arrow-right" size={15} /></span>
+                </a>
+              </h3>
+              <p class="vb-step-body">{parts.before}{nounReadings(s).map((r) => (
+                <span class="vb-noun" data-for={r.key}>{r.text}</span>
+              ))}{parts.after}</p>
+              <span class="vb-shot">
+                <img
+                  class="vb-shot-light"
+                  src={`/screens/${s.shot}-light.png`}
+                  alt={s.alt}
+                  width="1040"
+                  height="650"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <img
+                  class="vb-shot-dark"
+                  src={`/screens/${s.shot}-dark.png`}
+                  alt={s.alt}
+                  width="1040"
+                  height="650"
+                  loading="lazy"
+                  decoding="async"
+                />
+                {GLOSSARY_PLATFORMS.map((p) => (
+                  <span class="vb-glo" data-plat={p.id}>
+                    <span class="vb-glo-head">
+                      <PlatformMark id={p.id} size={16} />
+                      <span class="vb-glo-name">{p.name}</span>
+                    </span>
+                    <span class="vb-glo-rows">
+                      {GLOSSARY_ROWS.map((row) => (
+                        <span
+                          class="vb-glo-row"
+                          data-focus={s.glossaryFocus.includes(row.from) ? '' : undefined}
+                        >
+                          <span class="vb-glo-k">{row.label}</span>
+                          <span class="vb-glo-v">{p.vocab[row.from]}</span>
+                        </span>
+                      ))}
+                    </span>
+                  </span>
+                ))}
+              </span>
+            </li>
+          );
+        })
+      }
+    </ol>
+  </section>
+
+  <!-- 3 · THE DIRECTORY -->
+
+  <section class="vb-sec" aria-labelledby="vb-dir-h">
+    <div class="vb-head">
+      <h2 class="vb-h" id="vb-dir-h">The documentation</h2>
+      <p class="vb-sub">Grouped by what you are doing at the time.</p>
+    </div>
+
+    <div class="ja-dir">
+      {
+        BANDS.map((band) => (
+          <section class="ja-band">
+            <div class="ja-head">
+              <h3 class="ja-verb">
+                <Icon name={band.icon} size={14} />
+                {band.verb}
+              </h3>
+              <p class="ja-line">{band.line}</p>
+            </div>
+
+            <ul class="ja-grid">
+              {band.items.map((item) => (
+                <li>
+                  <a class="ja-card" href={item.href}>
+                    <span class="ja-ico">
+                      <Icon name={CARD_ICON[item.href] ?? band.icon} size={18} />
+                    </span>
+                    <span class="ja-body">
+                      <span class="ja-label">
+                        {item.label}
+                        {SHOW_DRAFT_FLAGS && !item.written && (
+                          <span class="ja-flag">Not written yet</span>
+                        )}
+                      </span>
+                      <span class="ja-blurb">{item.blurb}</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+
+            {PLATFORMS.map((p) => {
+              const topics = platformTopics(band.key, p.id);
+              return topics.length ? (
+                <div class="ja-plat" data-plat={p.id}>
+                  <h4 class="ja-plat-h">
+                    <PlatformMark id={p.id} size={14} />
+                    Specific to {p.name}
+                  </h4>
+                  <ul class="ja-grid">
+                    {topics.map((t) => (
+                      <li>
+                        <a class="ja-card" href={`/platforms/${p.id}/${t.slug}/`}>
+                          <span class="ja-ico">
+                            <Icon name={t.icon} size={18} />
+                          </span>
+                          <span class="ja-body">
+                            <span class="ja-label">{t.title}</span>
+                            <span class="ja-blurb">{t.blurb}</span>
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null;
+            })}
+          </section>
+        ))
+      }
+    </div>
+  </section>
+
+  <!-- 4 · THE ROADMAP -->
+
+  <section class="vb-sec" aria-labelledby="vb-road-h">
+    <div class="vb-head vb-head-row">
+      <div>
+        <h2 class="vb-h" id="vb-road-h">From the roadmap</h2>
+        <p class="vb-sub">One in progress, one shipped, one planned.</p>
+      </div>
+      <a class="vb-more" href="/roadmap/">
+        See the whole roadmap
+        <span class="vb-arrow"><Icon name="arrow-right" size={15} /></span>
+      </a>
+    </div>
+
+    {/* THE BOARD'S OWN CARD, IMPORTED RATHER THAN IMITATED. This strip used to draw its own tile —
+        a status badge on top, a title, a summary and a dated line with a calendar glyph — which was
+        the fifth copy of a card that had already been written four times and drifted, and the
+        extraction of `RequestCard.astro` exists to end exactly that. A landing that shows the
+        roadmap in a different shape from the roadmap teaches the reader two cards for one thing.
+
+        AND THE VOTE BUTTON IS WIRED, which is the one real objection to reusing it. `lib/board.ts`
+        runs on `/roadmap/` and on every request detail page, and its voting half is deliberately
+        UNCONDITIONAL — a bail-out on the missing board once took the vote down on nine detail pages
+        and looked wired the whole time, which is why it is written that way. Calling `wireBoard()`
+        from this page's script therefore costs nothing but the vote, and a dead control on a
+        landing page would have been worse than no control at all. */}
+    <ul class="vb-road">
+      {ROADMAP_TILES.map(({ item }) => (
+        <li>
+          <RequestCard r={item} />
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <!-- 5 · THE WAYS OUT -->
+
+  <section class="vb-sec" aria-labelledby="vb-out-h">
+    <div class="vb-head">
+      <h2 class="vb-h" id="vb-out-h">Still stuck?</h2>
+    </div>
+
+    <ul class="vb-ways">
+      {
+        EXITS.map((w) => (
+          <li>
+            <a class="vb-way" href={w.href} data-open-chat={w.opensChat ? '' : undefined}>
+              <span class="vb-way-i">
+                <Icon name={w.icon} size={16} />
+              </span>
+              <span class="vb-way-t">{w.title}</span>
+              <span class="vb-way-b">{w.body}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</div>
+
+{/* OUTSIDE `.vb`, and last in the document. Outside because `.vb` caps the measure and pads the
+    block, and a fixed control has no business inheriting either. Last so it is last in the tab
+    order: a demo toggle must not sit between the reader and the page's real links. */}
+<ShotSwitch />
+
+<script>
+  import { mountLandingStrip } from '../../lib/landing-strip';
+  import { wireBoard } from '../../lib/board';
+  import { OPEN_CHAT_EVENT } from '../../lib/rows';
+
+  /* The vote control on the three roadmap cards. `wireBoard` does two independent jobs and only the
+     filtering half looks for `[data-board]`; the voting half is unconditional by design, so this is
+     the supported way to have a working card outside `/roadmap/`. Without it the card would render
+     a button that silently does nothing, which is the one honest argument against reusing it. */
+  wireBoard();
+
+  /* The strip's reaction to the platform the reader named. It sets one attribute on `<html>`; the
+     stylesheet below does the rest. */
+  mountLandingStrip();
+
+  /* Scoped to this body rather than the whole document: the chat card is not the only thing on the
+     portal that opens the drawer, and a document-wide selector here would fight the others. The
+     `[data-landing-body="a"]` wrapper this used to hang off went with the preview switch. */
+  for (const el of document.querySelectorAll('.ja [data-open-chat]')) {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.dispatchEvent(new CustomEvent(OPEN_CHAT_EVENT, { detail: {} }));
+    });
+  }
+</script>
+
+<style>
+  /* ── The frame ────────────────────────────────────────────────────────────────────────────────
+   * No inline padding: the Starlight container already supplies it, and adding a second one is how
+   * the reading column ends up narrower here than on every other page. `min-width: 0` appears on
+   * every grid child below for the one reason it always does: a grid item's default `auto` minimum
+   * is its content, and one unbreakable string then pushes the whole page sideways at 390px.
+   */
+  /* THE ROOT CARRIES BOTH CLASSES ON PURPOSE. This file was made by transplanting sections out of
+     another one, and the transplant renamed the root to `ja` while leaving the frame rule keyed to
+     `.vb` — so for several rounds A and B rendered with no width cap and no block padding while C
+     had both, and the "one variable at a time" comparison was quietly carrying two. Scoped styles
+     make that silent: the selector is valid, it simply matches nothing. */
+  .vb {
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-block: 32px 64px;
+  }
+
+  .vb-sec + .vb-sec {
+    margin-top: 56px;
+  }
+
+  /* THE ONE SECTION GAP THE SIBLING RULE ABOVE CANNOT REACH, and the client felt it before anyone
+     measured it: "Set up a backup" sticks very hard to the three platform cards above it. The
+     reason is structural. `PlatformStart` renders its own `<section class="ps">`, so the first
+     `.vb-sec` on this page has no `.vb-sec` before it and `+` never fires — measured at 0px between
+     the two section boxes, and 8px from the bottom of the card grid to the heading, against 56px
+     everywhere else on the page. Named explicitly rather than reached with `:first-of-type`, which
+     would match nothing here: `.ps` is also a `section`, so the path is the SECOND one. */
+  .vb-sec-lead {
+    margin-top: 56px;
+  }
+
+  .vb-head {
+    margin-bottom: 20px;
+  }
+
+  .vb-head-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .vb-h {
+    margin: 0;
+    font-size: var(--bo-t-20);
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--bo-base-content);
+  }
+
+  .vb-sub {
+    margin: 4px 0 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  /* An arrow that inherits its label's colour. `line-height: 0` on the wrapper is not cosmetic:
+     an inline box carrying an svg otherwise contributes its own line box and inflates the line it
+     sits in, which is exactly the bug that shipped on the header once already. */
+  .vb-arrow {
+    display: inline-block;
+    line-height: 0;
+    margin-left: 4px;
+    vertical-align: -0.15em;
+  }
+
+  .vb-more {
+    display: inline-flex;
+    align-items: center;
+    font-size: var(--bo-t-14);
+    font-weight: 500;
+    color: var(--bo-primary);
+    text-decoration: none;
+    border-radius: var(--bo-r-4);
+    transition: opacity 150ms ease-out;
+  }
+
+  .vb-more:hover {
+    opacity: 0.8;
+  }
+
+  .vb-more:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* ── 1 · The path ─────────────────────────────────────────────────────────────────────────────
+   * THE THREE COLUMNS MUST BE THE SAME WIDTH, and the first version was not: asymmetric cell
+   * padding (`0 24px` on the ends, `24px` both sides plus a border in the middle) left the middle
+   * content box 25px narrower than the first, so the middle SHOT rendered 16px shorter and the row
+   * lost the shared baseline it was built for. Measured at 1440: 360 · 334 · 358.
+   *
+   * So the breathing room is a `column-gap` and the dividers are pseudo-elements sitting in it,
+   * which take no width from the track. The unbroken rule across the top was never at risk from a
+   * gap: `border-top` is on the LIST, not on the cells, so it is one line whatever the columns do.
+   */
+  .vb-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 40px;
+    row-gap: 0;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  /* `position: relative` is here so the title link can stretch over the whole column, screenshot
+     included: one link in the accessibility tree, one Tab stop, a target the size of the step. */
+  .vb-step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 16px 0 0;
+  }
+
+  /* The divider, drawn in the middle of the gap so no track pays for it. It starts below the top
+     rule rather than at it, so the two hairlines meet as a T rather than crossing. */
+  .vb-step + .vb-step::before {
+    content: '';
+    position: absolute;
+    top: 16px;
+    bottom: 0;
+    left: -20px;
+    width: 1px;
+    background: var(--bo-base-300);
+  }
+
+  /* 11px is the floor, and only ever here: an uppercase tracked micro-label, never prose. */
+  .vb-step-n {
+    display: block;
+    font-size: var(--bo-t-11);
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--bo-ornament);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vb-step-title {
+    margin: 8px 0 0;
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--bo-base-content);
+  }
+
+  .vb-step-link {
+    color: inherit;
+    text-decoration: none;
+    transition: color 150ms ease-out;
+  }
+
+  .vb-step-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  .vb-step-body {
+    margin: 8px 0 20px;
+    font-size: var(--bo-t-13);
+    line-height: 1.55;
+    color: var(--bo-muted);
+  }
+
+  /* `margin-top: auto` is what puts three shots on one baseline without a fixed body height: the
+     column is a flex column, so the last child absorbs whatever the sentence above did not use. */
+  .vb-shot {
+    display: block;
+    position: relative;
+    margin-top: auto;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    transition: border-color 200ms ease-out;
+  }
+
+  .vb-shot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top left;
+  }
+
+  .vb-step:hover .vb-shot,
+  .vb-step:focus-within .vb-shot {
+    border-color: var(--bo-muted);
+  }
+
+  .vb-step:hover .vb-step-link,
+  .vb-step:focus-within .vb-step-link {
+    color: var(--bo-primary);
+  }
+
+  .vb-step-link:focus-visible::after {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+    border-radius: var(--bo-r-8);
+  }
+
+  /* ── The theme swap ───────────────────────────────────────────────────────────────────────────
+   * A raster cannot follow a theme, so both exist and one is hidden. Three states have to be right,
+   * not two: Starlight stamps `data-theme="light" | "dark"` on the root when the reader chooses,
+   * and stamps NOTHING on the default setting, where only `prefers-color-scheme` separates them.
+   * Hence the media query is guarded with `:not([data-theme='light'])` rather than left bare: an OS
+   * in dark mode plus an explicit light choice is a real combination, and a bare media query hands
+   * that reader the dark screenshot on a white page.
+   *
+   * `display`, not `content-visibility`: the latter does not remove the box, it defers its
+   * rendering, so both shots would still occupy the frame.
+   */
+  .vb-shot-light {
+    display: block;
+  }
+
+  .vb-shot-dark {
+    display: none;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .vb-shot-light {
+      display: none;
+    }
+
+    :root:not([data-theme='light']) .vb-shot-dark {
+      display: block;
+    }
+  }
+
+  :root[data-theme='dark'] .vb-shot-light {
+    display: none;
+  }
+
+  :root[data-theme='dark'] .vb-shot-dark {
+    display: block;
+  }
+
+  :root[data-theme='light'] .vb-shot-light {
+    display: block;
+  }
+
+  :root[data-theme='light'] .vb-shot-dark {
+    display: none;
+  }
+
+  /* ── The noun that changes ───────────────────────────────────────────────────────────
+   * EVERY READING OF EVERY SENTENCE IS SERVER-RENDERED and one of them is shown. The alternative
+   * was rewriting `textContent` from a script, and it loses twice: the neutral sentence would be
+   * painted first and visibly swapped a moment later, and the swap would depend on a module that a
+   * blocked script kills. Here the choice is one attribute on `<html>`, and a reader who has named
+   * their platform never sees anybody else's noun.
+   *
+   * `display: none` on the readings that lost is not a filter and does not remove information: they
+   * are four spellings of ONE sentence, and a hidden one is neither read out nor copied.
+   */
+  .vb-noun {
+    display: none;
+  }
+
+  .vb-noun[data-for='neutral'] {
+    display: inline;
+  }
+
+  :root[data-shot-platform] .vb-noun[data-for='neutral'] {
+    display: none;
+  }
+
+  :root[data-shot-platform='airtable'] .vb-noun[data-for='airtable'],
+  :root[data-shot-platform='clickup'] .vb-noun[data-for='clickup'],
+  :root[data-shot-platform='notion'] .vb-noun[data-for='notion'] {
+    display: inline;
+  }
+
+  /* ── The frame's other occupant, for a platform we have no screen of ────────────────────────
+   * IT MUST NOT CHANGE THE FRAME'S HEIGHT, or the strip jumps when the platform changes and the
+   * whole page below it moves. The guarantee is structural rather than measured: `.vb-shot` owns
+   * an `aspect-ratio` and this card is `position: absolute; inset: 0`, so it contributes nothing
+   * to the box no matter what it holds. Measured anyway, at the 72rem cap: the three tracks are
+   * (1152 - 80) / 3 = 357.33px, so the frame is 223.33px tall with a screenshot in it and 223.33px
+   * tall with this in it.
+   *
+   * IT READS AS A CARD, NOT AS A MISSING IMAGE. A brand mark, a name, and four rows of that
+   * platform's own words: the same information the screenshot would have carried, stated rather
+   * than photographed. What it must never look like is a placeholder, because a placeholder tells
+   * the reader the page is unfinished when in fact it is being honest.
+   *
+   * THE INNER CAP IS FOR THE STACKED READING. Below 60rem the strip is one column, so the frame is
+   * as wide as the page; without it the four rows would stretch across 900px with a word at each
+   * end. 20rem is the width of the widest of the three cards at the three-across reading, so the
+   * card looks the same at both.
+   */
+  .vb-glo {
+    display: none;
+    position: absolute;
+    inset: 0;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bo-base-100);
+  }
+
+  :root[data-shot-platform='clickup'] .vb-glo[data-plat='clickup'],
+  :root[data-shot-platform='notion'] .vb-glo[data-plat='notion'] {
+    display: flex;
+  }
+
+  /* The screenshot steps aside for it. Higher specificity than the theme-swap rules ABOVE, on
+     purpose and not by accident: those decide WHICH raster a theme gets, this decides whether a
+     raster belongs in this frame at all, and that question is asked first. (0,3,1) against (0,3,0),
+     so it would still win if the two blocks were ever reordered. */
+  :root[data-shot-platform='clickup'] .vb-shot > img,
+  :root[data-shot-platform='notion'] .vb-shot > img {
+    display: none;
+  }
+
+  .vb-glo-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 20rem;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  .vb-glo-name {
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    color: var(--bo-base-content);
+  }
+
+  .vb-glo-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 20rem;
+  }
+
+  .vb-glo-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* 11px, and this is the sanctioned reading of that floor: an uppercase tracked micro-label, never
+     prose. The word beside it is the content and takes the ordinary 13px. */
+  .vb-glo-k {
+    font-size: var(--bo-t-11);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .vb-glo-v {
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    text-align: right;
+    color: var(--bo-base-content);
+  }
+
+  /* THE ROWS THIS STEP IS NOT ABOUT STEP BACK, so three cards in a row read as three steps rather
+     than as one template drawn three times. It is a colour change and nothing else: no size, no
+     weight on the label, no box — so no row moves and the card's height is untouched whichever
+     rows are marked. `--bo-muted` is the documented floor for text a person reads (5.92 on a white
+     card); the dimmer `--bo-ornament` is for separators, and every word here is information. */
+  .vb-glo-row:not([data-focus]) .vb-glo-v {
+    color: var(--bo-muted);
+  }
+
+  /* ── 2 · The directory, as tiles ─────────────────────────────────────────────────────────────
+   * THE ONE THING THAT DIFFERS FROM C. A bordered tile with a glyph gives the eye a target that is
+   * not a word, which is the answer to "the page is a wall of links". What it costs is height and a
+   * promise: a card says there is something here, and sixteen of these open a page that says "not
+   * written yet". C's list pays neither cost and offers neither target, and that trade is the
+   * question the pair exists to settle. B renders this block identically and differs by dropping
+   * the path above it.
+   */
+  .ja-dir {
+    display: flex;
+    flex-direction: column;
+    padding-top: 16px;
+  }
+
+  /* RHYTHM IS TWO GAPS, NOT ONE. Head to grid is 12px and band to band is 64px across a hairline.
+     One repeated gap is what makes a long index read as a wall; the pulse is what lets someone
+     scroll past four bands and still know where a band starts. */
+  .ja-band + .ja-band {
+    margin-top: 32px;
+    padding-top: 32px;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .ja-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  /* A LABEL, not a control: filled, unbordered, and it never takes a hover. */
+  .ja-verb {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: var(--bo-r-4);
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    line-height: 16px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .ja-line {
+    font-size: var(--bo-t-14);
+    line-height: 20px;
+    color: var(--bo-muted);
+  }
+  .ja-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    list-style: none;
+    padding: 0;
+  }
+  /* The `li` stretches so cards in a row share a height and the glyph column stays a column. */
+  .ja-grid > li {
+    display: flex;
+  }
+  .ja-card {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    color: inherit;
+    text-decoration: none;
+    transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out;
+  }
+  .ja-card:hover {
+    border-color: var(--bo-primary);
+    background: var(--bo-base-200);
+  }
+  .ja-card:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+  /* 20px square = the label's line box, so the glyph centres on the first line of text without a
+     nudge, and every card's glyph therefore sits on the same baseline as every other card's. */
+  .ja-ico {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: var(--bo-muted-strong);
+    transition: color 150ms ease-out;
+  }
+  .ja-card:hover .ja-ico {
+    color: var(--bo-primary);
+  }
+  .ja-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .ja-label {
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--bo-base-content);
+  }
+  /* Words, muted, no hue: an unwritten page is incomplete, not broken. */
+  .ja-flag {
+    margin-left: 8px;
+    font-size: var(--bo-t-11);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+    white-space: nowrap;
+  }
+  .ja-blurb {
+    font-size: var(--bo-t-13);
+    line-height: 20px;
+    color: var(--bo-muted);
+  }
+
+  /* ── The half of the directory that belongs to one platform ──────────────────────────────────
+   * THIS IS WHAT THE `filter` VARIANT EXISTS TO SHOW. Ten of the site's pages exist once per
+   * platform, and until now the landing did not list any of them: they sat three levels down a
+   * collapsed sidebar group, so the chooser at the top of the page narrowed a documentation set the
+   * reader could not see. Naming a platform now brings its own pages up into the band they belong
+   * to, which is the client's ask in his words — "the content and the documentation below adapt to
+   * the chosen topic".
+   *
+   * ALL THREE ARE SERVER-RENDERED AND ONE IS SHOWN, the same mechanism as the step nouns above: no
+   * reflow of text the browser has to measure, no flash of somebody else's pages, and nothing that
+   * stops working when a script is blocked and the reader arrives on `?platform=notion`.
+   *
+   * IT IS A SUB-BLOCK, NOT MORE CARDS IN THE SAME GRID. Appended to the neutral grid these ten
+   * would read as ten more pages that were always there, and the one fact they all share — that
+   * they are about ONE platform and appeared because you said so — would be carried by nothing.
+   * The heading states it in words; the mark states it before the words are read.
+   *
+   * BOTH ATTRIBUTES ARE ON `:root`, so this is (0,3,0) against `.ja-plat`'s (0,1,0) and wins
+   * regardless of order. `data-shot-platform` is set only when the preference names exactly one
+   * platform (`lib/landing-strip.ts`), which is why a reader with two on sees the neutral
+   * directory rather than an arbitrary half of their choice.
+   */
+  .ja-plat {
+    display: none;
+    margin-top: 24px;
+  }
+
+  :root[data-shots='filter'][data-shot-platform='airtable'] .ja-plat[data-plat='airtable'],
+  :root[data-shots='filter'][data-shot-platform='clickup'] .ja-plat[data-plat='clickup'],
+  :root[data-shots='filter'][data-shot-platform='notion'] .ja-plat[data-plat='notion'] {
+    display: block;
+  }
+
+  /* 11px, and this is the sanctioned reading of that floor: an uppercase tracked micro-label. It is
+     deliberately NOT a second `.ja-verb` chip — a filled chip here would put two labels of equal
+     weight in one band and the eye would stop reading it as one section. */
+  .ja-plat-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    line-height: 16px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .ja-plat > * {
+    margin-top: 0;
+  }
+
+  /* ── 3 · The roadmap strip ────────────────────────────────────────────────────────────────────
+   * THE CARD ITSELF IS `RequestCard.astro` AND NONE OF ITS PAINT IS HERE. An Astro scoped `<style>`
+   * does not reach a child component, so a rule written here for `.rb-card` would ship, be valid,
+   * match nothing, and leave both gates green — the trap that cost the board its own reset once
+   * already. This block owns the TRACK the cards sit in and stops there.
+   *
+   * `align-items: start` RATHER THAN THE DEFAULT STRETCH. The three summaries are different
+   * lengths, so stretching makes the tallest card set the height and the other two grow a band of
+   * blank page under a footer rail that has already ended. Aligned to the top, the three cards have
+   * one shared y and their own heights, which is exactly how the same card behaves in a board
+   * column. Measured: y identical on all three, heights 168 · 188 · 168 at 1440.
+   */
+  .vb-road {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+    gap: 16px;
+  }
+
+  /* The `li` is a bare wrapper and stays a BLOCK. `.rb-card` is a block-level grid, so it fills the
+     `li` on its own; making the `li` a flex row instead would size the card to its content and need
+     a `flex: 1` on the CARD, which this file cannot write — a scoped rule for a child component's
+     class matches nothing. `min-width: 0` because a grid item's default `auto` minimum is its
+     content, and one unbreakable title would otherwise push the row sideways at 390px. */
+  .vb-road > li {
+    min-width: 0;
+  }
+
+  /* Starlight's prose rhythm is a general-sibling rule that reaches every nested flex or grid box.
+     The CARD zeroes its own top margin in its own file, which is where a component's reset has to
+     live; this is the `li` that holds it. */
+  .vb-road > li > * {
+    margin-top: 0;
+  }
+
+  /* ── 4 · The ways out ─────────────────────────────────────────────────────────────────────── */
+  .vb-ways {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    /* Two, not three: the roadmap card left. `auto-fit` rather than a hard count so the row still
+       fills if a third exit ever comes back. */
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .vb-way {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 12px;
+    row-gap: 4px;
+    align-items: start;
+    min-width: 0;
+    height: 100%;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    text-decoration: none;
+    transition: border-color 150ms ease-out;
+  }
+
+  .vb-way:hover {
+    border-color: var(--bo-muted);
+  }
+
+  .vb-way:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .vb-way-i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    grid-row: span 2;
+    border-radius: var(--bo-r-6);
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    transition: background-color 150ms ease-out;
+  }
+
+  .vb-way:hover .vb-way-i {
+    background: var(--bo-soft-primary-bg-hover);
+  }
+
+  .vb-way-t {
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--bo-base-content);
+  }
+
+  .vb-way-b {
+    font-size: var(--bo-t-13);
+    line-height: 1.55;
+    color: var(--bo-muted);
+  }
+
+  /* ── Narrow ───────────────────────────────────────────────────────────────────────────────────
+   * EVERY width query lives at the foot of the sheet, and that is a rule rather than a habit: a
+   * media query changes WHEN a declaration is considered, never whether it wins, so any later rule
+   * at equal specificity silently discards it. Ten of the sixteen dead declarations this repo
+   * produced in one week died exactly that way.
+   *
+   * At 60rem the path stops being a path: three columns side by side is what makes the sequence
+   * readable, and stacked it needs the rule to run down the left of each step instead of across
+   * the top of the row.
+   */
+  @media (max-width: 60rem) {
+    .vb-steps {
+      grid-template-columns: minmax(0, 1fr);
+      border-top: 0;
+    }
+
+    .vb-step {
+      padding: 16px 0 24px;
+      border-top: 1px solid var(--bo-base-300);
+    }
+
+    /* The vertical divider belongs to the three-across reading only. Stacked, the rule runs across
+       the top of each step instead, and a 1px line down the left margin of a phone is the coloured
+       side-stripe this system bans by name. */
+    .vb-step + .vb-step::before {
+      display: none;
+    }
+
+    .vb-step:last-child {
+      padding-bottom: 0;
+    }
+
+    .vb-shot {
+      margin-top: 0;
+    }
+
+    .vb-road,
+    .vb-ways {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .vb-sec + .vb-sec,
+    .vb-sec-lead {
+      margin-top: 40px;
+    }
+
+    .ja-band + .ja-band {
+      margin-top: 24px;
+      padding-top: 24px;
+    }
+  }
+
+  /* Moved here from the middle of the sheet, where they contradicted the rule stated above: a query
+     that is not at the foot is one appended rule away from being silently discarded. */
+  @media (max-width: 60rem) {
+    .ja-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 38rem) {
+    .ja-grid {
+      grid-template-columns: 1fr;
+    }
+
+    /* The chip and its sentence stop sharing a line before the sentence starts wrapping under a
+       chip that is holding a whole column of empty width beside it. */
+    .ja-head {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+  }
+</style>

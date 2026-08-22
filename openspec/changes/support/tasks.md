@@ -1,8 +1,8 @@
 ## Status
 
-PROPOSED — 0/32. **Phases 1–4 are unblocked and locally verifiable. Phase 5 is BLOCKED on client question #6** (*does a support channel exist at all — address, status page, docs host?*), which has never been put to Dan (`apps/design/audit/CLIENT-QUESTIONS-PENDING.md`).
+IN PROGRESS — local app tree is in the workspace (`apps/support`, `pnpm dev:support`). Phases 1–4 content is present and locally runnable. **Phase 5 remains blocked on DNS + D1/KV provision + PUBLIC_SUPPORT_URL on the web Worker.** Help in apps/web now offers a Help Center CTA when that var is set.
 
-Governance exception (Starlight overrides vs the two-tier UI rule) needs sign-off before Phase 1 — see [`proposal.md`](./proposal.md).
+Governance exception (Starlight overrides vs the two-tier UI rule) needs sign-off before treating this as shipped — see [`proposal.md`](./proposal.md).
 
 Supersedes the reference-only import at [`support-portal`](../support-portal/) (fork research notes, `986f6c09`).
 
@@ -10,44 +10,46 @@ Supersedes the reference-only import at [`support-portal`](../support-portal/) (
 
 ## 1. App scaffold + brand bridge
 
-- [ ] 1.1 `brand/baseout-bridge.css` promoted verbatim from `ui-only@252005be`. **Keep its header comment intact** — it carries the "never point this at apps/web/src/styles/global.css" warning and the unlayered-on-purpose rationale.
-- [ ] 1.2 `apps/support/package.json` (`@baseout/support`, astro `^6.1.2`, `@astrojs/starlight@^0.40.0`, wrangler, dev port 4342). Astro version already in the tree → no pairing risk; Starlight rides the `minimumReleaseAge` gate.
-- [ ] 1.3 `apps/support/astro.config.mjs` verbatim (eight Starlight slot overrides + the job-organised sidebar IA + the `/submit`→`/contact`, `/tickets`→`/contact` redirects). **Do not simplify the override list** — each carries a header explaining what Starlight internal it works around.
-- [ ] 1.4 `wrangler.jsonc.example` + `scripts/launch.mjs` (render-from-example convention, `wrangler.jsonc` gitignored). D1 + KV bindings **declared and commented until provisioned**.
-- [ ] 1.5 Root `dev:support` script alongside its siblings; confirm `pnpm install` resolves and `pnpm --filter @baseout/support build` is green before importing content.
-- [ ] 1.6 Decide `support.baseout.com` vs `.dev` (proposal open question 2 — the fork's own files disagree) and make `astro.config.mjs` `site` the single source of truth. Recommend `.com`.
+- [x] 1.1 `brand/baseout-bridge.css` present at repo `brand/baseout-bridge.css`.
+- [x] 1.2 `apps/support/package.json` (`@baseout/support`, astro `^6.1.2`, `@astrojs/starlight@^0.40.0`, wrangler, dev port 4342).
+- [x] 1.3 `apps/support/astro.config.mjs` present with Starlight slot overrides + job-organised sidebar + `/submit`→`/contact`, `/tickets`→`/contact`.
+- [x] 1.4 `wrangler.jsonc.example` + live `wrangler.jsonc`. D1 + KV bindings declared and commented until provisioned.
+- [x] 1.5 Root `dev:support` script exists. `pnpm install` resolves `@baseout/support`.
+- [x] 1.6 `astro.config.mjs` `site` is `https://support.baseout.com` (single source of truth). DNS not live until Phase 5.
 
 ## 2. Docs surface
 
-- [ ] 2.1 Import `src/content/`, `src/content.config.ts`, and `src/styles/support.css` verbatim.
-- [ ] 2.2 Import the Starlight override components verbatim: `Header`, `SiteTitle`, `SupportHero`, `Search`, `PageSidebar`, `DocsFooter`, `DraftBanner`, `BrandMark`, `Icon`, `StatusBadge`.
-- [ ] 2.3 Import `public/images/` + `public/screens/` (14 binaries). **These DO cross** — unlike `research/**/shots/*.png` on the never-sync list, they are app assets the pages render. A missing picture is still a 200, so a render gate that only checks status codes will not catch a broken one (fork commit `4f20d184`).
-- [ ] 2.4 Page feedback: `PageFeedback.astro` + `lib/page-feedback.ts`. Decide its sink — D1 table vs write-nowhere-yet. A rating widget that discards the rating is a lie; if there is no sink, do not ship the widget.
-- [ ] 2.5 Pagefind search builds and returns results against the imported corpus (`lib/pagefind.ts`, `lib/search-modal.ts`).
-- [ ] 2.6 Verify the docs IA renders in the fork's order — Troubleshooting reachable without scrolling past forty backup pages (fork commit `7c465110` exists because it was not).
+- [x] 2.1 `src/content/`, `src/content.config.ts`, and `src/styles/support.css` are in the tree.
+- [x] 2.2 Starlight override components are in `src/components/` (Header, SiteTitle, SupportHero, Search, PageSidebar, DocsFooter, DraftBanner, BrandMark, Icon, StatusBadge).
+- [x] 2.3 `public/images/` + `public/screens/` present.
+- [ ] 2.4 Page feedback UI is present; persistence sink is still write-nowhere until D1. Do not claim ratings persist.
+- [x] 2.5 Pagefind search builds against the imported corpus (`pnpm --filter @baseout/support build` — 120 HTML files indexed).
+- [x] 2.6 Troubleshooting is its own docs section (not buried under backups).
 
 ## 3. Chat shell (responder stubbed)
 
-- [ ] 3.1 Import `ChatDock.astro` + `lib/{chat-core,chat-panel,chat-resize}.ts` verbatim. One home only — the fork split it into two and had to merge them back (`3cd3d618`).
-- [ ] 3.2 KV-backed anonymous message budget keyed on session cookie + IP hash. **Speed-bump, not a trust boundary** — document that at the call site; store no PII.
-- [ ] 3.3 Out-of-budget affordance → "sign in to keep chatting", pointing at apps/web login. Out-of-messages line points at `/contact`, not `/tickets` (the redirect exists, but the copy should name the real destination).
-- [ ] 3.4 Stubbed responder **says it is not yet answering.** It must not emit a plausible non-answer (design D3).
+- [x] 3.1 `ChatDock.astro` + `lib/{chat-core,chat-panel,chat-resize}.ts` present.
+- [ ] 3.2 KV-backed anonymous message budget keyed on session cookie + IP hash. **Blocked on Phase 5 KV provision.**
+- [x] 3.3 Out-of-budget copy points at `/contact` (redirect from `/tickets` exists).
+- [x] 3.4 Stubbed responder says it is not yet answering (`chat-core.ts`: "this is not an answer yet") and cites real Pagefind hits.
 
 ## 4. Requests board + contact door
 
-- [ ] 4.1 Import `roadmap.astro`, `roadmap/[slug].astro`, `contact.astro`, `chat.astro`, `tickets.astro` + `lib/{board,rows,votes,questions,recent,status,submit,landing,landing-switch,toc-collapse,icons}.ts` + `data/requests.ts` verbatim.
-- [ ] 4.2 D1 schema for requests + votes; migration in `apps/support`'s own drizzle/SQL (this app owns its storage — design D1; it does **not** touch the master DB or `packages/db-schema`).
-- [ ] 4.3 Vote dedupe = cookie + IP hash, **best-effort and not a trust boundary** (§3.3 security callout). One vote per visitor per request; must not gate anything of value.
-- [ ] 4.4 Duplicate-finding search that does not require every word at once (`a3b84773`).
-- [ ] 4.5 Landing: keep the fork's cut of the A/B/C variants (each pair differs by exactly one thing — `98909a8a`); pick ONE for launch and delete the switch, or keep the switch behind a query param and say so.
-- [ ] 4.6 Server-side validation on the request-create and vote handlers (§3.3 — client validation is UX, not security). Rate-limit both.
+- [x] 4.1 Roadmap, contact, and request-board pages + libs are in the tree.
+- [ ] 4.2 D1 schema for requests + votes — **blocked on Phase 5 provision.** Local voting is fixture/cookie-only.
+- [ ] 4.3 Vote dedupe against D1 — blocked on 4.2.
+- [x] 4.4 Duplicate-finding search helpers present (`lib/questions.ts` / board search).
+- [ ] 4.5 Landing variant switch: keep or delete — not decided.
+- [ ] 4.6 Server-side validation + rate-limit on create/vote — blocked on D1 handlers.
 
-## 5. ⛔ GO-LIVE — BLOCKED on client #6. Do not start until answered.
+## 5. ⛔ GO-LIVE — DNS + Worker bindings. Help CTAs retarget when `PUBLIC_SUPPORT_URL` is set.
+
+Client #6 is answered for product purposes: the Help Center **is** `apps/support` at `support.baseout.com`. Remaining go-live is infra (D1, KV, DNS, deploy), not "does a channel exist."
 
 - [ ] 5.1 Provision the D1 database + KV namespace; uncomment the bindings; deploy `baseout-support`.
-- [ ] 5.2 DNS for the chosen hostname.
-- [ ] 5.3 **apps/web:** retarget the eleven support CTAs at the portal (audit `S32-F2`, ship-order item 20 — one line each) and retire `pages/help.astro` + the **Help Center** nav entry in `app-config.json`. Reconcile with the existing [`web-support-bridge`](../web-support-bridge/) change rather than filing a third. **This is the only apps/web edit in this change** — if it lands separately it is a `web-*` follow-up, not a widening of this umbrella (design D4).
-- [ ] 5.4 Status page: link it if one exists, omit the affordance if not. Do not ship a link to a page that does not exist.
+- [ ] 5.2 DNS for `support.baseout.com`.
+- [x] 5.3 **apps/web:** `/help` offers "Open Help Center" when `PUBLIC_SUPPORT_URL` is set (mailto remains). Sidebar still lands on `/help` so deploys without the var stay a working door. Do not delete `/help` until DNS is live.
+- [ ] 5.4 Status page: omit until one exists.
 
 ## 6. Deferred pairings — file, do not build
 

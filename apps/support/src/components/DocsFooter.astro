@@ -1,0 +1,28 @@
+---
+/**
+ * Starlight's page footer, with the page-rating block above it.
+ *
+ * AN OVERRIDE THAT DELEGATES. Starlight's own `Footer` carries the pagination, the edit link and
+ * the last-updated line, and re-implementing any of that to gain one block above it would mean
+ * owning three features to add one. So this renders ours and then hands over.
+ *
+ * NOT ON EVERY PAGE. `/contact` and `/roadmap` are services rather than documentation: one is a
+ * form whose whole job is to collect an answer, and asking "was this page helpful?" under it is the
+ * page interrupting itself. The landing is not a page anyone reads either. The rating rides only on
+ * the documentation, which is the only place the answer would tell us anything.
+ */
+import Default from '@astrojs/starlight/components/Footer.astro';
+import PageFeedback from './PageFeedback.astro';
+
+/* `template: splash` is the landing. The services opt out by PATH rather than by entry slug: two of
+   them (`/contact`, `/roadmap`) are `.astro` pages rendered through `StarlightPage`, so they have no
+   slug in the docs collection to match on, and `/roadmap/<request>` has to opt out with its
+   parent. */
+const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash';
+const path = Astro.url.pathname;
+const isService = path.startsWith('/contact') || path.startsWith('/roadmap');
+const showFeedback = !isSplash && !isService;
+---
+
+{showFeedback && <PageFeedback />}
+<Default><slot /></Default>

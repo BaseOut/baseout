@@ -1,0 +1,15 @@
+// Template for apps/support wrangler.jsonc — committed to git.
+// Copy to wrangler.jsonc at deploy time (or keep this file as the live
+// config until D1/KV are provisioned). D1 + KV stay commented until
+// openspec/changes/support Phase 5.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-support",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist"
+  }
+  // Provisioned in openspec/changes/support Phase 5 — uncomment then:
+  // "d1_databases": [{ "binding": "SUPPORT_DB", "database_name": "baseout-support", "database_id": "TODO" }],
+  // "kv_namespaces": [{ "binding": "CHAT_LIMITS", "id": "TODO" }]
+}

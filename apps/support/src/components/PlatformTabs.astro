@@ -1,0 +1,190 @@
+---
+/**
+ * One block, one answer per platform, switched in place.
+ *
+ * WHERE THIS BELONGS, AND WHERE IT DOES NOT. Variance in this documentation comes at four scales,
+ * and this component owns exactly one of them:
+ *
+ *   a noun differs            no control at all; the word comes from `lib/platforms.ts`
+ *   a section differs         THIS
+ *   the whole answer differs  a page-level strip, same device one scale up
+ *   the question differs      a page of its own, which is what the platform pages in the tree are
+ *
+ * A TAB STRIP PROMISES PARITY. Three tabs say there are three answers to one question, so this may
+ * only ever carry something that exists for every platform. The moment one platform has a step the
+ * others do not (Notion's per-database sharing, for instance) a tab would be empty, and an empty
+ * variant is the case every switcher we surveyed handles badly: Supabase does not model it, Mintlify
+ * drops it silently, Next.js has had the bug open for months. That asymmetry is why platform content
+ * lives in pages and only the symmetric part lives here.
+ *
+ * IT OBEYS THE FILTER. A platform the reader has switched off loses its tab, and if only one is
+ * left the strip disappears entirely: a tab row with a single tab is a control that cannot do
+ * anything, which reads as broken rather than as simple. `lib/platform-filter.ts` does that work,
+ * because the filter is one piece of state and one owner.
+ *
+ * SEARCH, MEASURED: Pagefind parses the built HTML and never runs CSS, so every panel here is
+ * indexed whether or not it is on screen. That is the right trade for a block (nothing becomes
+ * unfindable) and the reason a WHOLE page should not be built this way (one result whose visible
+ * content is a third of what matched).
+ */
+import { PLATFORMS } from '../lib/platforms';
+import PlatformMark from './PlatformMark.astro';
+
+interface Props {
+  /** What the reader is choosing between. Shown above the strip, so the tabs need no heading. */
+  label: string;
+}
+
+const { label } = Astro.props;
+
+/* THE PANELS ARE WRITTEN OUT, THE STRIP IS NOT, and that asymmetry is Astro's rule rather than a
+   choice: `slot[name] must be a static string`, so a named slot cannot be produced by mapping over
+   the platform list. The guard below is what stops that becoming a silent failure. Add a platform
+   to `lib/platforms.ts` without adding its slot here and the build stops, instead of every page
+   quietly rendering an empty panel for it. */
+const SLOTTED = ['airtable', 'clickup', 'notion'] as const;
+const missing = PLATFORMS.map((p) => p.id).filter((id) => !SLOTTED.includes(id as never));
+if (missing.length) {
+  throw new Error(
+    `PlatformTabs is missing a named slot for: ${missing.join(', ')}. ` +
+      'Astro requires slot names to be static, so each platform needs its own <slot> in this file.',
+  );
+}
+---
+
+<div class="pt" data-platform-tabs>
+  <p class="pt-label">{label}</p>
+
+  <div class="pt-strip" role="tablist" data-platform-tabs-strip>
+    {
+      PLATFORMS.map((p, i) => (
+        <button
+          type="button"
+          role="tab"
+          class="pt-tab"
+          data-platform-tab={p.id}
+          aria-selected={i === 0 ? 'true' : 'false'}
+        >
+          <PlatformMark id={p.id} size={13} />
+          {p.name}
+        </button>
+      ))
+    }
+  </div>
+
+  <div class="pt-panel" role="tabpanel" data-platform-panel="airtable">
+    <slot name="airtable" />
+  </div>
+  <div class="pt-panel" role="tabpanel" data-platform-panel="clickup" hidden>
+    <slot name="clickup" />
+  </div>
+  <div class="pt-panel" role="tabpanel" data-platform-panel="notion" hidden>
+    <slot name="notion" />
+  </div>
+</div>
+
+<style>
+  .pt {
+    /* THE SAME MEASURE AS THE PROSE AROUND IT. This block escaped the cap for one round and ran at
+       86 characters inside the panel while the paragraphs above it ran at 75, so the reader's line
+       length changed every time they entered it. A frame around a paragraph does not make it stop
+       being a paragraph; tables and screenshots are the things that earn the full column, because
+       they are compared rather than read. */
+    max-width: 38rem;
+    margin: 24px 0;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    overflow: hidden;
+  }
+
+  .pt-label {
+    margin: 0;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--bo-base-300);
+    background: var(--bo-base-200);
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .pt-strip {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  /* STARLIGHT'S PROSE RHYTHM IS A GENERAL-SIBLING RULE, and it reaches inside this flex box. It
+     margins every child after the first, so the Airtable tab had `margin-top: 0` and the two beside
+     it had `margin-top: 16px`: the strip stretched the first tab to 56px to cover the gap while the
+     others stayed 40px and sat 16px lower, and the row read as crooked. The measurement that finds
+     it is the tabs' own `margin` and `height` side by side — nothing about the tab's own CSS looks
+     wrong on its own.
+     Zeroed here rather than with `not-content` on the root, because the PANELS below want the
+     rhythm: they hold real prose, and turning it off for the whole block would collapse the spacing
+     between their paragraphs. This is the fourth time this rule has been paid for. */
+  .pt-strip > * {
+    margin-top: 0;
+  }
+
+  /* Hidden by the controller when the filter leaves one platform standing: a strip with one tab is
+     a control that cannot do anything. */
+  .pt-strip[hidden] {
+    display: none;
+  }
+
+  .pt-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 12px;
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+
+  .pt-tab:hover {
+    color: var(--bo-base-content);
+  }
+
+  .pt-tab[aria-selected='true'] {
+    border-bottom-color: var(--bo-primary);
+    color: var(--bo-primary);
+  }
+
+  .pt-tab[hidden] {
+    display: none;
+  }
+
+  .pt-tab:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -2px;
+  }
+
+  .pt-panel {
+    padding: 4px 16px 16px;
+  }
+
+  .pt-panel[hidden] {
+    display: none;
+  }
+
+  /* Starlight's prose rhythm margins the first child of anything nested in the content area, which
+     would push the panel's opening paragraph away from the strip that introduced it. */
+  .pt-panel > :global(:first-child) {
+    margin-top: 12px;
+  }
+</style>

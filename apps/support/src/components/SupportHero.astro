@@ -1,0 +1,284 @@
+---
+/**
+ * SupportHero — overrides Starlight's `Hero` on the support landing page.
+ *
+ * WHY AN OVERRIDE AND NOT A COMPONENT IN THE MDX: Starlight's own Hero sizes its h1 in a
+ * COMPONENT-SCOPED stylesheet, so the brand bridge's `--sl-text-h1: 32px` never reached it and the
+ * title rendered at 64px — a variable map repaints Starlight but cannot re-proportion it. Replacing
+ * the component is the only way to reach geometry that lives in scoped CSS. This closes open item 3
+ * of the support list at the same time as it builds the new landing.
+ *
+ * THE DARK BAND IS DELIBERATE IN BOTH THEMES. The rays asset is a cyan burst FLATTENED ONTO BLACK
+ * and composited with `mix-blend-mode: screen`; screen(a, white) === white, so on the light theme's
+ * near-white floor (L 0.9765) it renders exactly nothing. Rather than ship a second asset that has
+ * to be kept in sync and is always the weaker of the two, the band carries its own dark ground in
+ * both themes (Oleh's call, 2026-08-18) — so the person reviewing in light mode sees the same front
+ * door as everyone else. `data-theme="dark"` is what supplies the palette: the brand bridge's dark
+ * block is written with NON-`:root` selectors too, so the whole `--bo-*` / `--sl-*` set resolves to
+ * its dark values inside this subtree. That is why there is not one raw hex below.
+ *
+ * THE FIELD IS A TRIGGER, NOT AN INPUT (Oleh, 2026-08-18). It used to be a real input with its own
+ * results list, which was a second implementation of the ⌘K modal — a second set of keyboard rules,
+ * a second empty state, and a dropdown that had to fight the band's own clipping to be seen. It now
+ * opens that modal, so the portal has ONE search surface and the landing gets the resting state
+ * (recently viewed · suggested · ask) for free. `lib/ask.ts` was deleted with it.
+ *
+ * SEARCH AND ASK SIT TOGETHER. The spec's funnel is docs first (cheapest — nobody's time is
+ * spent), chat when the docs failed. The escape hatch therefore belongs INSIDE the result list, at
+ * the moment of failure, rather than as a second control the visitor must notice and choose between.
+ * The Ask row is always the first option, so it is also the answer when there are no results at all.
+ */
+import { Icon } from '@astrojs/starlight/components';
+import { POPULAR_QUESTIONS } from '../lib/questions';
+
+const hero = Astro.locals.starlightRoute.entry.data.hero;
+const title = hero?.title ?? Astro.locals.starlightRoute.entry.data.title;
+const tagline = hero?.tagline;
+---
+
+<section class="sh" data-theme="dark" data-pagefind-ignore>
+  <div class="sh-rays" aria-hidden="true"></div>
+
+  <div class="sh-inner">
+    <h1 id="_top" class="sh-title">{title}</h1>
+    {tagline && <p class="sh-tagline" set:html={tagline} />}
+
+    <div class="sh-ask">
+      <button type="button" class="sh-field" data-search-open>
+        <span class="sh-field-icon" aria-hidden="true"><Icon name="magnifier" /></span>
+        <span class="sh-field-text">Search the docs or ask a question</span>
+        <kbd class="sh-kbd">⌘K</kbd>
+      </button>
+
+      <button type="button" class="sh-ask-btn" data-chat-open aria-haspopup="dialog" aria-expanded="false">
+        <span class="sh-ask-btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+          </svg>
+        </span>
+        Ask AI
+      </button>
+    </div>
+
+    {/* Directly under the field, inside the band: these ARE the search, pre-typed. Below the fold
+        in a section of their own they read as an afterthought; here they answer the question the
+        heading just asked. */}
+    <ul class="sh-chips">
+      {POPULAR_QUESTIONS.map((q) => (
+        <li><a href={q.href}>{q.label}</a></li>
+      ))}
+    </ul>
+
+  </div>
+</section>
+
+<style>
+  /* Lets the band run past this column's edges without the PAGE scrolling sideways.
+     `overflow-x: clip` and NOT `container-type: inline-size`, which was the first fix here:
+     `container-type` establishes containment, containment makes the element a containing block for
+     `position: fixed` descendants, and that would pin `ChatDock`'s drawer to `main` instead of the
+     viewport. `clip` bounds the overflow without creating a containing block, so the fixed drawer
+     still escapes it. `:global` because it is Starlight's element; safe because this stylesheet
+     ships only on pages that render a Hero — today, the landing alone. */
+  :global(main) {
+    overflow-x: clip;
+  }
+
+  /* The band owns its ground in both themes — see the header note. `--bo-*` resolve dark here
+     because of `data-theme="dark"` on the section. */
+  .sh {
+    position: relative;
+    /* NO `overflow: hidden` here. It was clipping the results panel, which drops out of the band by
+       design — measured: the list was cut off mid-row at the band's lower edge. The rays layer is
+       `inset: 0` of this element and cannot spill on its own, and the full-bleed's own overshoot is
+       already absorbed by `overflow-x: clip` on `main`. */
+
+    /* THE THREE MUTED GREYS MUST BE RE-DECLARED HERE, and this is not belt-and-braces.
+       The bridge defines them in a plain `:root` block as `oklch(from var(--bo-base-content) …)`.
+       A custom property is computed AT THE ELEMENT THAT DECLARES IT, so those resolve once against
+       `:root`'s base-content — near-black — and then inherit down as a finished colour. Redefining
+       `--bo-base-content` in a NESTED theme scope cannot reach back and re-derive them. The site's
+       own dark theme is unaffected because there `data-theme` sits on `<html>`, which IS `:root`.
+       Measured before this fix: the tagline, the search icon and the placeholder all computed to
+       `oklch(0.1776 … / .85)` — black text on a black band. Values copied from the bridge's own
+       ladder, including its rule that `.35` is ornament-only and anything READ takes `.65`. */
+    --bo-muted: oklch(from var(--bo-base-content) l c h / 0.65);
+    --bo-muted-strong: oklch(from var(--bo-base-content) l c h / 0.85);
+    --bo-ornament: oklch(from var(--bo-base-content) l c h / 0.35);
+    background: linear-gradient(180deg, var(--bo-root-bg) 0%, var(--bo-base-100) 50%, var(--bo-root-bg) 100%);
+    color: var(--bo-base-content);
+    border-bottom: 1px solid var(--bo-base-300);
+    /* FULL-BLEED OUT OF STARLIGHT'S SPLASH COLUMN. `vw` counts the classic scrollbar, so this
+       overshoots by half its width at each edge — measured scrollWidth 1432 against clientWidth
+       1425, hero left −7, the whole page scrolling sideways. The overshoot is absorbed by
+       `overflow-x: clip` on `main` above rather than by measuring differently, because the
+       alternative (a container query) would trap the chat drawer. */
+    margin-inline: calc(50% - 50vw);
+    padding-inline: calc(50vw - 50%);
+  }
+
+  /* Same treatment as the product's auth screens (`apps/web/src/styles/components/auth.css`).
+     `screen` is load-bearing: the asset is flattened onto black, so a black pixel contributes
+     nothing and the alpha channel is mathematically redundant. Do not add an opacity multiplier —
+     the art already peaks at 73/255 and would disappear. */
+  .sh-rays {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: url('/images/auth-rays.webp');
+    background-size: cover;
+    background-position: top center;
+    background-repeat: no-repeat;
+    mix-blend-mode: screen;
+  }
+
+  .sh-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 52rem;
+    margin-inline: auto;
+    /* Taller now that the questions live here — the band has to hold two rows of chips without
+       crowding the field they belong to. */
+    padding-block: 72px 56px;
+    text-align: center;
+  }
+
+  .sh-title {
+    font-size: var(--sl-text-4xl);
+    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+
+  .sh-tagline {
+    margin: 12px auto 0;
+    max-width: 32rem;
+    font-size: var(--sl-text-lg);
+    line-height: 1.5;
+    color: var(--bo-muted-strong);
+  }
+
+  /* ── Search + Ask ── */
+  .sh-ask {
+    position: relative;
+    margin-top: 32px;
+    text-align: start;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sh-field { flex: 1; min-width: 0; }
+
+  .sh-ask-btn {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 52px;
+    padding: 0 16px;
+    border-radius: var(--bo-r-8);
+    border: 1px solid color-mix(in oklch, var(--bo-base-content) 14%, transparent);
+    background: color-mix(in oklch, var(--bo-base-content) 7%, transparent);
+    color: var(--bo-base-content);
+    font: inherit;
+    font-size: var(--sl-text-base);
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .sh-ask-btn:hover { border-color: var(--bo-primary); }
+  .sh-ask-btn-icon { display: flex; color: var(--bo-primary); }
+
+  @media (max-width: 40rem) {
+    .sh-ask { flex-direction: column; align-items: stretch; }
+    .sh-ask-btn { justify-content: center; }
+  }
+
+  .sh-field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: var(--sl-text-base);
+    color: var(--bo-base-content);
+    cursor: pointer;
+    text-align: start;
+    padding: 0 16px;
+    height: 52px;
+    border-radius: var(--bo-r-8);
+    /* A TRANSLUCENT VEIL, not `--bo-base-100`. That token is #111111 in dark and the band's own
+       gradient runs #0a0a0a → #111111, so the field was painted the same colour as the thing
+       behind it and disappeared entirely. A tint of the text colour reads as raised over the
+       gradient AND over the rays, wherever in the band it happens to sit. */
+    background: color-mix(in oklch, var(--bo-base-content) 7%, transparent);
+    border: 1px solid color-mix(in oklch, var(--bo-base-content) 14%, transparent);
+  }
+
+  .sh-field:hover,
+  .sh-field:focus-visible {
+    border-color: var(--bo-primary);
+    box-shadow: 0 0 0 3px var(--bo-soft-primary-bg);
+  }
+
+  .sh-field-icon {
+    display: flex;
+    color: var(--bo-muted);
+    font-size: 20px;
+  }
+
+  .sh-field-text {
+    flex: 1;
+    min-width: 0;
+    text-align: start;
+    color: var(--bo-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sh-kbd {
+    flex: none;
+    padding: 2px 6px;
+    border: 1px solid color-mix(in oklch, var(--bo-base-content) 18%, transparent);
+    border-radius: var(--bo-r-4);
+    font-family: inherit;
+    font-size: var(--sl-text-xs);
+    color: var(--bo-muted);
+  }
+
+  /* ── The questions people arrive with ── */
+  .sh-chips {
+    list-style: none;
+    margin: 20px 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .sh-chips a {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklch, var(--bo-base-content) 14%, transparent);
+    background: color-mix(in oklch, var(--bo-base-content) 6%, transparent);
+    font-size: var(--sl-text-sm);
+    color: var(--bo-muted-strong);
+    text-decoration: none;
+  }
+
+  .sh-chips a:hover {
+    border-color: var(--bo-primary);
+    color: var(--bo-base-content);
+  }
+
+  @media (max-width: 50rem) {
+    .sh-inner { padding-block: 48px 56px; }
+    .sh-title { font-size: var(--sl-text-3xl); }
+  }
+</style>

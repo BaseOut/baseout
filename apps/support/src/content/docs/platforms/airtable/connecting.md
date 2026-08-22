@@ -1,0 +1,76 @@
+---
+title: Connecting Airtable
+description: Airtable's two authorization methods, what each one reaches, and why two Sources see different bases.
+platform: airtable
+---
+
+The steps are the same on every platform. This page covers only what is specific to Airtable. For
+what a Source is and how to add one, see [Sources](/connections/sources/).
+
+Airtable offers two ways in, OAuth and a personal access token. Both produce a working Source. What
+differs is who the grant belongs to, how it is changed later, and what it can reach.
+
+## OAuth
+
+You are sent to Airtable, it shows its own consent screen, and you pick there which bases or
+workspaces the grant covers. Nothing is copied and pasted, and no secret is kept by you. The grant
+is made by whoever is signed in to Airtable at that moment, so the Source inherits that person's
+access.
+
+Airtable's OAuth tokens are short-lived by design: an access token lasts about 60 minutes and is
+renewed against a refresh token that stays valid for 60 days. The renewal is automatic and invisible
+while the Source is in use. A Source that sits idle past that 60-day window has its authorization
+revoked by Airtable and has to be granted again.
+
+## Personal access token
+
+You create the token yourself in Airtable's builder hub, choose its scopes and the bases or
+workspaces it may reach, then paste it into Baseout. Airtable retired API keys in favour of these
+in 2024, so an old API key will not work.
+
+A token belongs to the person who created it. It carries that person's permissions, and it stops
+seeing a base when they stop seeing it. It also stops working the moment they delete it from
+Airtable's token panel, which is a thing that happens during a laptop clear-out without anyone
+connecting the two events.
+
+## Which to use
+
+Use OAuth unless something prevents it: fewer steps, no secret stored outside Airtable, and the
+grant can be reviewed and adjusted from Airtable's own integrations screen.
+
+Reach for a token when you need a deliberately narrow scope, or when the connection should belong
+to a shared account rather than to a person. A token held by a shared account survives the people
+who use it, which is the usual reason to prefer one.
+
+## Access is granted base by base
+
+Whichever method you use, Airtable asks the person authorizing to name what the grant covers:
+specific bases, or a whole workspace. Baseout sees exactly that and nothing more. A base left out
+of the grant is not hidden from you inside Baseout; it is invisible to Baseout, which cannot know
+it exists.
+
+This is the usual reason a base is missing from the picker. See
+[My bases are missing from the picker](/troubleshooting/missing-bases/).
+
+Widening a grant happens on Airtable's side, not ours. Add the base to the token or re-run the
+OAuth consent, and the base appears in the picker on the next look; the Space that uses the Source
+does not have to be rebuilt.
+
+## Workspaces are not Spaces
+
+Airtable's **workspace** is a container for bases in Airtable. Baseout's **Space** is a backup
+configuration. They sit at a similar level and they are not the same thing: one Baseout Space can
+hold bases drawn from more than one Airtable workspace.
+
+With limited access, Airtable returns a workspace's id but withholds its **name**, so the picker
+can end up grouping bases under a workspace it cannot name.
+
+## When it breaks
+
+A Source that loses access stops backups for every Space that uses it, and Baseout says so in three
+places at once: the connection's own status, a banner in the affected Space, and a row in the Inbox.
+Fixing the connection clears all three. See
+[Reconnecting a broken connection](/connections/reconnecting/).
+
+Backups already taken are not affected. They are files in your own Destination, and a broken Source
+cannot reach them.

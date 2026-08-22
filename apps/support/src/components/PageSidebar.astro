@@ -1,0 +1,171 @@
+---
+/**
+ * Overrides Starlight's `PageSidebar` so the page's contents can collapse into a button.
+ *
+ * WHY: with the chat drawer open there is not room for four columns — nav 300 + the reading column
+ * + contents 265 + drawer 368, plus gutters, wants more width than most screens have, and the
+ * column that would get crushed is the prose. Hiding the contents outright was the first answer and
+ * the wrong one (Oleh: "я просив тебе його приховати в невеличку кнопочку з трьома лініями") — a
+ * reader still needs to know where in the article they are. So it FOLDS: a list button in the same
+ * spot, and the same card as a popover when clicked. Stripe's docs do exactly this.
+ *
+ * The card is only ever in one of two states, never both, and the state is driven by
+ * `html[data-chat='open']` — so nothing here needs to know anything about the chat beyond that flag.
+ *
+ * The real components are imported directly rather than through
+ * `virtual:starlight/components/*`. Those virtual modules resolve a user's own override of the same
+ * component and ship NO type declarations, so `astro check` fails on them with ts(2307); we do not
+ * override either of these, which makes the direct import equivalent and typed.
+ */
+import MobileTableOfContents from '@astrojs/starlight/components/MobileTableOfContents.astro';
+import TableOfContents from '@astrojs/starlight/components/TableOfContents.astro';
+
+const { toc } = Astro.locals.starlightRoute;
+---
+
+{
+  toc && (
+    <>
+      <div class="lg:sl-hidden">
+        <MobileTableOfContents />
+      </div>
+
+      <div class="right-sidebar-panel sl-hidden lg:sl-block">
+        <div class="sl-container" data-toc-root>
+          <button type="button" class="toc-btn" data-toc-toggle aria-expanded="false" aria-label="On this page">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" />
+              <path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" />
+            </svg>
+          </button>
+
+          <div class="toc-card" data-toc-card>
+            <TableOfContents />
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+<script>
+  import { wireToc } from '../lib/toc-collapse';
+  wireToc();
+</script>
+
+<style>
+  @layer starlight.core {
+    .right-sidebar-panel {
+      padding: 1rem var(--sl-sidebar-pad-x);
+    }
+
+    /* Starlight's own rules for this rail, kept verbatim — this override replaces the file, so
+       dropping them would silently unstyle the table of contents. */
+    .right-sidebar-panel :global(h2) {
+      color: var(--sl-color-white);
+      font-size: var(--sl-text-h5);
+      font-weight: 600;
+      line-height: var(--sl-line-height-headings);
+      margin-bottom: 0.5rem;
+    }
+    .right-sidebar-panel :global(:where(a)) {
+      display: block;
+      font-size: var(--sl-text-xs);
+      text-decoration: none;
+      color: var(--sl-color-gray-3);
+      overflow-wrap: anywhere;
+    }
+    .right-sidebar-panel :global(:where(a):hover) {
+      color: var(--sl-color-white);
+    }
+
+    .sl-container {
+      position: relative;
+      width: calc(var(--sl-sidebar-width) - 2 * var(--sl-sidebar-pad-x));
+    }
+
+    @media (min-width: 72rem) {
+      .sl-container {
+        max-width: calc(
+          (100vw - var(--sl-sidebar-width) - 2 * var(--sl-content-pad-x) - 2 * var(--sl-sidebar-pad-x)) * 0.25
+        );
+      }
+    }
+
+    /* ── The card ──
+       A bounded object beside the text, not a floor-to-ceiling third rail: Starlight paints this
+       rail with a `border-inline-start` and lets the contents run the height of the viewport, which
+       is right when it is the only thing over there and wrong beside a chat drawer. */
+    .toc-card {
+      padding: 12px;
+      border: 1px solid var(--bo-base-300);
+      border-radius: var(--bo-r-8);
+      background: var(--bo-base-100);
+      max-height: calc(100vh - var(--sl-nav-height) - 4rem);
+      overflow-y: auto;
+    }
+
+    /* Starlight sizes this heading as a page-level h5; inside a small card it is a label. */
+    .toc-card :global(h2) {
+      font-size: var(--sl-text-xs);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--bo-muted);
+    }
+
+    /* ── The button ──
+       Hidden until the chat needs the width, so the default page keeps its contents in plain sight
+       and nobody has to learn a control to read a heading list. */
+    .toc-btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--bo-base-300);
+      border-radius: var(--bo-r-8);
+      background: var(--bo-base-100);
+      color: var(--sl-color-text);
+      cursor: pointer;
+    }
+
+    .toc-btn:hover,
+    .toc-btn[aria-expanded='true'] {
+      border-color: var(--bo-primary);
+      color: var(--bo-primary);
+    }
+
+    /* ── Folded: chat open ── */
+    :global(html[data-chat='open']) .toc-btn {
+      display: flex;
+    }
+
+    :global(html[data-chat='open']) .toc-card {
+      /* A popover, and absolutely positioned so it can be WIDER than the folded rail — the rail is
+         36px once the card is out of flow, and a heading list needs its own measure. */
+      position: absolute;
+      z-index: 20;
+      /* Opens LEFTWARD, from the button's trailing edge. Anchored the other way it grew towards the
+         chat drawer and slid underneath it — the drawer is portalled to `<body>` at z-index 1000,
+         so no z-index here can win, and it should not: the conversation is the foreground. Measured
+         at 1440: anchored left the card ran 913→1153 against a drawer starting at 1057. */
+      inset-inline-end: 0;
+      top: calc(100% + 8px);
+      width: max-content;
+      min-width: 15rem;
+      max-width: 20rem;
+      box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+      display: none;
+    }
+
+    :global(html[data-chat='open']) .sl-container {
+      width: max-content;
+      max-width: none;
+    }
+
+    :global(html[data-chat='open']) [data-toc-root][data-toc-open] .toc-card {
+      display: block;
+    }
+  }
+</style>

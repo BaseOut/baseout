@@ -1,0 +1,342 @@
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   BASEOUT BRAND BRIDGE — the one sheet the four public apps wear
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+   WHY THIS FILE EXISTS. Oleh, 2026-08-17: «цей портал має будуватись на тих самих елементах, стилях,
+   що і Baseout, щоб для юзера все було в одному стилі.» A user walks
+   baseout.com → survey → app.baseout.com → support.baseout.com, and today three of those four doors
+   are painted in framework defaults. Measured across `apps/{website,prelaunch,support,survey}`:
+   **45 raw hex values, zero Baseout tokens.** The most common is `#2563eb` — Tailwind's default
+   blue-600 — where the product ships `#156e97`. That is not a drifted brand blue; it is somebody
+   else's blue.
+
+   WHO CONSUMES IT. All four, deliberately — Oleh's call, and the reason is that fixing only the
+   support portal trades one inconsistency for a subtler one. Proven on `apps/support` first because
+   it is the smallest surface that exercises every section of this file.
+
+   WHY IT IS NOT `apps/web/src/styles/themes/baseout.css`. That file is the source of truth for the
+   PRODUCT, and it cannot be consumed here: it declares its tokens inside
+   `@plugin "daisyui/theme" { … }`, which requires Tailwind v4 + daisyUI. None of the four public apps
+   has either (`astro` + `starlight` + `wrangler` is the whole of `apps/support`'s dependency list).
+   So the values below are declared in plain CSS.
+
+   ┌─ THE COST OF THAT, STATED PLAINLY ─────────────────────────────────────────────────────────┐
+   │ This file DUPLICATES the brand values. Two sources of truth for one palette is the exact    │
+   │ defect this repo spent 2026-08-17 removing (a muted grey in twelve values, a radius in       │
+   │ nineteen, a soft-primary in two). It is accepted here only because route A's alternative is  │
+   │ installing Tailwind + daisyUI into four static sites to read one palette.                   │
+   │ THE MITIGATION IS A CHECK, NOT A PROMISE: a drift gate must diff the hexes below against     │
+   │ `apps/web/src/styles/themes/baseout.css` and fail on divergence. Until that gate exists,     │
+   │ this comment is the only thing holding the two together, and comments do not hold.           │
+   └─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   SECTION 1 — THE BRAND. Framework-free; every one of the four apps wants this.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme='light'],
+[data-theme='baseout-light'] {
+  color-scheme: light;
+
+  /* Surfaces. `--root-bg` is deliberately NOT `--color-base-200`: the page floor and the interaction
+     grey answer opposite questions, and they were split on 2026-08-17 for that reason. The floor is
+     base-200 raised one lightness step — same hue, same chroma, lighter only. */
+  --bo-base-100: #ffffff;
+  --bo-base-200: #edeef2;
+  --bo-base-300: #d5d7de;
+  --bo-base-content: #111111;
+  --bo-root-bg: oklch(from var(--bo-base-200) 0.9765 c h);
+
+  /* Brand + status. These are SOLVED values, not picked ones: each was walked down in lightness
+     until it cleared 4.5 both as text on the white card AND as text on its own 16% tint. Do not
+     re-derive them from a hue, and do not "brighten" one in isolation — they sit within 0.17 of
+     each other on a card (primary 5.66 · success 5.67 · warning 5.60 · error 5.76) and that
+     evenness is the reason a status never shouts louder than its neighbour. */
+  --bo-primary: #156e97;
+  --bo-primary-content: #ffffff;
+  --bo-secondary: #1f7ba6;
+  --bo-accent: #1060a0;
+  --bo-neutral: #6b7280;
+  --bo-info: #156e97;
+  --bo-success: #227547;
+  --bo-warning: #87611c;
+  --bo-error: #b93636;
+
+  /* The soft-primary paint — a secondary button, a selected segment, a quiet active state. ONE pair,
+     because the product shipped two (daisyUI's ~8% tint measured 1.05:1 against the floor and read
+     as dirt) until they were reconciled. 20% is the ceiling the LABEL can pay for: the tint darkens
+     the surface under a label that stays put, so at 24% the text falls to 4.68 and at 16% plain
+     primary is already 4.24. 20% + the darkened foreground = 4.96. */
+  --bo-soft-primary-bg: color-mix(in oklch, var(--bo-primary) 20%, transparent);
+  --bo-soft-primary-bg-hover: color-mix(in oklch, var(--bo-primary) 26%, transparent);
+  --bo-soft-primary-fg: color-mix(in oklch, var(--bo-primary) 85%, var(--bo-base-content));
+
+  /* THE REST OF THE SOFT SET, added 2026-08-19, and the reason is worth stating because the absence
+     had a visible effect. Until now the only soft pair a first-party component could reach was
+     primary — so every status a component wanted to paint came out blue, and a whole surface
+     (the request board) read monochrome while the palette underneath it held four solved hues.
+
+     THERE ARE TWO SOFT RECIPES IN THIS FILE AND THAT IS DELIBERATE, not the duplication it looks
+     like. They are different (bg, fg) PAIRS tuned for different jobs:
+       · this one — 20% tint + a foreground darkened 85% toward the ink — paints CONTROLS and
+         BADGES, where the label sits inside the tint and has to survive it (primary measures 4.96);
+       · `--sl-color-*-low`/`-high` in §2.2 — 16% tint + the plain hue — paints Starlight ASIDES,
+         where the file's own note records that each hue cleared 4.5 on its 16% tint.
+     Mixing them would change every aside in the docs, so they stay two points on one curve.
+
+     NEUTRAL IS ABSENT ON PURPOSE. A soft neutral is a banned paint in this product (measured 1.34:1
+     dark / 4.35:1 light, audit X08-F6) — grey on grey is grey. A neutral status wears the GHOST
+     treatment instead: `--bo-base-200` behind `--bo-muted-strong`, which is what Backups paints
+     `queued` and `cancelled`. */
+  --bo-soft-success-bg: color-mix(in oklch, var(--bo-success) 20%, transparent);
+  --bo-soft-success-fg: color-mix(in oklch, var(--bo-success) 85%, var(--bo-base-content));
+  --bo-soft-warning-bg: color-mix(in oklch, var(--bo-warning) 20%, transparent);
+  --bo-soft-warning-fg: color-mix(in oklch, var(--bo-warning) 85%, var(--bo-base-content));
+  --bo-soft-error-bg: color-mix(in oklch, var(--bo-error) 20%, transparent);
+  --bo-soft-error-fg: color-mix(in oklch, var(--bo-error) 85%, var(--bo-base-content));
+}
+
+:root[data-theme='dark'],
+:root[data-theme='baseout'],
+[data-theme='dark'],
+[data-theme='baseout'] {
+  color-scheme: dark;
+
+  --bo-base-100: #111111;
+  --bo-base-200: #1a1a1a;
+  --bo-base-300: #27272a;
+  --bo-base-content: #ffffff;
+  --bo-root-bg: #0a0a0a;
+
+  /* ┌─ I GOT THIS WRONG FIRST, AND A COMPUTED VALUE CAUGHT IT ────────────────────────────────┐
+     │ This block originally carried only the four surface tokens, with a comment claiming "the │
+     │ brand and status hues are shared" between themes. They are NOT. Every single one differs │
+     │ upstream, and the tell was a link on the support home page measuring **3.34:1** — the     │
+     │ light primary #156e97 sitting on the dark surface #111111. Under AA, on the first page of │
+     │ the first app to wear this sheet. A comment asserting what the code contradicts is the    │
+     │ exact defect class this repo spent the day removing, and I wrote one within the hour.     │
+     └──────────────────────────────────────────────────────────────────────────────────────────┘
+
+     Dark is NOT the light palette inverted and it is not the light palette reused — it is its own
+     solved set, tuned against a near-black ground the same way light's was tuned against white. Note
+     the `-content` values invert too: primary-content is #03111d here and #ffffff in light, because a
+     bright cyan button needs dark text on it. */
+  --bo-primary: #5cceff;
+  --bo-primary-content: #03111d;
+  --bo-secondary: #38aed6;
+  --bo-accent: #1880b0;
+  --bo-neutral: #6b7280;
+  --bo-info: #5cceff;
+  --bo-success: #3db878;
+  --bo-warning: #c49030;
+  --bo-error: #d44f4f;
+
+  /* The soft-primary trio re-derives itself from the dark `--bo-primary` above — the recipe holds in
+     both themes precisely because its foreground mixes toward `--bo-base-content`, so the label moves
+     AWAY from its own tint whichever direction base-content points. That part of the original comment
+     was true; only the shared-hues claim was false. */
+  --bo-soft-primary-bg: color-mix(in oklch, var(--bo-primary) 20%, transparent);
+  --bo-soft-primary-bg-hover: color-mix(in oklch, var(--bo-primary) 26%, transparent);
+  --bo-soft-primary-fg: color-mix(in oklch, var(--bo-primary) 85%, var(--bo-base-content));
+
+  /* Re-declared rather than inherited, and this is the one trap in the file that has already cost a
+     day: a `var()` inside a custom property is substituted where the property is DECLARED, not where
+     it is used. A soft pair written once on plain `:root` would resolve against the LIGHT hue and
+     the LIGHT ink forever, and would keep doing so inside a nested `[data-theme]` scope while
+     looking correct in the source. `--bo-muted` was written that way and painted black on black. */
+  --bo-soft-success-bg: color-mix(in oklch, var(--bo-success) 20%, transparent);
+  --bo-soft-success-fg: color-mix(in oklch, var(--bo-success) 85%, var(--bo-base-content));
+  --bo-soft-warning-bg: color-mix(in oklch, var(--bo-warning) 20%, transparent);
+  --bo-soft-warning-fg: color-mix(in oklch, var(--bo-warning) 85%, var(--bo-base-content));
+  --bo-soft-error-bg: color-mix(in oklch, var(--bo-error) 20%, transparent);
+  --bo-soft-error-fg: color-mix(in oklch, var(--bo-error) 85%, var(--bo-base-content));
+}
+
+/* ── THE TYPE LADDER ──────────────────────────────────────────────────────────────────────────
+   Nine rungs, and the product COMPACTS one rung below 1280px (14 → 13, 13 → 12) because density is
+   the point of an admin tool. Note what that means for a reading surface — see §2.3. */
+:root {
+  --bo-t-11: 11px;
+  --bo-t-12: 12px;
+  --bo-t-13: 13px;
+  --bo-t-14: 14px;
+  --bo-t-16: 16px;
+  --bo-t-18: 18px;
+  --bo-t-20: 20px;
+  --bo-t-24: 24px;
+  --bo-t-32: 32px;
+
+  /* ── THE RADIUS LADDER ─ four rungs, all on the 4px grid. `999px` (a pill) and `50%` (a circle)
+     are SHAPES, not rungs. A tile inside a frame takes the rung BELOW its frame. */
+  --bo-r-4: 4px;
+  --bo-r-6: 6px;
+  --bo-r-8: 8px;
+  --bo-r-12: 12px;
+
+  /* ── MUTED TEXT ─ the floor for anything a person READS is `.65`, which measures 5.92 on a white
+     card. `.55` is 4.17 and `.45` is 3.03 — both under AA, and both were in the product until they
+     were swept out. `.35` is for ornament ONLY: an em dash, a separator, an illustrative icon whose
+     adjacent sentence carries the message. An information-bearing glyph is text and takes `.65`. */
+  --bo-muted: oklch(from var(--bo-base-content) l c h / 0.65);
+  --bo-muted-strong: oklch(from var(--bo-base-content) l c h / 0.85);
+  --bo-ornament: oklch(from var(--bo-base-content) l c h / 0.35);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   SECTION 2 — THE STARLIGHT ADAPTER. Inert in the three apps that do not use Starlight, so the
+   whole file is safe to import everywhere.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+   2.1 WHY A `:root` REMAP WORKS AT ALL, mechanically. Every Starlight style is inside a cascade
+   layer; unlayered declarations beat layered ones regardless of specificity. This file is unlayered,
+   so these values win cleanly and without a specificity fight.
+
+   THE TRAP THAT COMES WITH THAT: it is NOT a licence to point Starlight's `customCss` at the
+   product's `global.css`. That sheet is ~3,300 mostly-unlayered lines and would out-rank Starlight's
+   reset, prose styles and layout all at once. Map the variables; never import the product sheet.
+
+   2.2 `--sl-hue-*` IS NOT TOUCHED. Starlight derives its status colours from a hue number through
+   `hsl()`. Baseout's status colours are solved OKLCH values that cleared a contrast floor. Feeding a
+   hue back in would re-derive them and lose the tuning, so the final colours are declared directly
+   and the hue inputs are left alone. */
+
+:root,
+[data-theme='light'],
+[data-theme='baseout-light'],
+:root[data-theme='dark'],
+[data-theme='dark'],
+[data-theme='baseout'] {
+  /* Surfaces + text */
+  --sl-color-bg: var(--bo-root-bg);
+  --sl-color-bg-nav: var(--bo-base-100);
+  --sl-color-bg-sidebar: var(--bo-base-100);
+  --sl-color-bg-inline-code: var(--bo-base-200);
+  --sl-color-text: var(--bo-base-content);
+  --sl-color-text-accent: var(--bo-primary);
+  --sl-color-white: var(--bo-base-content); /* Starlight's "strongest text", not literally white */
+  --sl-color-black: var(--bo-base-100); /* …and its "deepest surface". Both are role names. */
+  --sl-color-gray-1: var(--bo-base-content);
+  --sl-color-gray-2: var(--bo-muted-strong);
+  --sl-color-gray-3: var(--bo-muted);
+  --sl-color-gray-4: var(--bo-ornament);
+  --sl-color-gray-5: var(--bo-base-300);
+  --sl-color-gray-6: var(--bo-base-200);
+  --sl-color-gray-7: var(--bo-base-100);
+  --sl-color-hairline: var(--bo-base-300);
+  --sl-color-hairline-light: var(--bo-base-300);
+  --sl-color-hairline-shade: var(--bo-base-300);
+  --sl-color-accent: var(--bo-primary);
+  --sl-color-accent-low: var(--bo-soft-primary-bg);
+  --sl-color-accent-high: var(--bo-soft-primary-fg);
+
+  /* ┌─ MAPPING A LEAF BROKE A BRANCH ────────────────────────────────────────────────────────────┐
+     │ Starlight's dark theme DERIVES `--sl-color-text-invert` from `--sl-color-accent-low`, which │
+     │ is an opaque dark colour there and therefore legible on the accent. I remapped accent-low   │
+     │ to a 20% TRANSPARENT tint — correct for an aside background, fatal for text — so the        │
+     │ selected sidebar item painted a 20%-transparent cyan label on a solid cyan ground.          │
+     │ Oleh caught it on screen: an active nav row with no readable text in it.                    │
+     │                                                                                            │
+     │ The lesson is the shape of the bug, not the token: remapping ONE `--sl-*` variable can      │
+     │ silently change another that reads it. Any `--sl-*` that Starlight derives must be declared │
+     │ here explicitly rather than left to inherit a derivation built on different assumptions.    │
+     └────────────────────────────────────────────────────────────────────────────────────────────┘
+     `--sl-color-text-invert` means "text that sits ON the accent", and Baseout already has exactly
+     that token: `--bo-primary-content` — #ffffff in light, #03111d in dark, because a bright cyan
+     button needs dark text on it. */
+  --sl-color-text-invert: var(--bo-primary-content);
+
+  /* Status. Declared as final colours — see §2.2 on why the hue inputs stay untouched. */
+  --sl-color-blue: var(--bo-info);
+  --sl-color-green: var(--bo-success);
+  --sl-color-red: var(--bo-error);
+  --sl-color-purple: var(--bo-accent);
+  /* Baseout HAS NO ORANGE. Starlight's `tip`/banner asides reach for one, and `DraftBanner.astro`
+     currently paints itself with three orange tokens. Mapped onto `warning`, which is the closest
+     role in a palette where colour means status rather than decoration. If a fourth admonition
+     genuinely needs its own colour, that is a catalog decision, not a mapping one. */
+  --sl-color-orange: var(--bo-warning);
+
+  /* EVERY status colour needs its `-low` / `-high` pair, not just the one I noticed first. Starlight
+     derives an icon tile and an aside tint from `-low`, so mapping only the base left three card
+     icons painting Starlight's own purple/green/red — measured `rgb(64,34,78)`, `rgb(48,78,34)`,
+     `rgb(78,34,50)` on the support home page while the fourth, orange, correctly showed a 16% tint of
+     our warning. `-low` is the 16% tint (the product's own soft-badge recipe) and `-high` is the
+     colour at full strength, which is what a label on that tint has to be. */
+  --sl-color-blue-low: color-mix(in oklch, var(--bo-info) 16%, transparent);
+  --sl-color-blue-high: var(--bo-info);
+  --sl-color-green-low: color-mix(in oklch, var(--bo-success) 16%, transparent);
+  --sl-color-green-high: var(--bo-success);
+  --sl-color-orange-low: color-mix(in oklch, var(--bo-warning) 16%, transparent);
+  --sl-color-orange-high: var(--bo-warning);
+  --sl-color-purple-low: color-mix(in oklch, var(--bo-accent) 16%, transparent);
+  --sl-color-purple-high: var(--bo-accent);
+  --sl-color-red-low: color-mix(in oklch, var(--bo-error) 16%, transparent);
+  --sl-color-red-high: var(--bo-error);
+
+  /* `DraftBanner.astro` reads these two and Starlight defines NEITHER — they were dangling. */
+  --sl-color-banner-bg: color-mix(in oklch, var(--bo-warning) 16%, transparent);
+  --sl-color-banner-text: var(--bo-base-content);
+
+  /* Type. */
+  --sl-font: var(--font-sans, 'Urbanist', system-ui, sans-serif);
+  --sl-text-2xs: var(--bo-t-11);
+  --sl-text-xs: var(--bo-t-12);
+  --sl-text-sm: var(--bo-t-13);
+  --sl-text-h5: var(--bo-t-14);
+  --sl-text-h4: var(--bo-t-16);
+  --sl-text-h3: var(--bo-t-18);
+  --sl-text-h2: var(--bo-t-24);
+  --sl-text-h1: var(--bo-t-32);
+
+  /* 2.3 THE ONE DECISION IN THIS FILE THAT IS A JUDGEMENT CALL, AND IT IS OPEN.
+     `--sl-text-body` is deliberately NOT `var(--bo-t-16)`. The product's 16px rung COMPACTS to 14px
+     below 1280px, which is correct for a dense admin tool and wrong for documentation — it would set
+     prose at 14px on a 13" laptop, which is most laptops. So the reading size is pinned at 16px and
+     does not step.
+
+     This is my assumption, not Oleh's ruling — he has the question open. Reverting it is this one
+     line. If he chooses to let docs compact with the product, the trade he is accepting is smaller
+     prose on the machine most people read on; if he keeps the pin, the trade is that a docs page and
+     an app page show different body sizes at the same width. Neither is free. */
+  --sl-text-body: 16px;
+  --sl-text-body-sm: var(--bo-t-14);
+  --sl-text-code: var(--bo-t-14);
+  --sl-text-code-sm: var(--bo-t-13);
+
+  /* Geometry. `--sl-content-width` is the reading measure, and Baseout already has an argued one:
+     `pattern-schema-docs` says a centred ~72ch and "never pin long-form text to the pane's left
+     edge". 72ch at 16px is ~46rem; Starlight's default is 45rem, so this is a nudge, not a change. */
+  --sl-content-width: 46rem;
+  --sl-line-height: 1.75;
+}
+
+/* 2.4 THE `data-theme` COLLISION, and why it is defused rather than solved.
+   Starlight's ThemeProvider writes `data-theme="light"|"dark"` on `<html>`. The product's daisyUI
+   themes are named `baseout-light`/`baseout`, and the vendored pack ALSO registers themes literally
+   named `light` and `dark` — so if daisyUI were ever installed into a Starlight app, Starlight's
+   toggle would silently activate a generic non-Baseout theme. Valid CSS, wrong brand, every gate
+   green.
+
+   Route A avoids it by not installing daisyUI here: the four selectors above claim `light`/`dark`
+   AND `baseout-light`/`baseout`, so the same sheet answers whichever attribute is present. This is a
+   defusal, not a fix — the day anybody adds daisyUI to one of these apps, the collision is live
+   again, and the four-way selector above is what will make it look like it works. */
+
+/* 2.45 THE LIMIT OF A VARIABLE MAP, measured rather than predicted.
+   `--sl-text-h1` is mapped to `--bo-t-32` = 32px. The support home page's h1 renders at **64px**,
+   because Starlight's Hero component sizes its title in its OWN scoped style (`astro-i77pqoff`) and a
+   custom property never reaches it. So a variable map retints Starlight; it does not re-proportion it.
+   Anything whose geometry lives in a component's scoped CSS needs a component override
+   (`components: { Hero: … }`) — that is the second half of route A, not a defect in this sheet.
+   Anything whose geometry lives in a component's scoped CSS is the second half of route A. */
+/* 2.5 WHAT THIS FILE CANNOT DO, so nobody expects it to.
+   It maps VARIABLES. It does not give Baseout a code block, a callout, a docs sidebar tree, an
+   on-page table of contents, or a prev/next pager — the catalog has no entry for any of those, and
+   two of them have no daisyUI source to take one from. Those are catalog work under THE SEQUENCE,
+   and this sheet only ensures that when they arrive they are already the right colour.
+
+   And a warning for whoever wires the gates: `css-guard` is LAYER-BLIND BY DESIGN — its own comment
+   says an `@layer` case is "DROPPED, not guessed". Cascade layers are the central mechanic of this
+   integration, so the highest-risk failure here is invisible to the one gate that models the
+   cascade. Verify layer behaviour with a computed value in a browser, not with a green tick. */

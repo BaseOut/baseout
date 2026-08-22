@@ -1,0 +1,32 @@
+---
+/**
+ * One Lucide glyph, inheriting the colour of whatever it labels.
+ *
+ * `currentColor` is the whole point: a glyph that carries its own colour is a second thing to keep
+ * in sync with the label beside it, and it will drift. Size defaults to 16 — the same rung the
+ * search-result rows use — and everything above it is a deliberate step, not a nudge.
+ */
+import { ICONS, type IconName } from '../lib/icons';
+
+interface Props {
+  name: IconName;
+  size?: number;
+  class?: string;
+}
+
+const { name, size = 16, class: cls } = Astro.props;
+---
+
+<svg
+  class:list={['bo-i', cls]}
+  viewBox="0 0 24 24"
+  width={size}
+  height={size}
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  aria-hidden="true"
+  set:html={ICONS[name]}
+/>

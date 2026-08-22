@@ -1,0 +1,327 @@
+---
+/**
+ * One request, on its own page.
+ *
+ * Dan, 2026-08-18: "be able to click into these and get more details." A card that ends in itself
+ * is where a board stops being useful — the argument for a request, the reason one was declined,
+ * and the screenshot that explains it all need more room than a two-line blurb.
+ *
+ * A SIDE EFFECT WORTH NAMING: giving every request a page puts it in the Pagefind index as its own
+ * document. That is what makes duplicate detection on the submit form real rather than a second
+ * search engine — `/contact/` queries the same index the docs search uses and gets requests back.
+ * Delete these pages and that feature quietly stops working.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Icon from '../../components/Icon.astro';
+import PlatformMark from '../../components/PlatformMark.astro';
+import StatusBadge from '../../components/StatusBadge.astro';
+import { REQUESTS, kindOf, type FeatureRequest } from '../../data/requests';
+import { platform } from '../../lib/platforms';
+import { statusMeta } from '../../lib/status';
+import { VOTES_LIVE } from '../../lib/votes';
+
+export function getStaticPaths() {
+  return REQUESTS.map((r) => ({ params: { slug: r.slug }, props: { request: r } }));
+}
+
+interface Props {
+  request: FeatureRequest;
+}
+
+const { request: r } = Astro.props;
+
+const meta = statusMeta(r.status);
+
+/* The docs panel says one of two things and takes its colour from WHICH, not from the item's
+   status: green when the page it points at is the proof that the thing exists, quiet otherwise.
+   Inheriting the status tone put an amber panel under an In-progress item, and amber is this
+   system's "read this before you continue" — a related-reading link has not earned that. */
+/* WHICH PLATFORM THIS IS ABOUT, said on the page as well as on the board. A facet is only useful
+   if the thing it filtered to still admits what it is once you have opened it — otherwise the
+   reader who arrived from a shared link has no way to tell an Airtable-specific request from a
+   Baseout one, and the tag looks like it was only ever chrome for the board. */
+const isPlatformKind = kindOf(r) === 'platform';
+/* A platform candidate we carry no brand mark for takes the connector glyph below — the same
+   substitution the board makes, for the same reason: we do not ship its logo because we do not
+   ship it. */
+const proves = r.status === 'Shipped' || r.status === 'Already exists';
+const docsTone = proves ? 'success' : 'ghost';
+const raised = new Date(r.raised).toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+---
+
+<StarlightPage
+  frontmatter={{
+    title: r.title,
+    description: r.summary,
+    tableOfContents: false,
+  }}
+>
+  <div class="rd">
+    <p class="rd-back">
+      <a href="/roadmap/"><Icon name="arrow-left" size={14} /> All requests</a>
+    </p>
+
+    <div class="rd-head">
+      <div class="rd-facts">
+        <p class="rd-meta">
+          <StatusBadge status={r.status} size={15} />
+          {isPlatformKind ? (
+            <span class="rd-plat">
+              {r.platform ? <PlatformMark id={r.platform} size={15} /> : <Icon name="plug" size={15} />}
+              Platform support
+            </span>
+          ) : r.platform && (
+            <span class="rd-plat">
+              <PlatformMark id={r.platform} size={15} />
+              {platform(r.platform).name}
+            </span>
+          )}
+          {r.estimate && (
+            <span class="rd-date">
+              <Icon name="calendar" size={14} />
+              {r.status === 'Planned' ? 'Est. start' : 'Est. ship'} <strong>{r.estimate}</strong>
+            </span>
+          )}
+          {r.shipped && (
+            <span class="rd-date"><Icon name="calendar" size={14} /> Shipped <strong>{r.shipped}</strong></span>
+          )}
+        </p>
+        <p class="rd-hint">{meta.hint}</p>
+        <p class="rd-attrib">
+          {r.author === 'Baseout' ? 'Raised by Baseout' : `Raised by ${r.author}`} · {raised}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        class="rb-vote rd-vote"
+        data-vote={r.slug}
+        aria-pressed="false"
+        aria-label={`Vote for ${r.title}`}
+      >
+        <span class="rb-i rb-i-ask"><Icon name="arrow-big-up" size={18} /></span>
+        <span class="rb-i rb-i-cast"><Icon name="circle-check" size={18} /></span>
+        {VOTES_LIVE && <span class="rb-count">{r.votes}</span>}
+        <span class="rd-vote-label">Vote</span>
+      </button>
+    </div>
+
+    {r.body.map((p) => <p class="rd-para">{p}</p>)}
+
+    {r.reason && (
+      <aside class="rd-reason">
+        <h2><Icon name="circle-slash" size={15} /> Why this is not planned</h2>
+        <p>{r.reason}</p>
+      </aside>
+    )}
+
+    {r.attachments && r.attachments.length > 0 && (
+      <section class="rd-attach" aria-labelledby="rd-attach-h">
+        <h2 id="rd-attach-h" class="rd-h">Attachments</h2>
+        {r.attachments.map((a) => (
+          <figure class="rd-fig">
+            <img src={a.src} alt={a.alt} loading="lazy" decoding="async" />
+            {a.caption && <figcaption>{a.caption}</figcaption>}
+          </figure>
+        ))}
+      </section>
+    )}
+
+    {r.docs && (
+      <p class:list={['rd-docs', `bo-tone-${docsTone}`]}>
+        <Icon name="book-open-check" size={16} />
+        <span>
+          {proves ? 'This is documented:' : 'Related reading:'}{' '}
+          <a href={r.docs.href}>{r.docs.label}</a>
+        </span>
+      </p>
+    )}
+
+    <p class="rd-foot">
+      Missing something? <a href="/contact/?kind=request">Add a request</a>.
+    </p>
+  </div>
+</StarlightPage>
+
+<script>
+  import { wireBoard } from '../../lib/board';
+  wireBoard();
+</script>
+
+<style>
+  /* Starlight's prose rhythm is a general-sibling rule, so it reaches into nested boxes too: the
+     vote button is the second child of the facts row and came out 16px below the badge it is
+     supposed to line up with, inside a flex row that already spaces itself with `gap`. */
+  .rd > * + *,
+  .rd-head > *,
+  .rd-facts > * + * { margin-top: 0; }
+  .rd-back { margin: 0 0 16px; font-size: var(--bo-t-13); }
+  .rd-back a { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* THE FACTS AND THE ACTION SHARE ONE ROW, facts leading and the vote at the far end. Two shapes
+     were tried before this one: a 72px square wedged against the status line, which read as a
+     stepper, and a full-width bar above the prose, which read as a banner — at 288px it was wider
+     than the sentence it sat over and the page had no other weight to balance it. A button is a
+     button at the size of one; the balance comes from where it sits, not from how big it is. */
+  .rd-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px 24px;
+    margin-bottom: 24px;
+  }
+
+  .rd-facts { min-width: 0; flex: 1 1 20rem; }
+
+  .rd-vote {
+    flex: none;
+    padding: 10px 20px;
+    font-size: var(--bo-t-14);
+  }
+
+  .rd-vote-label { font-size: var(--bo-t-14); font-weight: 600; }
+
+  .rd-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 6px;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted-strong);
+  }
+
+  .rd-date { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* A LABEL, NOT A SECOND BADGE. The status badge is the only pill on this line; a tinted pill
+     beside it would put two things on one row both claiming to be the item's state, and only one
+     of them is. Mark plus word, in the row's own grey. */
+  .rd-plat { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* One line saying what the state MEANS. The badge names it; a person who has not read the board
+     still does not know whether `Planned` implies a date. The board's column heads carry the same
+     sentence, from the same place. */
+  .rd-hint { margin: 0 0 6px; font-size: var(--bo-t-13); color: var(--bo-muted); }
+
+  .rd-attrib { margin: 0; font-size: var(--bo-t-13); color: var(--bo-muted); }
+
+  .rd-para { margin: 0 0 12px; line-height: 1.6; }
+
+  /* NO SIDE STRIPE. A 3px coloured border on one edge was the accent here and it is a banned
+     treatment — it is decoration wearing the costume of hierarchy, and it breaks the moment the
+     writing mode flips. A full hairline plus the tinted floor plus a leading glyph says the same
+     thing on all four sides. */
+  .rd-reason {
+    margin: 24px 0;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+  }
+
+  .rd-reason h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    color: var(--bo-muted-strong);
+  }
+  .rd-reason p { margin: 0; font-size: var(--bo-t-14); line-height: 1.5; color: var(--bo-muted-strong); }
+
+  .rd-h { margin: 24px 0 12px; font-size: var(--bo-t-14); font-weight: 600; }
+
+  .rd-fig { margin: 0 0 16px; }
+
+  .rd-fig img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+  }
+
+  .rd-fig figcaption {
+    margin-top: 6px;
+    font-size: var(--bo-t-13);
+    color: var(--bo-muted);
+  }
+
+  /* The docs panel wears the ITEM'S tone: a shipped thing's documentation is green because the
+     thing is green, and the panel stops being a second blue box competing with the vote. */
+  .rd-docs {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 24px 0 0;
+    padding: 12px 16px;
+    border-radius: var(--bo-r-8);
+    background: var(--tone-bg);
+    color: var(--tone-fg);
+    font-size: var(--bo-t-14);
+  }
+
+  .rd-docs a { color: inherit; font-weight: 600; }
+
+  .rd-foot { margin-top: 32px; font-size: var(--bo-t-14); color: var(--bo-muted); }
+
+  /* The vote control is the board's, reused verbatim — one paint for one meaning. Global because
+     `lib/board.ts` finds it by `[data-vote]` on both surfaces. */
+  /* The board's control, reused verbatim — one paint for one meaning. Global because `lib/board.ts`
+     finds it by `[data-vote]` on both surfaces. It is the SECONDARY button: a soft fill of the
+     accent with the accent as the label, stepping back to neutral once the vote is cast. */
+  :global(.rb-vote) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  :global(.rb-vote:hover) { background: var(--bo-soft-primary-bg-hover); }
+
+  :global(.rb-vote:focus-visible) {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* Cast steps BACK, not forward: see the argument on the board. The accent stays on what is still
+     open, and the check replaces the arrow. Still a toggle, so still hoverable and focusable. */
+  :global(.rb-vote[aria-pressed='true']) {
+    background: var(--bo-base-200);
+    border-color: var(--bo-base-300);
+    color: var(--bo-muted-strong);
+  }
+
+  :global(.rb-vote[aria-pressed='true']:hover) {
+    background: var(--bo-base-300);
+    color: var(--bo-base-content);
+  }
+
+  :global(.rb-i) { display: flex; }
+
+  :global(.rb-i-cast),
+  :global(.rb-vote[aria-pressed='true'] .rb-i-ask) { display: none; }
+
+  :global(.rb-vote[aria-pressed='true'] .rb-i-cast) { display: flex; }
+
+  :global(.rb-caret) { color: inherit; }
+
+  @media (pointer: coarse) {
+    :global(.rb-vote) { min-height: 44px; }
+  }
+  :global(.rb-count) { font-size: var(--bo-t-16); font-weight: 700; font-variant-numeric: tabular-nums; }
+</style>

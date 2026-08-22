@@ -1,0 +1,68 @@
+---
+/**
+ * The brand lockup: the mark, then the word.
+ *
+ * Overrides Starlight's `SiteTitle`, which renders `config.title` as plain text (optionally beside a
+ * configured logo image). We inline the mark instead so it can take `currentColor` — see
+ * `BrandMark.astro` for why an `<img>` would be wrong in one of the two themes.
+ *
+ * TWO WEIGHTS, ONE UNIT. "Baseout" is the product and "Support" is which of its sites you are on,
+ * so they are not equals: the product is the accent, the site is a qualifier beside it. Grammarly's
+ * help centre reads the same way and it is the clearest of the twelve in the sweep.
+ */
+import BrandMark from './BrandMark.astro';
+
+const { siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="bt">
+  <BrandMark size={22} class="bt-mark" />
+  <span class="bt-word"><strong>Baseout</strong> Support</span>
+</a>
+
+<style>
+  .bt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--bo-primary);
+    text-decoration: none;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .bt :global(.bt-mark) { flex: none; }
+
+  /* GONE BELOW 50rem, and the mark carries the brand alone. Measured at 390: with the word in
+     place the nav column was left 198px of a 358px row and "Report a problem" was cut mid-word.
+     A logo without its wordmark is still the logo; a nav item without its last two words is not
+     the nav item.
+
+     OUR OWN MEDIA QUERY, NOT `sl-hidden md:sl-inline`. Starlight ships `md:sl-hidden`, `md:sl-flex`
+     and `md:sl-block` — there is no inline variant, so that pair hid the wordmark at EVERY width
+     and the header shipped with a bare mark on the desktop. A utility class that does not exist
+     fails silently; a media query in the file that owns the element does not. */
+  .bt-word {
+    display: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: var(--bo-t-16);
+    font-weight: 400;
+    color: var(--bo-muted-strong);
+  }
+
+  .bt-word strong {
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  @media (min-width: 50rem) {
+    .bt-word { display: inline; }
+  }
+
+  .bt:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 4px;
+    border-radius: var(--bo-r-6);
+  }
+</style>

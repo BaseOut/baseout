@@ -1,0 +1,19 @@
+---
+/**
+ * The landing page's body, below the hero.
+ *
+ * THE THREE-WAY SWITCH IS GONE. From 2026-08-19 this file rendered three candidate bodies behind a
+ * preview control so the choice could be made by reading them on the deployed portal rather than
+ * from a description. Oleh picked A on 2026-08-20, and the switch, the two losing components and
+ * `lib/landing-switch.ts` went in the same commit. That was the plan from the day they shipped: a
+ * comparison instrument earns its place by being deleted once it has answered.
+ *
+ * `data-pagefind-ignore` stays. The home is navigation rather than an answer, and a search result
+ * that lands you back on the home page is a result that failed. It also kept `/` from becoming the
+ * strongest match for half the vocabulary of the site while three copies of one directory were in
+ * the DOM at once.
+ */
+import LandingBody from './landing/LandingBody.astro';
+---
+
+<div data-pagefind-ignore><LandingBody /></div>

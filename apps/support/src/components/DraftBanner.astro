@@ -1,0 +1,50 @@
+---
+/**
+ * Overrides Starlight's `Banner` — and no longer renders one.
+ *
+ * THE DRAFT NOTICE IS GONE (Oleh, 2026-08-18). It carried "this is a structural skeleton, not
+ * documentation" on every stub, as claim hygiene. His call, and the argument holds: the 33 stubs
+ * already say **Not written yet** in their own bodies, under a heading, so the banner repeated a
+ * thing the page states better one screen further down — while a loud amber bar sat above every
+ * article, including the finished ones a reader is actually meant to read.
+ *
+ * WHAT THIS FILE IS FOR NOW: `Banner` is the one component Starlight renders on EVERY page
+ * (`Page.astro` puts it above both the hero branch and the article branch), so it is the only
+ * override that reaches the landing, the docs and the custom pages without being duplicated. That
+ * is where `ChatDock` mounts. A page-level `banner:` in frontmatter still renders, because dropping
+ * ours should not take Starlight's own feature with it.
+ */
+import ChatDock from './ChatDock.astro';
+
+const { banner } = Astro.locals.starlightRoute.entry.data;
+---
+
+<ChatDock />
+
+{banner && <div class="sl-banner" data-pagefind-ignore set:html={banner.content} />}
+
+<style>
+  @layer starlight.core {
+    .sl-banner {
+      --__sl-banner-text: var(--sl-color-banner-text, var(--sl-color-text-invert));
+      padding: var(--sl-nav-pad-y) var(--sl-nav-pad-x);
+      background-color: var(--sl-color-banner-bg, var(--sl-color-bg-accent));
+      color: var(--__sl-banner-text);
+      line-height: var(--sl-line-height-headings);
+      text-align: center;
+      text-wrap: balance;
+      box-shadow: var(--sl-shadow-sm);
+    }
+    .sl-banner :global(a) {
+      color: var(--__sl-banner-text);
+    }
+    /* Draft notice reads as a warning, not as chrome. */
+    .sb-draft {
+      --sl-color-banner-bg: var(--sl-color-orange-low);
+      --sl-color-banner-text: var(--sl-color-orange-high);
+      font-size: var(--sl-text-sm);
+      box-shadow: none;
+      border-bottom: 1px solid var(--sl-color-orange);
+    }
+  }
+</style>

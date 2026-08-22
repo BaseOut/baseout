@@ -1,0 +1,920 @@
+---
+/**
+ * CONTACT — the one place a person writes to us, whichever kind of writing it is.
+ *
+ * It used to be `/submit`, reached from a sidebar entry called `Get in touch` and from a second
+ * page called `Tickets` whose only real content was a button pointing here. Two doors into one
+ * room, both buried under forty pages of documentation. The sweep of twelve portals
+ * (`research-portal-ia-2026-08-19.md`) says the same thing every time: contact is a HEADER
+ * destination, and "open one" and "see the ones I opened" are different things — Zapier is the only
+ * portal in the sweep with a public ticket system and it carries `Contact Support` and
+ * `My Requests` as two separate items. So this page is the form, and seeing your history is a
+ * sign-in, stated once at the foot rather than given a page of its own.
+ *
+ * Four doors, two destinations — and the fork is the safeguard, not a convenience.
+ *
+ * Dan asked for two things that share a shape: anonymous ticket submission (name, email, subject,
+ * body) and public feature requests. They must NOT share a destination. A bug report carries
+ * someone's data — a base name, a record, sometimes a screenshot with customer rows in it — and
+ * publishing one to a voting board is a privacy incident, not a UX slip. So the first question is
+ * which kind it is, and the public path says out loud that it will be visible before anyone types.
+ *
+ * THREE OF THE FOUR ARE PRIVATE, and only the public one warns. `billing` and `other` arrived on
+ * 2026-08-20: an invoice question was landing in the form headed "Something is broken", which
+ * routes an account question to the people who read bug reports and tells the person writing it
+ * that they have a fault. Both are private, so both are built from the same block as the ticket —
+ * which is why the three are one array below rather than three near-identical copies of the same
+ * markup. Three copies is how the fourth field gets added to two of them.
+ *
+ * ATTACHMENTS ARE ON THE THREE PRIVATE FORMS AND NOT ON THE PUBLIC ONE. Dan asked for screenshots
+ * (2026-08-20), and a screenshot is the single fastest way to publish something you did not mean
+ * to: dragged into a post that lands on a public board, a base name, a customer's row and an email
+ * address go with it. The same argument that forked this page in the first place forbids the file
+ * input on the request form, and the request form is the one place a person is least likely to
+ * need one.
+ *
+ * DUPLICATE DETECTION IS THE HIGH-VALUE PART. Every public board drowns in forty phrasings of one
+ * idea, and the sweep found nobody solving it at submission time — they all merge by hand
+ * afterwards. We can solve it before it happens with machinery already here: each request has its
+ * own page (`/roadmap/[slug]`), so Pagefind indexes it, so `searchDocs` finds it. Someone who sees
+ * their idea already there votes instead of posting, which is what everyone wants and nobody builds.
+ *
+ * THE FORK IS THE DEFAULT, NOT A TOLL. Five links lead here and four of them already know the
+ * answer — three say "Add a request" and one says "Report a problem". Asking those people to choose
+ * again is asking them to repeat the click they just made. All four kinds skip straight to their
+ * form through `?kind=`, which still says which one it is and still offers the way back.
+ *
+ * NOTHING IS SENT. There is no backend in this repo. Every path ends in a confirmation that says
+ * exactly that rather than pretending — the handoff at the foot lists what the real one must do.
+ * The attachment block stops at the same line: files are collected, listed and counted, and the
+ * form never leaves the page.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Icon from '../components/Icon.astro';
+import RelatedToField from '../components/RelatedToField.astro';
+import { ATTACH_ACCEPT, ATTACH_HINT } from '../lib/submit';
+
+const APP_LOGIN_URL = 'https://app.baseout.com/login?returnTo=https://support.baseout.com/contact';
+
+/**
+ * The three private forms, written once.
+ *
+ * They differ in four strings and nothing else, and the thing that must never differ is the part
+ * nobody looks at twice: the private note, the email hint, the attachment block. Copy-pasted, this
+ * page would carry three attachment blocks that start identical and end up answering to three
+ * different sets of rules. The public request form stays hand-written below — it has different
+ * fields, live duplicate detection and no file input, so folding it in here would mean a config
+ * object with a flag for every clause, which is the same three copies wearing a hat.
+ */
+const PRIVATE = [
+  {
+    kind: 'ticket',
+    heading: 'Something is broken',
+    note: 'This goes privately to support. Nothing here appears on the public board.',
+    bodyLabel: 'What happened?',
+    bodyHint:
+      'Run IDs, base names and error text all help. Please leave out anything you would not want support to read.',
+    filesHint: 'A screenshot of what you saw, the run that failed, or the error message.',
+    submit: 'Send to support',
+  },
+  {
+    kind: 'billing',
+    heading: 'Account and billing',
+    note: 'This goes privately to the people who hold your account. Nothing here appears on the public board.',
+    bodyLabel: 'What do you need?',
+    /* NAMED SO NOBODY SENDS A CARD NUMBER. People paste one when a payment fails and the field says
+       nothing, and once it is in a ticket it is in a mailbox, a database and a backup. Saying which
+       four digits are enough is what stops it, and it has to be said before the box, not after. */
+    bodyHint:
+      'An invoice number, the plan you are on, or the last four digits of the card if a payment failed. Never send a full card number.',
+    filesHint: 'The invoice or receipt in question, or a screenshot of the charge.',
+    submit: 'Send to billing',
+  },
+  {
+    kind: 'other',
+    heading: 'Something else',
+    note: 'This goes privately to support. Nothing here appears on the public board.',
+    bodyLabel: 'What is it?',
+    bodyHint:
+      'Say as much as you can. If it turns out to be a fault or an idea, we will move it to the right place for you.',
+    filesHint: 'A screenshot of the screen you are describing, if there is one.',
+    submit: 'Send to support',
+  },
+];
+---
+
+<StarlightPage
+  frontmatter={{
+    /* NEUTRAL, AND THE STEP SHARPENS IT. This page holds four kinds of writing, and it was titled
+       `Report a problem` for both of the first two: a person who came to suggest a feature read a
+       heading telling them they had a fault, above a form headed `Something I wish existed` (Oleh,
+       2026-08-19). The server cannot know which fork a `?kind=` deep link asked for, so the static
+       title is the one that is true of every step, and `lib/submit.ts` sharpens it to the chosen
+       one.
+       `Contact us`, not `Contact support` (Dan, 2026-08-20). Half these doors do not go to
+       support. This string and `TITLES.fork` in `lib/submit.ts` must stay identical — this one is
+       what renders, and the script overwrites it on the first step change. */
+    title: 'Contact us',
+    description: 'Report something broken, ask for something new, or get help with your account.',
+    tableOfContents: false,
+    /* NO PAGINATION. Starlight derives prev/next from the SIDEBAR, and this page is in the sidebar
+       so a phone can reach it — which put it into the documentation's reading order. Measured: the
+       docs home said "Previous: Contact". These two lines are what keep a service out of a
+       sequence it is not part of; anything else added as a top-level sidebar link needs them too. */
+    prev: false,
+    next: false,
+  }}
+>
+  <div class="sb" data-submit>
+    {/* ── Step 1 · the fork ── */}
+    <section class="sb-step" data-step="fork">
+      {/* DEFLECTION BELONGS TO THE FORK, not to the page. Every portal in the sweep puts a "try this
+          before you write" line ahead of the form — Notion, Figma and Grammarly all do it — but it
+          only works while the visitor is still choosing. Left at page level it also showed above the
+          two form steps, where someone has already picked a lane and is typing, and "go and read the
+          documentation instead" arrives there as a brush-off rather than a shortcut. Moving it
+          inside the fork also leaves Back as the first thing in every form step, which is where a
+          way out belongs. Both cheaper routes are named because they answer different shapes of
+          question: the documentation if you know roughly what you are looking for, the assistant if
+          you only know what went wrong. Neither is a wall — the two cards are directly underneath. */}
+      <p class="sb-deflect">
+        <Icon name="sparkles" size={16} />
+        <span>
+          Most of this is already written down. <a href="/" data-search>Search the
+          documentation</a>, or <a href="/" data-ask>ask the assistant</a> — it reads the same
+          pages and answers in a sentence.
+        </span>
+      </p>
+
+      <p class="sb-lede">What happens next depends on which of these it is, so it is worth asking
+        first.</p>
+
+      {/* FOUR EQUAL TILES, TWO ROWS (Oleh, 2026-08-20). This shipped as three shapes — two tiles,
+          a full-width card, and a quiet row — on the argument that a catch-all which looks like the
+          specific doors gets chosen by people who would otherwise have picked correctly. The
+          counter-argument is the one that won: three different shapes make the reader work out a
+          hierarchy before they can answer a question they already know the answer to, and the
+          reading order top-left to bottom-right puts the catch-all last anyway. Position carries
+          the ranking; shape no longer has to.
+
+          The two lanes keep their tints (a fault, a wish) and the two administrative doors take the
+          neutral one, so the grid still reads as two pairs rather than four unrelated boxes. */}
+      <div class="sb-fork">
+        <button type="button" class="sb-choice" data-choose="ticket">
+          <span class="sb-choice-icon sb-choice-icon-private"><Icon name="bug" size={20} /></span>
+          <span class="sb-choice-title">Something is broken</span>
+          <span class="sb-choice-body">
+            A backup failed, a connection will not reconnect, something is not behaving. This goes
+            <strong>privately</strong> to support.
+          </span>
+        </button>
+
+        <button type="button" class="sb-choice" data-choose="request">
+          <span class="sb-choice-icon sb-choice-icon-public"><Icon name="lightbulb" size={20} /></span>
+          <span class="sb-choice-title">Something I wish existed</span>
+          <span class="sb-choice-body">
+            A feature, a change, an idea. This goes on the <strong>public board</strong> where other
+            people can vote for it.
+          </span>
+        </button>
+
+        <button type="button" class="sb-choice" data-choose="billing">
+          <span class="sb-choice-icon sb-choice-icon-admin"><Icon name="credit-card" size={20} /></span>
+          <span class="sb-choice-title">Account and billing</span>
+          <span class="sb-choice-body">
+            An invoice, a plan change, a payment that will not go through, or a question about what
+            you are paying for. This goes <strong>privately</strong> to the people who hold your
+            account.
+          </span>
+        </button>
+
+        <button type="button" class="sb-choice" data-choose="other">
+          <span class="sb-choice-icon sb-choice-icon-admin">
+            <Icon name="message-circle-question-mark" size={20} />
+          </span>
+          <span class="sb-choice-title">Something else</span>
+          <span class="sb-choice-body">
+            Anything that does not fit the other three. It goes <strong>privately</strong> to
+            support and someone will place it for you.
+          </span>
+        </button>
+      </div>
+    </section>
+
+    {/* ── Step 2a · the three private forms ──
+        One block, three kinds. The order of the fields is the order of the questions a human asks:
+        who are you, where do I reply, what is this about, what happened, show me. Attachments come
+        last because they are the only optional thing here, and an optional control above a required
+        one is read as required.
+
+        NO ASTRO COMMENT MAY GO INSIDE THE EXPRESSION BELOW. A brace-slash-star comment inside a
+        template expression is an SSR 500 with an empty body that every gate passes (six occurrences
+        on record), so everything worth saying about this block is said out here.
+
+        AND THIS COMMENT MUST NEVER SPELL THE CLOSING SEQUENCE IN ITS PROSE. The first draft of this
+        note quoted the very token it was warning about; the quote terminated the comment two lines
+        early and the remaining sentences rendered as visible text on the page, under a build that
+        was green on typecheck, build and smoke. Only reading the page caught it. */}
+    {PRIVATE.map((f) => (
+      <section class="sb-step" data-step={f.kind} hidden>
+        <p class="sb-back">
+          <button type="button" data-restart><Icon name="arrow-left" size={14} /> Back</button>
+        </p>
+        <h2 class="sb-h">{f.heading}</h2>
+        <p class="sb-note sb-note-private">
+          <Icon name="lock" size={16} />
+          <span>{f.note}</span>
+        </p>
+
+        <form class="sb-form" data-form={f.kind} novalidate>
+          {/* ONLY ON THE FAULT REPORT. A broken backup always happened on a platform, and knowing
+              which one before anybody reads the ticket is the difference between routing it and
+              guessing. A billing question and a catch-all are not about a platform at all, and
+              asking there would be a required-looking control with no right answer. */}
+          {f.kind === 'ticket' && <RelatedToField kind="ticket" />}
+
+          <label>
+            <span>Your name</span>
+            <input type="text" name="name" required autocomplete="name" />
+          </label>
+          <label>
+            <span>Email</span>
+            <input type="email" name="email" required autocomplete="email" />
+            <small>We reply here, and use it to find your account if you have one.</small>
+          </label>
+          <label>
+            <span>Subject</span>
+            <input type="text" name="subject" required />
+          </label>
+          <label>
+            <span>{f.bodyLabel}</span>
+            <textarea name="body" rows="6" required></textarea>
+            <small>{f.bodyHint}</small>
+          </label>
+
+          <div class="sb-files" data-files>
+            <span class="sb-files-h">Attachments, if they help</span>
+            {/* TWO LINES, AND THE ORDER IS THE POINT. The first says what is worth attaching and
+                differs per door: a screenshot of a failed run is useful to support, an invoice is
+                useful to billing, and neither is useful to the other. The second is the file rule,
+                derived from the same constants the validator enforces so the stated cap cannot
+                drift from the enforced one. Saying only the second told a visitor what the picker
+                would accept and nothing about why they might open it. */}
+            <p class="sb-files-hint">{f.filesHint}</p>
+            <p class="sb-files-rule" id={`sb-files-hint-${f.kind}`}>{ATTACH_HINT}</p>
+            <input
+              type="file"
+              name="files"
+              multiple
+              accept={ATTACH_ACCEPT}
+              data-file-input
+              hidden
+            />
+            <button
+              type="button"
+              class="sb-file-add"
+              data-file-add
+              aria-describedby={`sb-files-hint-${f.kind}`}
+            >
+              <Icon name="plus" size={14} /> Choose files
+            </button>
+            <ul class="sb-file-list" data-file-list hidden></ul>
+            <div class="sb-file-live" role="status" aria-live="polite">
+              <p class="sb-file-note" data-file-note hidden></p>
+              <p class="sb-file-count" data-file-count></p>
+            </div>
+          </div>
+
+          <p class="sb-err" data-err hidden></p>
+          <button type="submit" class="sb-submit"><Icon name="send" size={15} /> {f.submit}</button>
+        </form>
+      </section>
+    ))}
+
+    {/* ── Step 2b · the public request ── */}
+    <section class="sb-step" data-step="request" hidden>
+      <p class="sb-back">
+        <button type="button" data-restart><Icon name="arrow-left" size={14} /> Back</button>
+      </p>
+      <h2 class="sb-h">Something I wish existed</h2>
+      <p class="sb-note sb-note-public">
+        <Icon name="globe" size={16} />
+        <span>
+          <strong>This will be visible to everyone.</strong> Your request and the name you give
+          appear on the public board. Your email never does.
+        </span>
+      </p>
+
+      <form class="sb-form" data-form="request" novalidate>
+        {/* FIRST, BECAUSE IT SCOPES EVERYTHING UNDER IT. A reader who has come from the board's
+            "Suggest a platform" tile has already answered this question by clicking, and arrives
+            with it filled in — see `?about=` in `lib/submit.ts`. */}
+        <RelatedToField kind="request" allowNew />
+
+        <label>
+          <span>What do you want?</span>
+          <input type="text" name="title" required data-dupe-input placeholder="One line, as you would say it" />
+        </label>
+
+        {/* Filled by `lib/submit.ts` from the same Pagefind index the docs search uses. */}
+        <div class="sb-dupes" data-dupes hidden>
+          <p class="sb-dupes-h" data-dupes-h></p>
+          <div data-dupes-list></div>
+        </div>
+
+        <label>
+          <span>Why — what would this let you do?</span>
+          <textarea name="body" rows="5" required></textarea>
+          <small>The reason is worth more than the vote. One concrete situation beats a paragraph
+            of description.</small>
+        </label>
+        <label>
+          <span>Name to show on the board</span>
+          <input type="text" name="name" required autocomplete="name" placeholder="First name and initial is plenty" />
+        </label>
+        <label>
+          <span>Email</span>
+          <input type="email" name="email" required autocomplete="email" />
+          <small>Never published. It counts you once and lets us tell you when this moves.</small>
+        </label>
+        <p class="sb-err" data-err hidden></p>
+        <button type="submit" class="sb-submit"><Icon name="send" size={15} /> Post to the board</button>
+      </form>
+    </section>
+
+    {/* ── Step 3 · what actually happened ── */}
+    <section class="sb-step" data-step="done" hidden>
+      {/* The glyph rides ON the heading's line rather than sitting on its own above it. Alone on a
+          line it read as a stray tick: 28px of green with nothing beside it to set its baseline,
+          and the eye had to guess whether it belonged to the title below or the rule above. */}
+      <div class="sb-done-head">
+        <span class="sb-done-mark"><Icon name="circle-check" size={22} /></span>
+        <h2 class="sb-h" data-done-h></h2>
+      </div>
+      <p data-done-body></p>
+      {/* This one STAYS. It is the only sentence standing between a person who just pressed submit
+          and the belief that someone is reading it. What the real backend must do moved to
+          `openspec/changes/support/design.md`; what the visitor needs to know is here. */}
+      <p class="sb-note">
+        <strong>Nothing was sent.</strong> This portal has no backend yet — the form is complete and
+        the submission is not.
+      </p>
+      <p><a href="/roadmap/">Back to the board</a></p>
+    </section>
+
+    {/* "See the ones I opened" is a different destination from "open one", and it needs an account.
+        It is one line here rather than a page of its own until sign-in exists — a menu item that
+        leads to a locked door is worse than no menu item. */}
+    <p class="sb-signin">
+      <Icon name="log-in" size={16} />
+      <span>
+        Written to us before? <a href={APP_LOGIN_URL}>Sign in</a> to see your tickets. One opened
+        without an account is still yours — sign in later with the same address and it will be there.
+      </span>
+    </p>
+
+  </div>
+</StarlightPage>
+
+<script>
+  import { wireSubmit } from '../lib/submit';
+  wireSubmit();
+</script>
+
+<style>
+  /* STARLIGHT'S PROSE RHYTHM IS A GENERAL-SIBLING RULE, so it does not stop at the top level: it
+     reaches into every box nested inside the content column and puts a margin on each child after
+     the first. Both of these boxes already space themselves with `gap`, so the margin is pure
+     surplus — measured, the fork's two cards sat 16px out of vertical alignment with each other,
+     and every form field was 32px from the last instead of the 16 the flexbox asked for. */
+  /* ONE MEASURE FOR THE WHOLE PAGE, AND IT IS CENTRED. Three widths used to share this screen: the
+     deflection and sign-in rows ran the full content column, the fork cards ran it too, and the form
+     was capped at 34rem and pinned to the left edge — so an alert was visibly wider than the field
+     it warned about, and the form sat off to one side of a page with no sidebar to balance it.
+     Capping the CONTAINER instead of its parts means there is exactly one number and nothing can
+     drift from it. 38rem fits two fork cards at ~292px each and a form field a person can read
+     across without losing the line. */
+  /* ONE CONTAINER FOR THE WHOLE PAGE, TITLE INCLUDED. Capping `.sb` and centring it inside
+     Starlight's prose column left the h1 on that column's left edge and everything under it 64px
+     further in — two containers, visibly. Widening the COLUMN instead means there is one edge and
+     the title cannot drift from the content. 44rem rather than the prose 46: wide enough for two
+     fork cards at ~336px and a form field that still reads across in one sweep. */
+  :global(main:has(.sb) .sl-container) {
+    max-width: 44rem;
+  }
+
+  .sb > * + *,
+  .sb-fork > *,
+  .sb-files > *,
+  .sb-file-live > *,
+  .sb-form > * { margin-top: 0; }
+  .sb-lede { margin: 0 0 20px; color: var(--bo-muted-strong); }
+
+  .sb-deflect,
+  .sb-signin {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 20px;
+    padding: 10px 14px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted-strong);
+  }
+
+  /* THE GLYPH MATCHES THE FIRST LINE BOX, it is not nudged towards it. `margin-top: 2px` was
+     compensation for a missing line box: the row is `align-items: flex-start`, and an svg is a
+     replaced box the height of its own attribute, while the text beside it carries half a line of
+     leading above its cap height. So the glyph started at the top of the row and the letters started
+     lower, and the icon read as floating above the sentence. Giving the icon a box exactly one line
+     tall — these rows are 14px at line-height 1.5, so 1.5em IS the line box — and centring inside it
+     puts the glyph on the optical centre of the first line, and keeps it there if the type scale
+     ever moves. A fixed pixel nudge is only ever right at one font size. */
+  .sb-deflect :global(.bo-i),
+  .sb-signin :global(.bo-i),
+  .sb-note :global(.bo-i) {
+    display: flex;
+    align-items: center;
+    flex: none;
+    align-self: flex-start;
+    height: 1.5em;
+    margin-top: 0;
+  }
+
+  .sb-deflect :global(.bo-i),
+  .sb-signin :global(.bo-i) { color: var(--bo-primary); }
+
+  .sb-deflect a {
+    color: var(--sl-color-text-accent);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .sb-deflect a:hover { text-decoration-thickness: 2px; }
+
+  .sb-deflect a:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .sb-signin { margin: 32px 0 0; }
+
+  .sb-fork { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 45rem) { .sb-fork { grid-template-columns: 1fr 1fr; } }
+
+  /* A FLEX COLUMN, and the reason is the whitespace. As a block, the newline between the button tag
+     and its first span is a text node that gets its own anonymous line box — measured, the two
+     tiles started 11px apart inside cards that were otherwise pixel-identical, and neither margins
+     nor `display` on the tile could move it because the gap was ABOVE the tile. A flex container
+     ignores whitespace-only text nodes outright, which is the spec removing the problem rather than
+     us compensating for it. */
+  .sb-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .sb-choice { transition: border-color 140ms ease; }
+  .sb-choice:hover { border-color: var(--bo-primary); }
+
+  /* These are the only two controls on the first screen, so losing them to the keyboard loses the
+     page. `:focus-visible`, not `:focus`, so a mouse click does not leave a ring behind. */
+  .sb-choice:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* THE TWO FORKS ARE THE SAME SHAPE AND OPPOSITE DESTINATIONS, so the one thing that separates
+     them on sight is the glyph and the tint behind it: a private report and a public post. Colour
+     alone would not do it — the words carry the meaning, the glyph makes it legible before they
+     are read. */
+  /* `flex`, NOT `inline-flex`. An inline box sits on the line's BASELINE, so its top depends on the
+     strut of whatever text follows it — measured, the two tiles started 11px apart inside cards
+     that were themselves pixel-identical. A block-level flex box has no baseline to sit on. This
+     is the same trap the media library hit with its thumbnails. */
+  .sb-choice-icon {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin-bottom: 12px;
+    border-radius: var(--bo-r-8);
+  }
+
+  /* TWO LANES, NOT TWO STATUSES — and that reading was argued and accepted rather than assumed. On
+     the roadmap green means "shipped, this exists", and a wish is by definition the thing that does
+     not exist yet, so painting the wish tile green is a real collision. It is taken anyway: at the
+     fork nothing has a status, the only question is which lane you are in, and the pair reads as
+     fault against growth — the thing that went wrong, and the thing that could grow. Neutral grey
+     said the report was the unimportant one, and the accent said nothing at all because the accent
+     is already every link and every focus ring on the page. */
+  .sb-choice-icon-private {
+    background: var(--bo-soft-error-bg);
+    color: var(--bo-soft-error-fg);
+  }
+
+  .sb-choice-icon-public {
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+  }
+
+  .sb-choice-title {
+    display: block;
+    margin-bottom: 6px;
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  .sb-choice-body {
+    display: block;
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  .sb-step[hidden] { display: none; }
+  .sb-back { margin: 0 0 16px; }
+
+  /* BACK IS A CONTROL, so it is the system's tertiary button and not a naked bit of accent text. As
+     an underline-free accent word with no padding it had no hit area beyond its own glyphs and no
+     hover state at all, and it sat next to a header nav whose items are exactly this shape. Same
+     ghost recipe as those: transparent border so the box does not move when a bordered sibling is
+     beside it, and the fill only arrives on hover. */
+  .sb-back button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-6);
+    background: none;
+    color: var(--bo-muted-strong);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .sb-back button:hover {
+    background: var(--bo-base-200);
+    color: var(--sl-color-white);
+  }
+
+  .sb-back button:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  .sb-h { margin: 0 0 8px; font-size: var(--bo-t-20); font-weight: 600; }
+
+  .sb-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 20px;
+    padding: 10px 14px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted-strong);
+  }
+
+  /* THE PUBLIC WARNING IS THE ONE THING ON THIS PAGE THAT MUST NOT BE MISSED, and it was painted in
+     the accent — the same blue as every link, every focus ring and the button underneath it. Amber
+     is the colour this system reserves for "read this before you continue", and it is the only
+     place on the portal that earns it. Not red: nothing is broken, and a red panel above a form
+     reads as an error the visitor has already made. */
+  .sb-note-public {
+    background: var(--bo-soft-warning-bg);
+    color: var(--bo-soft-warning-fg);
+  }
+
+  .sb-form { display: flex; flex-direction: column; gap: 16px; }
+
+  .sb-form label { display: block; font-size: var(--bo-t-14); }
+  .sb-form label > span { display: block; margin-bottom: 4px; font-weight: 500; }
+
+  .sb-form input,
+  .sb-form textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    color: var(--sl-color-text);
+    font: inherit;
+    font-size: var(--bo-t-14);
+  }
+
+  .sb-form textarea { resize: vertical; }
+
+  .sb-form input:focus-visible,
+  .sb-form textarea:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .sb-form small {
+    display: block;
+    margin-top: 4px;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    color: var(--bo-muted);
+  }
+
+  .sb-form input[aria-invalid='true'],
+  .sb-form textarea[aria-invalid='true'] { border-color: var(--bo-error, #c0392b); }
+
+  .sb-err {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-error-bg);
+    font-size: var(--bo-t-13);
+    color: var(--bo-soft-error-fg);
+  }
+  .sb-err[hidden] { display: none; }
+
+  .sb-submit:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  .sb-submit {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    padding: 10px 20px;
+    border: 0;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content);
+    font: inherit;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .sb-done-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 8px;
+  }
+
+  .sb-done-head .sb-h {
+    margin: 0;
+  }
+
+  /* Success green, and the only hue on this screen. `flex: none` so a heading that wraps to two
+     lines does not squeeze the glyph into an ellipse. */
+  .sb-done-mark {
+    display: flex;
+    flex: none;
+    color: var(--bo-success);
+  }
+
+  /* The confirmation paragraph sat 6px above the panel under it, so the two read as one block and
+     the panel lost the pause that makes it a separate statement. */
+  [data-step='done'] [data-done-body] {
+    margin: 0 0 20px;
+  }
+
+  /* ── Duplicate suggestions ── */
+  .sb-dupes {
+    margin-top: -4px;
+    padding: 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+  }
+
+  .sb-dupes[hidden] { display: none; }
+
+  .sb-dupes-h {
+    margin: 0 0 8px;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    color: var(--bo-muted-strong);
+  }
+
+  .sb-dupes :global(.sb-dupe) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: var(--bo-r-6);
+  }
+
+  .sb-dupes :global(.sb-dupe + .sb-dupe) { border-top: 1px solid var(--bo-base-300); }
+  .sb-dupes :global(.sb-dupe-title) { flex: 1; min-width: 0; font-size: var(--bo-t-14); }
+  .sb-dupes :global(.sb-dupe-title a) { color: var(--sl-color-text-accent); text-decoration: none; }
+  .sb-dupes :global(.sb-dupe-title a:hover) { text-decoration: underline; }
+
+  /* ── The third and fourth doors ─────────────────────────────────────────────────────────────── */
+
+  /* NEITHER RED NOR AMBER. Red on this page means something broke, and an invoice question is not a
+     fault. Amber is spoken for by the public-board warning, the one thing here that must not be
+     missed. So the two administrative doors — billing and the catch-all — share the neutral
+     surface, which is also what they are: the doors that are neither a fault nor a wish. Sharing
+     one tint is what makes the second row read as a pair rather than as two more lanes. */
+  .sb-choice-icon-admin {
+    background: var(--bo-base-200);
+    color: var(--bo-muted-strong);
+  }
+
+  /* ── Attachments ───────────────────────────────────────────────────────────────────────────── */
+
+  .sb-files {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .sb-files-h { font-size: var(--bo-t-14); font-weight: 500; }
+
+  /* THE CAP IS STATED BEFORE THE PICKER OPENS, not after it refuses something. Someone who learns
+     the limit from a rejection has already gone to their desktop, found the file and waited on a
+     dialog; someone who reads it first crops the screenshot before they start. It is also the
+     button's `aria-describedby`, so it is announced on focus rather than merely printed nearby. */
+  .sb-files-hint {
+    margin: 0;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    color: var(--bo-muted);
+  }
+
+  /* The rule, one step quieter than the suggestion above it: it is a constraint, not an invitation. */
+  .sb-files-rule {
+    margin: 0;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  /* THE NATIVE INPUT IS HIDDEN AND THIS DRIVES IT. A file input cannot be styled to match anything
+     else on this page and the browser writes its own label text, in the browser's own language for
+     the visitor's OS rather than ours. Secondary weight, not primary: attaching a file is optional
+     and the submit button is not, and two solid buttons in one form is two first choices. */
+  .sb-file-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-6);
+    background: var(--bo-base-100);
+    color: var(--bo-muted-strong);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 150ms ease-out, background-color 150ms ease-out;
+  }
+
+  .sb-file-add:hover { border-color: var(--bo-primary); background: var(--bo-base-200); }
+
+  .sb-file-add:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .sb-file-list {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    list-style: none;
+  }
+
+  .sb-file-list[hidden] { display: none; }
+
+  /* `:global`, because `lib/submit.ts` writes these rows as an HTML string and a scoped style never
+     reaches a node created by innerHTML. Same reason as the duplicate rows above. */
+  .sb-file-list :global(.sb-file) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    font-size: var(--bo-t-13);
+  }
+
+  .sb-file-list :global(.sb-file + .sb-file) { border-top: 1px solid var(--bo-base-300); }
+
+  /* The name is the only thing in the row that can be any length, so it is the only thing allowed
+     to shrink. `min-width: 0` is what lets it: a flex item refuses to go below its content width
+     without it, and the row would push the remove button off the edge instead of truncating. */
+  .sb-file-list :global(.sb-file-name) {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sb-file-list :global(.sb-file-size) {
+    flex: none;
+    color: var(--bo-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sb-file-list :global(.sb-file-drop) {
+    flex: none;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-4);
+    background: none;
+    color: var(--bo-muted-strong);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    cursor: pointer;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
+  }
+
+  .sb-file-list :global(.sb-file-drop:hover) {
+    background: var(--bo-base-200);
+    color: var(--sl-color-white);
+  }
+
+  .sb-file-list :global(.sb-file-drop:focus-visible) {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* The filename that turns five identical `Remove` buttons into five distinct ones. Clipped rather
+     than `display: none`: hiding it would take it out of the accessible name as well as off the
+     page, which is the whole reason it is there. */
+  .sb-file-list :global(.sb-file-for) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ONE LIVE REGION, TWO REGISTERS. The count and any refusal change together, at most once per
+     pick, so one polite region announces "chart.png is 14.2 MB … 2 files attached" as a single
+     sentence. Two separate regions would queue and interrupt each other, and putting the list
+     itself in one would read every row aloud on every change. */
+  .sb-file-live {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .sb-file-count { margin: 0; font-size: var(--bo-t-12); color: var(--bo-muted); }
+
+  /* A REFUSED FILE IS NOT A CATASTROPHE. Nothing broke, so nothing here is red — on this page red
+     means a backup failed. Amber is the "read this before you continue" tone, and it cannot collide
+     with the public-board warning that owns it, because that warning lives on the one form with no
+     file input: the two can never appear on the same screen. */
+  .sb-file-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-warning-bg);
+    font-size: var(--bo-t-13);
+    line-height: 1.4;
+    color: var(--bo-soft-warning-fg);
+  }
+
+  .sb-file-note[hidden] { display: none; }
+
+  .sb-file-note :global(.bo-i) {
+    display: flex;
+    flex: none;
+    align-self: flex-start;
+    align-items: center;
+    height: 1.4em;
+  }
+
+</style>

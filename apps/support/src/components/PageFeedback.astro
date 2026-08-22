@@ -1,0 +1,357 @@
+---
+/**
+ * "Was this page helpful?" at the foot of every documentation page.
+ *
+ * WHY IT IS WORTH BUILDING BEFORE THERE IS ANYWHERE TO SEND IT. 25 of the 38 pages here are still
+ * unwritten and the section that IS written has never been read by a customer. The one thing this
+ * portal cannot buy any other way is which page failed which reader, and the widget is what
+ * collects it. Shipping the surface now also means the backend arrives into a shape that is already
+ * argued rather than one invented under deadline.
+ *
+ * TWO STEPS, NEVER ONE. Yes/No alone produces a number nobody can act on. The reason list turns it
+ * into a work item, and it only appears after an answer, so the resting state stays one line.
+ *
+ * THE REASONS ARE OURS, not Stripe's. Theirs end in "Code sample errors"; this documentation has no
+ * code. The two failures a backup tool's docs actually suffer are that the app moved underneath the
+ * steps and that a limit changed, so those are the options, in the reader's words rather than ours.
+ *
+ * RADIOS, NOT CHECKBOXES. Asked to name what went wrong, a person picks the worst thing; a
+ * multi-select invites a tick-everything answer that ranks nothing.
+ *
+ * NO EMAIL CONSENT, AND NO ADDRESS FIELD (Oleh, 2026-08-19). Stripe carries one because Stripe knows
+ * who you are; nobody is signed in here, so ours had to reveal a field, and a field turns a
+ * one-click answer into a form. Anyone who wants a reply has `/contact`, which is built for exactly
+ * that and asks for the address once. This block collects one fact and gets out of the way.
+ *
+ * IT NEVER GRADES THE READER. There is no "was this helpful, if not why did you not read it": every
+ * option is a fault of the page. `Another reason` exists so nobody is forced into a box that is not
+ * their answer, and so the free-text field we do not have yet is visibly missing rather than faked.
+ */
+import Icon from './Icon.astro';
+
+interface Reason {
+  value: string;
+  label: string;
+  hint: string;
+}
+
+const LIKED: Reason[] = [
+  { value: 'accurate', label: 'Accurate', hint: 'It matched what the product actually does.' },
+  { value: 'solved', label: 'Solved my problem', hint: 'I came with a question and left with an answer.' },
+  { value: 'clear', label: 'Easy to understand', hint: 'Plain, and in the right order.' },
+  { value: 'decided', label: 'Helped me decide', hint: 'I now know whether this covers my case.' },
+  { value: 'other-good', label: 'Another reason', hint: '' },
+];
+
+const WRONG: Reason[] = [
+  { value: 'inaccurate', label: 'Inaccurate', hint: 'It does not describe what the product does.' },
+  { value: 'missing', label: 'I could not find what I needed', hint: 'The answer is not on this page.' },
+  { value: 'unclear', label: 'Hard to understand', hint: 'Too complicated, or in the wrong order.' },
+  { value: 'stale', label: 'The steps did not match the app', hint: 'A control has moved or been renamed.' },
+  { value: 'other-bad', label: 'Another reason', hint: '' },
+];
+---
+
+<section class="fb not-content" aria-labelledby="fb-h" data-feedback data-pagefind-ignore>
+  <div data-fb-step="ask">
+    <div class="fb-ask">
+      <h2 class="fb-h" id="fb-h">Was this page helpful?</h2>
+      <div class="fb-btns">
+        <button type="button" class="fb-btn" data-fb-verdict="yes">
+          <Icon name="thumbs-up" size={15} />
+          Yes
+        </button>
+        <button type="button" class="fb-btn" data-fb-verdict="no">
+          <Icon name="thumbs-down" size={15} />
+          No
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div data-fb-step="why" hidden>
+    <form data-fb-form data-fb-why>
+      {/* Both lists are in the DOM and the tone attribute reveals one. Two forms would mean two
+          submit handlers, two email fields and two ways for the pair to drift apart. */}
+      <h3 class="fb-h" tabindex="-1" data-fb-why-h>
+        <span data-fb-when="yes">What did you like?</span>
+        <span data-fb-when="no">What went wrong?</span>
+      </h3>
+
+      <ul class="fb-list" data-fb-when="yes">
+        {
+          LIKED.map((r) => (
+            <li>
+              <label class="fb-opt">
+                <input type="radio" name="reason" value={r.value} />
+                <span class="fb-opt-t">
+                  <span class="fb-opt-l">{r.label}</span>
+                  {r.hint && <span class="fb-opt-h">{r.hint}</span>}
+                </span>
+              </label>
+            </li>
+          ))
+        }
+      </ul>
+
+      <ul class="fb-list" data-fb-when="no">
+        {
+          WRONG.map((r) => (
+            <li>
+              <label class="fb-opt">
+                <input type="radio" name="reason" value={r.value} />
+                <span class="fb-opt-t">
+                  <span class="fb-opt-l">{r.label}</span>
+                  {r.hint && <span class="fb-opt-h">{r.hint}</span>}
+                </span>
+              </label>
+            </li>
+          ))
+        }
+      </ul>
+
+      <div class="fb-actions">
+        <button type="submit" class="fb-submit">Send</button>
+        <button type="button" class="fb-skip" data-fb-skip>Skip</button>
+      </div>
+
+      <p class="fb-note">
+        <strong>Nothing is sent yet.</strong> This portal has no backend, so your answer stays in this
+        browser. The form is complete and the delivery is not.
+      </p>
+    </form>
+  </div>
+
+  <p class="fb-done" data-fb-step="done" hidden>
+    <Icon name="circle-check" size={16} />
+    <span data-fb-done-line></span>
+  </p>
+</section>
+
+<script>
+  import { mountPageFeedback } from '../lib/page-feedback';
+  mountPageFeedback();
+</script>
+
+<style>
+  .fb {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  /* The resting state is ONE LINE: a question and two buttons, side by side until the column is too
+     narrow to hold them. Anything taller competes with the page it is asking about. */
+  .fb-ask {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+  }
+
+  .fb-h {
+    margin: 0;
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--bo-base-content);
+  }
+
+  /* The reason heading is focused BY THE SCRIPT, not by the reader, so that a screen reader lands on
+     the step that just appeared instead of on a button that no longer exists. Painting a focus ring
+     around it makes a block-level heading look like a text field the width of the column, which is
+     what it did. The ring is dropped only for that programmatic case; every genuinely interactive
+     control in this component keeps its own. */
+  [data-fb-why-h]:focus,
+  [data-fb-why-h]:focus-visible {
+    outline: none;
+  }
+
+  .fb-btns {
+    display: flex;
+    gap: 8px;
+  }
+
+  .fb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-6);
+    background: var(--bo-base-100);
+    color: var(--bo-base-content);
+    font: inherit;
+    font-size: var(--bo-t-14);
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+
+  .fb-btn:hover {
+    border-color: var(--bo-primary);
+    color: var(--bo-primary);
+  }
+
+  .fb-btn:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* ── The reason step ── */
+  [data-fb-form] {
+    max-width: 34rem;
+  }
+
+  [data-fb-form] .fb-h {
+    margin-bottom: 12px;
+  }
+
+  /* One list is revealed by the verdict. Written as a pair of rules rather than one with a negation
+     so neither list is ever both hidden and focusable. */
+  [data-fb-why] [data-fb-when] {
+    display: none;
+  }
+
+  [data-fb-why][data-fb-tone='yes'] [data-fb-when='yes'],
+  [data-fb-why][data-fb-tone='no'] [data-fb-when='no'] {
+    display: revert;
+  }
+
+  .fb-list {
+    list-style: none;
+    margin: 0 0 4px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .fb-opt {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px;
+    margin-inline-start: -8px;
+    border-radius: var(--bo-r-6);
+    cursor: pointer;
+    transition: background-color 150ms ease-out;
+  }
+
+  .fb-opt:hover {
+    background: var(--bo-base-200);
+  }
+
+  .fb-opt input {
+    flex: none;
+    /* 20px is the label's line box, so the control centres on the first line of its own text. */
+    width: 16px;
+    height: 20px;
+    margin: 0;
+    accent-color: var(--bo-primary);
+  }
+
+  .fb-opt input:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  .fb-opt-t {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .fb-opt-l {
+    font-size: var(--bo-t-14);
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--bo-base-content);
+  }
+
+  .fb-opt-h {
+    font-size: var(--bo-t-13);
+    line-height: 1.45;
+    color: var(--bo-muted);
+  }
+
+
+
+
+
+
+  .fb-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* Primary is solid, secondary is soft, tertiary is ghost. Send is the only action here that
+     changes anything, so it is the only solid thing on the block. */
+  .fb-submit {
+    padding: 8px 16px;
+    border: 0;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content);
+    font: inherit;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .fb-skip {
+    padding: 8px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-8);
+    background: none;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-14);
+    cursor: pointer;
+    transition:
+      color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+
+  .fb-skip:hover {
+    color: var(--bo-base-content);
+    border-color: var(--bo-base-300);
+  }
+
+  .fb-submit:focus-visible,
+  .fb-skip:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .fb-note {
+    margin: 16px 0 0;
+    font-size: var(--bo-t-13);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  /* `:not([hidden])` IS LOAD-BEARING. An author `display` declaration outranks the UA rule that the
+     `hidden` ATTRIBUTE relies on, so this paragraph stayed on screen while nominally hidden and the
+     resting state showed a stray green tick under the two buttons. Every element in this component
+     that is toggled by `hidden` and also carries a `display` has to be written this way. */
+  .fb-done:not([hidden]) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted-strong);
+  }
+
+  .fb-done :global(.bo-i) {
+    flex: none;
+    color: var(--bo-success);
+  }
+</style>

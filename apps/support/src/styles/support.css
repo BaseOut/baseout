@@ -1,0 +1,647 @@
+/*
+ * Support-portal-only styles. Loaded AFTER `brand/baseout-bridge.css`, which is shared by four
+ * public apps and must not grow per-app rules.
+ *
+ * Unlayered on purpose: Starlight writes its layout inside `@layer starlight.core`, and an
+ * unlayered declaration beats a layered one regardless of specificity. That is the same property
+ * the bridge relies on, and it is why nothing here needs a specificity fight.
+ */
+
+/* The right rail has to out-paint the article, or its popover renders UNDERNEATH the prose.
+ * `.right-sidebar-container` comes BEFORE `.main-pane` in the DOM (Starlight puts the
+ * `right-sidebar` slot first and reorders with flex `order`, which does not change paint order),
+ * and `.main-pane` carries `isolation: isolate`, so the article wins by document order. Measured:
+ * the folded contents popover had all eight links, correct colours and a 240x232 box at 709,124 —
+ * and was invisible, with the paragraph text drawn over it. A z-index on the popover itself cannot
+ * help; the competition happens one level up, between these two siblings.
+ *
+ * Harmless when nothing is popped: the rail does not overlap the column it now out-ranks. */
+.right-sidebar-container {
+  z-index: 30;
+}
+
+/* …and it must not CLIP. Starlight gives `.right-sidebar` `overflow-y: auto` so a long heading list
+ * can scroll; but `overflow-y` on one axis forces the other to `auto` too, and the folded contents
+ * popover opens LEFTWARD — out of that box, and straight into the clip. The card had all eight
+ * links, correct colours and a 240x232 box at 709,124, and was both invisible and un-hit-testable.
+ * The card carries its own `max-height` + `overflow-y`, so the rail's scrolling is redundant now. */
+.right-sidebar {
+  overflow: visible;
+}
+
+/* The rail keeps its position and loses its chrome — the contents are a bounded card now, styled
+ * in `components/PageSidebar.astro` along with the button they fold into. */
+.right-sidebar {
+  border-inline-start: 0;
+}
+
+/* …AND IT MUST NOT SWALLOW CLICKS IT HAS NO CONTENT FOR. The two rules above are each correct and
+ * together they broke every control on the right of the header: search, Ask AI and the theme
+ * switch stopped responding on every documentation page.
+ *
+ * Neither rule looks capable of it. `.right-sidebar` is `position: fixed` with `top: 0`, and its
+ * width resolves against the VIEWPORT rather than its column — measured at 1425px on a 1425px
+ * window, starting at y=0. Starlight keeps that oversized box harmless by clipping it with
+ * `overflow-y: auto`; removing the clip so the contents popover could open leftward also let the
+ * box stay hit-testable across the whole top strip. The `z-index: 30` above then put it in front
+ * of the header's 10. The result blankets the header without painting a single pixel over it,
+ * which is why it looked like dead JavaScript: no console error, no visual clue, every button
+ * present and correct and none of them reachable. `document.elementFromPoint` on the theme switch
+ * returned `div.right-sidebar` and that was the entire diagnosis.
+ *
+ * `pointer-events` rather than geometry, because the geometry is load-bearing: the rail is fixed so
+ * it can stay put while the article scrolls, and constraining its width or top would fight
+ * Starlight's own layout for no gain. This makes the empty parts of an oversized box transparent to
+ * the pointer and hands it back to the children that actually hold something. */
+.right-sidebar {
+  pointer-events: none;
+}
+
+.right-sidebar > * {
+  pointer-events: auto;
+}
+
+/* ── Chat open: the page gives back exactly what the drawer takes ─────────────────────────────
+ * An earlier version of this block also folded the LEFT navigation away behind Starlight's mobile
+ * menu button. That was a misreading: Oleh's "hide it" was about the RIGHT-hand contents card, and
+ * the section navigation must stay put so a reader never loses where they are. The card already
+ * steps aside above; the nav is back and stays.
+ *
+ * Reserving the drawer's width is what actually solved the problem the folding was aimed at — at
+ * 1265px the drawer's leading edge sat at 897 while the prose ran to 977, 80px of text underneath
+ * it. `--cd-w` is written on the root by the resize handle, so this reservation tracks the drag.
+ */
+@media (min-width: 50rem) {
+  html[data-chat='open'] .main-frame {
+    padding-inline-end: var(--cd-w, 23rem);
+  }
+}
+
+/* ── The reading column stays CENTRED when the chat opens ───────────────────────────────────────
+ * Starlight pins the prose to the right of its pane in the two-column case
+ * (`--sl-content-margin-inline: auto 0`), which is correct when the only thing to its right is a
+ * narrow contents rail. With the drawer holding real width the same rule slid the whole article
+ * towards the left edge. Measured at 1265: content sat 324→793 inside a 300→897 space it should
+ * have been centred in. `auto` on both sides centres it in whatever room is left.
+ */
+@media (min-width: 50rem) {
+  html[data-chat='open'] .main-pane {
+    /* Starlight pins the prose to the RIGHT of its pane in the two-column case
+       (`--sl-content-margin-inline: auto 0`), which is right when a contents rail sits beside it and
+       wrong once that rail is a 36px button. */
+    --sl-content-margin-inline: auto;
+    width: 100%;
+  }
+
+  /* The rail holds a button now, so it should measure like one. Left at its column width it kept
+     184px of empty reserve on the right while the prose had 24px on the left — measured, and the
+     reason the article looked shoved into the corner. */
+  html[data-chat='open'] .right-sidebar-container {
+    /* A LANE for the button, not a column for a list. `width: auto` shrank it to nothing and the
+       rail's `position: fixed` child kept its static x — the button landed at 1073 inside a drawer
+       starting at 1057, i.e. behind it. 68px is the button plus the rail's own padding, which is
+       enough for it to have somewhere to live and little enough that the prose keeps the rest. */
+    width: 68px;
+    flex: none;
+  }
+}
+
+/* ── Header: laid out in `components/Header.astro` ──────────────────────────────────────────────
+ * A rule used to live here that made Starlight's three header groups a centred grid, so the search
+ * pair landed on the page's centre line. The header is ours now and reads left to right — brand,
+ * divider, nav, search — so centring the middle group would be centring something that is no longer
+ * in the middle. Removed rather than adjusted: the layout has one home.
+ */
+
+/* ── Prev / next are navigation, not headlines ──────────────────────────────────────────────────
+ * Starlight sets these at `--sl-text-2xl`, which is the same size as a section heading — two link
+ * labels were the loudest type on a finished article. */
+.pagination-links a {
+  padding: 12px 16px;
+}
+
+.pagination-links a > span {
+  font-size: var(--sl-text-base);
+  line-height: 1.4;
+}
+
+.pagination-links svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* ── The landing carries its own search, so the header must not carry a second one ──────────────
+ * `html:not([data-has-sidebar])` IS the splash landing: Starlight stamps `data-has-sidebar` on the
+ * root for every page that has one, and the splash template has none. Two search fields on one
+ * screen is two answers to the same question — the hero's is the one in the reader's eye line.
+ */
+html:not([data-has-sidebar]) .hs {
+  display: none;
+}
+
+/* ── The landing is a directory, so it gets the width of one ────────────────────────────────────
+ * Starlight caps the splash content column at the prose measure, which is right for an article and
+ * wrong for three columns of links — the grid was rendering at 643px and wrapping into a tall
+ * ladder. `html:not([data-has-sidebar])` IS the splash landing (Starlight stamps that attribute on
+ * every page that has a sidebar, and the splash template has none), so this widens exactly one page.
+ */
+html:not([data-has-sidebar]) .content-panel .sl-container {
+  max-width: 72rem;
+  width: 100%;
+}
+
+/* ── Light theme: the surfaces a person touches are WHITE ───────────────────────────────────────
+ * Oleh, 2026-08-18. The bridge's light floor is `base-200` raised one lightness step — a very pale
+ * grey, chosen for the PRODUCT, where a grey ground makes white cards read as raised objects and
+ * the app is a dense field of them. A docs site is the opposite: mostly one long white page, and
+ * the grey read as dirt behind the reading column.
+ *
+ * `html:root[…]` is required, not stylistic: the bridge maps every `--bo-*` in a block whose
+ * selector list includes `:root[data-theme='dark']`, specificity (0,2,0). A plain `:root` here is
+ * (0,1,0) and loses silently — the rule ships and nothing moves.
+ *
+ * Portal-only, by construction: this file is `apps/support`'s alone. The product keeps its floor.
+ */
+html:root:not([data-theme='dark']):not([data-theme='baseout']) {
+  --bo-root-bg: #ffffff;
+  --bo-base-200: #f4f5f7;
+}
+
+/* ── The vote dialog ────────────────────────────────────────────────────────────────────────────
+ * Built by `lib/board.ts` at click time and appended to `<body>`, so it can carry no component
+ * stylesheet — it has no place in a component tree by the time it exists. A `<dialog>` for the
+ * usual reason: focus containment, Escape and the backdrop are the platform's job, not ours.
+ */
+dialog.vote-dialog {
+  /* A MODAL DIALOG IS CENTRED BY `inset: 0` PLUS `margin: auto` IN THE UA SHEET, and a reset that
+     zeroes margins on everything takes the second half away — leaving `inset: 0` to pin the box to
+     the top-left corner. It looked like a positioning bug and was a cascade one. Restated here,
+     where nothing downstream can quietly remove it again. */
+  margin: auto;
+  width: min(26rem, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-12);
+  background: var(--bo-base-100);
+  color: var(--sl-color-text);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.4);
+}
+
+dialog.vote-dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+dialog.vote-dialog h2 {
+  margin: 0 0 8px;
+  font-size: var(--bo-t-16);
+  font-weight: 600;
+  color: var(--sl-color-white);
+}
+
+dialog.vote-dialog p {
+  margin: 0 0 16px;
+  font-size: var(--bo-t-14);
+  line-height: 1.5;
+  color: var(--bo-muted-strong);
+}
+
+dialog.vote-dialog label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: var(--bo-t-13);
+  color: var(--bo-muted);
+}
+
+dialog.vote-dialog label span {
+  display: block;
+  margin-bottom: 4px;
+}
+
+dialog.vote-dialog input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-8);
+  background: var(--bo-base-100);
+  color: var(--sl-color-text);
+  font: inherit;
+  font-size: var(--bo-t-14);
+}
+
+dialog.vote-dialog input:focus-visible {
+  outline: 2px solid var(--bo-primary);
+  outline-offset: -1px;
+}
+
+dialog.vote-dialog .vote-dialog-err {
+  margin: -8px 0 12px;
+  font-size: var(--bo-t-13);
+  color: var(--bo-error, #c0392b);
+}
+
+dialog.vote-dialog .vote-dialog-err[hidden] { display: none; }
+
+dialog.vote-dialog .vote-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+dialog.vote-dialog button {
+  padding: 8px 16px;
+  border-radius: var(--bo-r-8);
+  border: 1px solid var(--bo-base-300);
+  background: var(--bo-base-100);
+  color: var(--sl-color-text);
+  font: inherit;
+  font-size: var(--bo-t-14);
+  cursor: pointer;
+}
+
+dialog.vote-dialog button[data-confirm] {
+  border-color: transparent;
+  background: var(--bo-primary);
+  color: var(--bo-primary-content);
+  font-weight: 600;
+}
+
+/* ── STATUS PAINT: one tone table, four surfaces ─────────────────────────────────────────────────
+ * The board, its filter chips, its column heads and the request detail page all say the same five
+ * words, and until 2026-08-19 they said them in four different paints — two of which were "no
+ * paint". That is why the portal read monochrome while the palette under it held four solved hues:
+ * the only soft pair a first-party component could reach was `--bo-soft-primary-*`, so anything
+ * that wanted a colour got blue or got nothing.
+ *
+ * A TONE IS A PAIR PLUS AN INK, and the three of them are what the four surfaces differ on:
+ *   --tone-bg   the tint a filled badge sits on
+ *   --tone-fg   the label inside that tint, darkened toward the ink so it survives it
+ *   --tone-ink  the hue at full strength, for a glyph on an UNFILLED surface (a resting chip, a
+ *               column head) where there is no tint to darken against
+ * Setting them on the element rather than reading them from a theme block is deliberate: a `var()`
+ * inside a custom property is substituted where the property is DECLARED, so declaring the trio on
+ * the badge itself is what makes it follow a nested `[data-theme]`.
+ *
+ * These live here, not in a component, because `lib/board.ts` builds some of this markup at click
+ * time and an Astro scoped style never reaches runtime-built DOM.
+ */
+.bo-i {
+  flex: none;
+  vertical-align: -0.125em;
+}
+
+.bo-tone-ghost {
+  --tone-bg: var(--bo-base-200);
+  --tone-fg: var(--bo-muted-strong);
+  --tone-ink: var(--bo-neutral);
+}
+
+.bo-tone-primary {
+  --tone-bg: var(--bo-soft-primary-bg);
+  --tone-fg: var(--bo-soft-primary-fg);
+  --tone-ink: var(--bo-primary);
+}
+
+.bo-tone-warning {
+  --tone-bg: var(--bo-soft-warning-bg);
+  --tone-fg: var(--bo-soft-warning-fg);
+  --tone-ink: var(--bo-warning);
+}
+
+.bo-tone-success {
+  --tone-bg: var(--bo-soft-success-bg);
+  --tone-fg: var(--bo-soft-success-fg);
+  --tone-ink: var(--bo-success);
+}
+
+/* THE BADGE IS SOFT, NEVER SOLID and never an outline. A solid fill is the emphasis treatment
+   reserved for counts; a column of solid pills reads as a row of alarms (the product corrected
+   exactly this in Backups on 2026-08-14). */
+.bo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: var(--tone-bg);
+  color: var(--tone-fg);
+  font-size: var(--bo-t-12);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* `Not planned` and `Planned` share the ghost tone because both mean "nothing is happening", and
+   they are told apart by the glyph plus one step of emphasis — NOT by red. Red means something
+   broke; a decision is not a fault, and painting a declined request red teaches people that asking
+   was the error. */
+.bo-badge[data-status='not-planned'] {
+  color: var(--bo-muted);
+  font-weight: 500;
+}
+
+/* ── The docs sidebar belongs to the docs ───────────────────────────────────────────────────────
+ * `/roadmap` and `/contact` are not pages of the manual, so the manual's table of contents has
+ * nothing to say beside them. It used to stay because the mobile menu IS the sidebar and hiding it
+ * would have left those pages with no navigation at all on a phone — that constraint is gone now
+ * that the header nav survives the breakpoint (see `components/Header.astro`).
+ *
+ * `:has()` on the frame rather than a body class, because a class would have to come from a page
+ * that renders through `StarlightPage` and cannot set one. `.rb` is the board, `.sb` the form.
+ *
+ * The `--sl-content-inline-start` reset is not optional: it is what indents the main frame past the
+ * sidebar, and it is declared on `[data-has-sidebar]` at specificity (0,2,0) — an `html:has(...)`
+ * selector is (0,1,1) and would lose silently, leaving a sidebar-width gutter with no sidebar in it.
+ */
+.page:has(.rb) > .sidebar,
+.page:has(.sb) > .sidebar {
+  display: none;
+}
+
+html[data-has-sidebar]:has(.rb),
+html[data-has-sidebar]:has(.sb) {
+  --sl-content-inline-start: 0;
+}
+
+/* AND THE 48px STARLIGHT RESERVES FOR A BUTTON THAT IS NOT THERE. `[data-has-sidebar] .header` pads
+   its trailing edge by the menu button's width plus a gap, so the button never lands on the site
+   title. Hiding the sidebar takes the button with it and leaves the hole: measured at 390 the nav
+   row had 310px of a 358px bar and scrolled a label out of sight for no reason. */
+html[data-has-sidebar]:has(.rb) .header,
+html[data-has-sidebar]:has(.sb) .header {
+  padding-inline-end: var(--sl-nav-pad-x);
+}
+
+/* ── STATUS PAINT: one tone table, four surfaces ─────────────────────────────────────────────────
+ * The board, its filter chips, its column heads and the request detail page all say the same five
+ * words, and until 2026-08-19 they said them in four different paints — two of which were "no
+ * paint". That is why the portal read monochrome while the palette under it held four solved hues:
+ * the only soft pair a first-party component could reach was `--bo-soft-primary-*`, so anything
+ * that wanted a colour got blue or got nothing.
+ *
+ * A TONE IS A PAIR PLUS AN INK, and the three of them are what the four surfaces differ on:
+ *   --tone-bg   the tint a filled badge sits on
+ *   --tone-fg   the label inside that tint, darkened toward the ink so it survives it
+ *   --tone-ink  the hue at full strength, for a glyph on an UNFILLED surface (a resting chip, a
+ *               column head) where there is no tint to darken against
+ * Setting them on the element rather than reading them from a theme block is deliberate: a `var()`
+ * inside a custom property is substituted where the property is DECLARED, so declaring the trio on
+ * the badge itself is what makes it follow a nested `[data-theme]`.
+ *
+ * These live here, not in a component, because `lib/board.ts` builds some of this markup at click
+ * time and an Astro scoped style never reaches runtime-built DOM.
+ */
+.bo-i {
+  flex: none;
+  vertical-align: -0.125em;
+}
+
+.bo-tone-ghost {
+  --tone-bg: var(--bo-base-200);
+  --tone-fg: var(--bo-muted-strong);
+  --tone-ink: var(--bo-neutral);
+}
+
+.bo-tone-primary {
+  --tone-bg: var(--bo-soft-primary-bg);
+  --tone-fg: var(--bo-soft-primary-fg);
+  --tone-ink: var(--bo-primary);
+}
+
+.bo-tone-warning {
+  --tone-bg: var(--bo-soft-warning-bg);
+  --tone-fg: var(--bo-soft-warning-fg);
+  --tone-ink: var(--bo-warning);
+}
+
+.bo-tone-success {
+  --tone-bg: var(--bo-soft-success-bg);
+  --tone-fg: var(--bo-soft-success-fg);
+  --tone-ink: var(--bo-success);
+}
+
+/* THE BADGE IS SOFT, NEVER SOLID and never an outline. A solid fill is the emphasis treatment
+   reserved for counts; a column of solid pills reads as a row of alarms (the product corrected
+   exactly this in Backups on 2026-08-14). */
+.bo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: var(--tone-bg);
+  color: var(--tone-fg);
+  font-size: var(--bo-t-12);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* `Not planned` and `Planned` share the ghost tone because both mean "nothing is happening", and
+   they are told apart by the glyph plus one step of emphasis — NOT by red. Red means something
+   broke; a decision is not a fault, and painting a declined request red teaches people that asking
+   was the error. */
+.bo-badge[data-status='not-planned'] {
+  color: var(--bo-muted);
+  font-weight: 500;
+}
+
+/* ── A screenshot inside a documentation page ─────────────────────────────────────────────────────
+ * The `Backing up` section is the one finished part of the docs and it carried no pictures at all.
+ * These are the frame for the ones now in it.
+ *
+ * WHY GLOBAL AND NOT A COMPONENT: the pages are `.md`, which cannot import one, and turning five
+ * finished pages into `.mdx` to gain a component is a migration paid for a border radius. The pages
+ * write the raw `<figure>` and this sheet dresses it.
+ *
+ * A RASTER CANNOT FOLLOW A THEME, so every shot exists twice and this swaps them. All four states
+ * Starlight can be in are written out: the bare default, the system preference, and each explicit
+ * choice. A `prefers-color-scheme` query alone would be wrong the moment a reader uses the theme
+ * toggle, because Starlight records that in `data-theme` on the root and no media query sees it. */
+.bo-shot {
+  margin: 24px 0;
+}
+
+.bo-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-8);
+}
+
+.bo-shot figcaption {
+  margin-top: 8px;
+  font-size: var(--bo-t-13);
+  line-height: 1.5;
+  color: var(--bo-muted);
+}
+
+/* Light is the base state, so a sheet that fails to load leaves a readable page rather than none. */
+.bo-shot .bo-shot-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bo-shot .bo-shot-light {
+    display: none;
+  }
+
+  :root:not([data-theme='light']) .bo-shot .bo-shot-dark {
+    display: block;
+  }
+}
+
+:root[data-theme='dark'] .bo-shot .bo-shot-light {
+  display: none;
+}
+
+:root[data-theme='dark'] .bo-shot .bo-shot-dark {
+  display: block;
+}
+
+:root[data-theme='light'] .bo-shot .bo-shot-light {
+  display: block;
+}
+
+:root[data-theme='light'] .bo-shot .bo-shot-dark {
+  display: none;
+}
+
+/* ── Platform brand marks ─────────────────────────────────────────────────────────────────────────
+ * Airtable and ClickUp carry their own fills in the SVG, taken from the vendors' own assets and
+ * recorded with their provenance in `lib/platforms.ts`. Nothing here touches them.
+ *
+ * NOTION IS THE ONLY ONE THIS FILE PAINTS, and only because its brand is genuinely monochrome:
+ * black on light, white on dark. Its paths carry no fill, so `currentColor` reaches them, and the
+ * three states below are the same pattern the screenshots use. Painting it in a hue to match the
+ * other two would be the one invented colour in the set. */
+.bo-mark-notion {
+  color: #191919;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bo-mark-notion {
+    color: #ffffff;
+  }
+}
+
+:root[data-theme='dark'] .bo-mark-notion {
+  color: #ffffff;
+}
+
+:root[data-theme='light'] .bo-mark-notion {
+  color: #191919;
+}
+
+/* ── A platform-tagged row in the documentation tree ──────────────────────────────────────────────
+ * Distributed into the chapter it belongs to, a platform page is the only thing in its group which
+ * is not true of everybody, so the row has to say which platform it belongs to.
+ *
+ * IT WAS A BLUE DOT FOR ONE ROUND. A dot says "conditional" and stops there: three rows sat under
+ * one another, all marked identically, and the reader still had to read all three titles to tell
+ * Airtable from Notion. The mark answers that before the title is read, which is the entire reason
+ * to spend a logo here (Oleh, 2026-08-20).
+ *
+ * The svg is injected by `lib/platform-filter.ts` in the same pass that finds the rows, so the mark
+ * and the filtering can never disagree about which rows are platform rows. */
+.bo-row-mark {
+  flex: none;
+  margin-right: 8px;
+  vertical-align: -2px;
+}
+
+#starlight__sidebar a:has(.bo-row-mark) {
+  display: flex;
+  align-items: center;
+}
+
+/* A hidden row must take its whole line with it: hiding the anchor alone leaves the list item's
+   bullet, its padding and its share of the gap standing in an otherwise closed-up list. */
+#starlight__sidebar li[hidden],
+#starlight__sidebar details[hidden] {
+  display: none;
+}
+
+/* ── The measure ──────────────────────────────────────────────────────────────────────────────────
+ * MEASURED, on our own best-written page: body is 16px Urbanist in a 733px column, which is **90
+ * characters** per line. `DESIGN.md` caps documentation prose at 65 to 75, and that is not a
+ * stylistic preference: past about 75 the eye loses the start of the next line and has to hunt for
+ * it, which is exactly the "hard to read" the client reported.
+ *
+ * THE FONT SIZE WAS THE WRONG SUSPECT, and the arithmetic says so plainly. Dropping to 14px in the
+ * same column makes each character narrower, so the line holds MORE of them: roughly 103, which is
+ * worse than what we have. The lever is the column, not the type. GitHub and Stripe both set body
+ * at 16px too; what they do differently is stop the line sooner and break the page into components.
+ *
+ * 38rem = 612px = 75 characters at our font, the top of the permitted range. Prose and headings
+ * share the cap so a heading never overhangs the paragraph beneath it.
+ *
+ * TABLES, FIGURES AND CODE ARE DELIBERATELY EXEMPT. They are not read line by line, they are scanned
+ * and compared, and a 612px table would wrap columns that exist precisely so they can be lined up.
+ * This is what the reference sites do: the prose narrows, the evidence does not. */
+.sl-markdown-content > p,
+.sl-markdown-content > ul,
+.sl-markdown-content > ol,
+.sl-markdown-content > dl,
+.sl-markdown-content > blockquote,
+.sl-markdown-content > h1,
+.sl-markdown-content > h2,
+.sl-markdown-content > h3,
+.sl-markdown-content > h4,
+.sl-markdown-content > .starlight-aside {
+  max-width: 38rem;
+}
+
+/* ── A nested group in the sidebar ────────────────────────────────────────────────────────────────
+ * Starlight styles every group heading the same, so a group nested inside a chapter shouted at
+ * exactly the volume of the chapter above it and the hierarchy collapsed: "Sources and destinations"
+ * and "Connecting" read as peers when one contains the other (Oleh, 2026-08-20).
+ *
+ * SIZE ALONE DID NOT FIX IT. Making the nested label smaller and slightly lighter still left two
+ * headings in the same register, and the eye reads register before it reads size: both were
+ * sentence-case bold text, so both still said "heading" and the reader had to work out which
+ * outranked which from a few pixels.
+ *
+ * A DIFFERENT REGISTER SETTLES IT. The chapter stays sentence case; the group becomes an uppercase
+ * tracked micro-label, which is the same device this portal already uses for "SHOW DOCS FOR" and
+ * "ON THIS PAGE". You cannot confuse the two because they are not the same kind of thing, and the
+ * caption reads as what it is: a shared title over a set of options.
+ *
+ * THE SIZE AND THE WEIGHT ARE BOTH THE ROWS' OWN, and it took three passes to get there. First it
+ * was 11px at weight 700: that measured SMALLER than the 13px rows beside it and still read LARGER,
+ * because caps have no descenders and sit at full height where lowercase sits at x-height, and 700
+ * against 400 is a bigger jump than two pixels. The second pass fixed the size and kept weight 600,
+ * which left the caption still shouting over the 16px sentence-case chapter above it — measured
+ * smaller, read bigger, for exactly the same reason as before, just less of it.
+ *
+ * So the weight goes too. 13px/400 is the rows' own setting to the pixel, and the CASE ALONE does
+ * the separating, which is what was asked for twice: "the same font as the inner sections, just in
+ * uppercase" (Oleh, 2026-08-20). Caps plus tracking plus a muted colour is already three signals
+ * that this is a label and not a link; adding weight was a fourth, and it was the one that made the
+ * caption outrank its own chapter.
+ *
+ * IT MUST BE SET ON `.large`, NOT ON THE `summary`. Starlight wraps the label in
+ * `summary > .group-label > span.large`, and that inner span sets its OWN 16px / 600 / white. A
+ * rule on the `summary` therefore delivered only the INHERITED half — `text-transform` and
+ * `letter-spacing` reached the text, `font-size`, `font-weight` and `color` were overridden at the
+ * span. The result was uppercase at 16px bold white: the loudest thing in the sidebar, produced by
+ * a rule whose stated purpose was to quiet it.
+ *
+ * That is also why two rounds of "fixing" it changed nothing visible, and the second-order lesson
+ * is the expensive one: `getComputedStyle(summary)` returned 13px/400 and was TRUE — of the
+ * summary, which paints no text. Never measure a container as a proxy for its occupants; read the
+ * element that carries the glyphs. Oleh caught this by clicking the text in the inspector after
+ * being told twice it was fixed. */
+#starlight__sidebar details details > summary .large {
+  font-size: var(--bo-t-13);
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bo-muted);
+}
+
+/* The caret shrinks with it, or a micro-label ends up with a full-size arrow beside it. */
+#starlight__sidebar details details > summary svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}

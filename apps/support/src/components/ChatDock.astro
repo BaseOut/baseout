@@ -1,0 +1,514 @@
+---
+/**
+ * The support chat: one persistent launcher and one pinned drawer, on every page.
+ *
+ * REBUILT 2026-08-18 after Oleh saw the first version. That one lived in the docs rail and pushed
+ * the reading column from 736 to 600px when it opened. I recommended that shape and he picked it
+ * from my recommendation; seeing it, he reversed — the page "стрибає", and it does: opening the
+ * chat re-centred the main pane, swapped the rail's contents and moved every line of text. Three
+ * corrections came out of it, and all three follow from ONE decision:
+ *
+ * **The chat does not belong to the page. It belongs to the visitor.**
+ *
+ *   1. It takes part in NO layout. `position: fixed`, so nothing reflows, ever — opening and
+ *      closing move exactly zero pixels of the document. At 1440 the drawer sits over the table of
+ *      contents, not over the prose (text ends ~920px, the drawer starts ~1025).
+ *   2. It ANIMATES in and out, because a panel that belongs to the visitor should look like it
+ *      arrived rather than like the page changed. `prefers-reduced-motion` turns it off.
+ *   3. Its header does NOT say which page you are reading. The old "Reading: Retention and cleanup"
+ *      re-titled itself on every navigation, which made the panel read as a property of the page —
+ *      the exact opposite of a conversation you carry with you.
+ *
+ * WHAT THIS DOES NOT THROW AWAY. Dan asked for "context-aware chat", and the context is still
+ * captured: every question is stored with the page it was asked from (`ctx` in `chat-core.ts`), so
+ * the engine can ground its answer. The change is that the context travels with the QUESTION and no
+ * longer brands the CHROME. Oleh's model — the visitor browses the docs on the left or talks to the
+ * chat on the right, and the chat answers with links they can follow while it stays put — is served
+ * by that, and the old header was actively working against it.
+ *
+ * THE LAUNCHER IS NOT HERE ANY MORE. It sat bottom-right as a floating bubble; it now lives in the
+ * header beside Search (`components/Search.astro`), Oleh's call from Stripe's docs — asking is the
+ * same job as searching, one step further along, so the two belong in one pair rather than having a
+ * permanent floating object compete with the page. This file still owns the drawer, and the header
+ * button targets it with the same `data-chat-open` hook.
+ *
+ * THE PAGE CONTEXT IS A CHIP, NOT A TITLE. v2 dropped "Reading: <page>" from the header because a
+ * subtitle that renames itself on every navigation makes the panel read as a property of the page.
+ * Stripe's pattern resolves that properly and is what is built here: the page is a REMOVABLE CHIP
+ * above the composer. Keep it and the question is scoped to what you are reading; dismiss it and
+ * the scope is the whole corpus, which is exactly when starter questions are worth offering. So
+ * Dan's "context-aware" and Oleh's "independent of the page" stop being in tension — the context
+ * became something the visitor can see and take off.
+ *
+ * WHY IT IS RENDERED FROM THE BANNER. `Banner` is the one component Starlight renders on EVERY page
+ * (`Page.astro` puts it above both the hero branch and the article branch), so this is the only
+ * override that reaches the landing, the docs and the custom pages alike without duplicating it.
+ *
+ * NOTHING ABOVE MAY BECOME A CONTAINING BLOCK. `position: fixed` escapes ancestor overflow, but a
+ * `transform`, `filter` or `container-type` on any ancestor would capture it and pin this drawer to
+ * that element instead of the viewport. `SupportHero.astro` needed a full-bleed and originally took
+ * `container-type: inline-size` on `main` to get it — which would have trapped this. It uses
+ * `overflow-x: clip` instead, for exactly this reason.
+ */
+import { CHAT_STARTERS } from '../lib/questions';
+
+import { PLATFORMS } from '../lib/platforms';
+import PlatformMark from './PlatformMark.astro';
+
+const FREE_BUDGET = 5;
+const route = Astro.locals.starlightRoute;
+/* The splash landing is not "about" a page in any useful sense, so it gets no chip and the
+   starters show instead — the same state a visitor reaches by dismissing the chip elsewhere. */
+const pageTitle = route.entry.data.template === 'splash' ? '' : route.entry.data.title;
+---
+
+<aside
+  class="cd"
+  data-pagefind-ignore
+  data-chat-panel
+  data-budget={FREE_BUDGET}
+  data-context={pageTitle}
+  role="dialog"
+  aria-label="Support chat"
+  aria-modal="false"
+  hidden
+>
+  <div
+    class="cd-grip"
+    data-chat-grip
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize chat"
+    tabindex="0"
+  ></div>
+
+  <header class="cd-head">
+    <h2 class="cd-title">Support chat</h2>
+    <button type="button" class="cd-close" data-chat-close aria-label="Close chat">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+    </button>
+  </header>
+
+  <div class="cd-messages" data-chat-messages aria-live="polite"></div>
+
+  <div class="cd-starters" data-chat-starters hidden>
+    {CHAT_STARTERS.map((q) => (
+      <button type="button" class="cd-starter" data-chat-starter>{q}</button>
+    ))}
+  </div>
+
+  {pageTitle && (
+    <div class="cd-chip" data-chat-chip>
+      <span class="cd-chip-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+      </span>
+      <span class="cd-chip-label">{pageTitle}</span>
+      <button type="button" class="cd-chip-x" data-chat-chip-clear aria-label="Ask about all of the docs instead">
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+  )}
+
+  {/* THE SAME SCOPE THE DOCS AND THE SEARCH USE (Oleh, 2026-08-20). The assistant answers OUT of
+      these pages, so a reader who has narrowed the documentation to Notion and then gets an answer
+      built from Airtable's pages has been given a wrong answer, not an inconsistent one. The
+      control belongs beside the page chip because that row is already where this conversation's
+      scope is declared and taken away.
+
+      Three chips rather than a menu: the rail is 368px and three named chips measure ~268px, so
+      the whole state is readable without opening anything — and it is the same row the sidebar and
+      the search modal show, which makes it one pattern a reader learns once. */}
+  <div class="cd-plat" role="group" aria-label="Platforms this assistant answers from">
+    {
+      PLATFORMS.map((p) => (
+        <button type="button" class="cd-plat-chip" data-chat-platform={p.id} aria-pressed="true">
+          <PlatformMark id={p.id} size={13} />
+          {p.name}
+        </button>
+      ))
+    }
+  </div>
+
+  <form class="cd-composer" data-chat-form>
+    <input type="text" data-chat-input placeholder="Ask a question…" autocomplete="off" required aria-label="Ask a question" />
+    <button type="submit" aria-label="Send">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg>
+    </button>
+  </form>
+
+  <p class="cd-left" data-chat-left aria-live="polite"></p>
+
+  <div class="cd-gate" data-chat-gate hidden>
+    You have used your free messages. <a href="/contact/">Write to us instead</a>.
+  </div>
+</aside>
+
+<script>
+  import { wirePanel } from '../lib/chat-panel';
+  wirePanel();
+</script>
+
+<style>
+  /* ── Drawer ── */
+  .cd {
+    position: fixed;
+    /* Above Starlight's menu layer (`--sl-z-index-menu`), which the expanded mobile nav uses. The
+       drawer is portalled to `<body>` at hydration, so this number is finally measured against the
+       page rather than against `.main-pane`'s isolated context. */
+    z-index: 1000;
+    inset-block: var(--sl-nav-height) 0;
+    inset-inline-end: 0;
+    /* 23rem = 368px, which is exactly the gap to the right of the reading column at 1440
+       (content ends 1057, viewport 1425). At 25rem the drawer started at 1025 and lay over the
+       last 32px of the content box — invisible in prose, which rarely fills the measure, but it
+       would have clipped the right edge of every wide table and code block. Flush instead. */
+    /* `--cd-w` is written by the drag handle and restored from storage; the literal is only the
+       first-run default. 23rem = 368px is the gap right of the reading column at 1440. */
+    width: var(--cd-w, min(23rem, 100vw));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bo-base-100);
+    border-inline-start: 1px solid var(--bo-base-300);
+    box-shadow: -16px 0 40px rgb(0 0 0 / 0.24);
+    /* Animated, so the panel reads as having ARRIVED rather than as the page having changed.
+       `visibility` is in the transition because `hidden` cannot animate and a purely transparent
+       panel would still swallow clicks on the way out. */
+    transform: translateX(100%);
+    opacity: 0;
+    visibility: hidden;
+    transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1), opacity 180ms ease,
+      visibility 0s linear 220ms;
+  }
+
+  /* `[hidden]` is dropped by the script as soon as it runs; the flag drives the animation. Both are
+     needed: the attribute keeps the panel out of the accessibility tree before hydration, the flag
+     is what the transition listens to. */
+  .cd[hidden] { display: none; }
+
+  :global(html[data-chat='open']) .cd {
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  /* Restoring an already-open drawer after a navigation must not replay the entry animation. */
+  /* Restoring an already-open drawer must not replay the entry animation; and a drag must not be
+     eased, or the edge visibly lags the cursor. */
+  :global(html[data-chat-boot]) .cd,
+  :global(html[data-chat-resizing]) .cd {
+    transition: none;
+  }
+
+  /* While dragging, stop the pointer selecting prose it passes over. */
+  :global(html[data-chat-resizing]) {
+    user-select: none;
+    cursor: col-resize;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cd {
+      transition-duration: 0s;
+    }
+  }
+
+  /* ── Resize handle ──
+     A 10px hit area straddling the drawer's leading edge; only its 1px centre is ever painted, and
+     only on hover or focus, so the chrome does not advertise itself while nobody is aiming at it. */
+  .cd-grip {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: -5px;
+    width: 10px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .cd-grip::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 4px;
+    width: 2px;
+    background: var(--bo-primary);
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .cd-grip:hover::after,
+  .cd-grip:focus-visible::after,
+  :global(html[data-chat-resizing]) .cd-grip::after {
+    opacity: 1;
+  }
+
+  .cd-grip:focus-visible {
+    outline: none;
+  }
+
+  .cd-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .cd-title {
+    margin: 0;
+    font-size: var(--sl-text-base);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  .cd-close {
+    display: flex;
+    padding: 6px;
+    border: 0;
+    border-radius: var(--bo-r-6);
+    background: transparent;
+    color: var(--bo-muted);
+    cursor: pointer;
+  }
+
+  .cd-close:hover { background: var(--bo-base-200); color: var(--sl-color-white); }
+
+  .cd-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-inline-end: 4px;
+  }
+
+  /* Built by `createElement` at runtime, so these MUST be global — a scoped rule never reaches a
+     node the browser made after render. That is the defect which left every message a visitor ever
+     sent unstyled on the old `/chat/` page for the whole life of that page. */
+  .cd-messages :global(.msg) {
+    max-width: 92%;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-8);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .cd-messages :global(.msg.user) {
+    align-self: flex-end;
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+  }
+
+  .cd-messages :global(.msg.bot) {
+    align-self: flex-start;
+    background: var(--bo-base-200);
+    color: var(--sl-color-text);
+  }
+
+  /* ── Cited docs ──
+     A `<details>`, so the browser owns the toggle, its keyboard behaviour and its open state. The
+     list is rebuilt from the stored turn on replay rather than kept alive as a component. */
+  .cd-messages :global(.msg-sources) {
+    margin-top: 8px;
+    border-top: 1px solid var(--bo-base-300);
+    padding-top: 8px;
+    font-size: var(--sl-text-xs);
+  }
+
+  .cd-messages :global(.msg-sources > summary) {
+    cursor: pointer;
+    color: var(--sl-color-text-accent);
+    list-style: none;
+  }
+
+  .cd-messages :global(.msg-sources > summary::-webkit-details-marker) { display: none; }
+
+  .cd-messages :global(.msg-sources > summary::before) {
+    content: '▸';
+    display: inline-block;
+    width: 12px;
+    color: var(--bo-muted);
+  }
+
+  .cd-messages :global(.msg-sources[open] > summary::before) { content: '▾'; }
+
+  .cd-messages :global(.msg-sources ul) {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .cd-messages :global(.msg-sources a) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--sl-color-text-accent);
+    text-decoration: none;
+  }
+
+  .cd-messages :global(.msg-sources a:hover) { text-decoration: underline; }
+
+  .cd-messages :global(.msg-sources svg) { flex: none; opacity: 0.7; }
+
+  /* ── The platform scope ── */
+  .cd-plat {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-self: flex-start;
+    max-width: 100%;
+  }
+
+  .cd-plat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 999px;
+    background: none;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+
+  .cd-plat-chip[aria-pressed='true'] {
+    background: var(--bo-base-200);
+    color: var(--sl-color-white);
+    font-weight: 600;
+  }
+
+  /* Desaturated, never faded away: 0.55 opacity is what made the ClickUp mark vanish outright on
+     the roadmap, and a logo that disappears reads as a rendering fault rather than an off state. */
+  .cd-plat-chip[aria-pressed='false'] :global(.bo-mark) {
+    filter: grayscale(1);
+    opacity: 0.8;
+  }
+
+  .cd-plat-chip:hover { border-color: var(--bo-primary); }
+
+  .cd-plat-chip:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 1px;
+  }
+
+  /* ── The page chip ── */
+  .cd-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 4px 4px 4px 8px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 999px;
+    background: var(--bo-base-200);
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-text);
+  }
+
+  .cd-chip[hidden] { display: none; }
+
+  .cd-chip-icon { display: flex; flex: none; color: var(--bo-muted); }
+
+  .cd-chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cd-chip-x {
+    display: flex;
+    flex: none;
+    padding: 3px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--bo-muted);
+    cursor: pointer;
+  }
+
+  .cd-chip-x:hover { background: var(--bo-base-300); color: var(--sl-color-white); }
+
+  /* ── Starter questions ── */
+  .cd-starters {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .cd-starters[hidden] { display: none; }
+
+  .cd-starter {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--sl-color-text-accent);
+    font: inherit;
+    font-size: var(--sl-text-sm);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .cd-starter:hover { text-decoration: underline; }
+
+  .cd-composer { display: flex; gap: 8px; }
+
+  .cd-composer input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    /* The field a person types into is a surface, not a well — `base-100`, which is white in the
+       light theme. */
+    background: var(--bo-base-100);
+    color: var(--sl-color-text);
+    font: inherit;
+    font-size: var(--sl-text-sm);
+  }
+
+  .cd-composer input:focus-visible { outline: 2px solid var(--bo-primary); outline-offset: -1px; }
+
+  .cd-composer button {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    border: 0;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content);
+    cursor: pointer;
+  }
+
+  .cd-left { margin: 0; font-size: var(--sl-text-xs); color: var(--bo-muted); }
+
+  .cd-gate {
+    padding: 12px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-text);
+  }
+
+  .cd-gate[hidden] { display: none; }
+
+  /* On a phone the drawer is the screen; there is nothing to sit beside. */
+  @media (max-width: 30rem) {
+    .cd { inset-block-start: 0; }
+  }
+</style>

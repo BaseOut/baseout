@@ -1,0 +1,154 @@
+---
+/**
+ * The page title, preceded by the one thing a reader of multi-platform documentation needs before
+ * the first sentence: whether this page is about them.
+ *
+ * WHY A CHIP AND NOT A SENTENCE. It answers a yes/no question that is asked on every page, and a
+ * sentence answering that on every page becomes furniture the eye stops seeing. The chip carries
+ * the platform's own mark, so it is recognised before it is read.
+ *
+ * THE "ALL PLATFORMS" CHIP IS DELIBERATELY QUIET, and it appears only where a platform exists to
+ * contrast with. 15 of our 38 pages have no platform at all, and stamping "All platforms" on a
+ * billing page would be answering a question nobody asked there.
+ *
+ * THE HIDDEN-BY-FILTER NOTICE lives here rather than in the sidebar because this is where a reader
+ * who followed an outside link arrives, having never seen the filter that is confusing them.
+ */
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+import PlatformMark from './PlatformMark.astro';
+import { platform, type PlatformId } from '../lib/platforms';
+
+const data = Astro.locals.starlightRoute.entry.data as {
+  platform?: PlatformId;
+  description?: string;
+  template?: string;
+};
+const id = data.platform;
+const p = id ? platform(id) : null;
+
+/* THE LEDE. Both GitHub and Stripe put exactly one summary sentence under the title of every page,
+   larger than body and muted, and it is the cheapest structural thing either of them does: it tells
+   a reader who arrived from search whether to keep reading before they commit to a paragraph.
+   Starlight renders the title and nothing else, and `description` goes to a `<meta>` tag where no
+   reader ever sees it. So all 49 pages already have a lede written; they simply were not showing
+   it. Rendering it here costs one line per page and no content edits at all.
+   The splash landing is excluded: its hero already carries a tagline, and a second one under it
+   would be the same sentence twice. */
+const lede = data.template === 'splash' ? null : data.description;
+---
+
+{
+  p && (
+    <div class="pp" data-page-platform={p.id}>
+      <span class="pp-chip">
+        <PlatformMark id={p.id} size={13} />
+        {p.name} only
+      </span>
+    </div>
+  )
+}
+
+<Default><slot /></Default>
+
+{/* THE SEARCH FILTER'S HALF OF THE PLATFORM STORY. Pagefind reads `data-pagefind-filter` out of
+    the indexed body at build time, and this is the one component that renders on every docs page,
+    so emitting it here is what makes it impossible to forget on a new page.
+
+    A page with no platform is tagged `all` rather than left untagged: Pagefind excludes a document
+    that carries no value for a filter you query, and a page about billing is TRUE of every
+    platform, not of none. The modal queries the reader's platforms plus `all`, which is what makes
+    narrowing to Notion hide Airtable's connecting page and keep "How backups work". */}
+<span class="pp-index" data-pagefind-filter={`platform:${id ?? 'all'}`} aria-hidden="true"></span>
+
+{lede && <p class="pp-lede">{lede}</p>}
+
+{
+  p && (
+    <p class="pp-notice" data-platform-page-notice hidden>
+      <span>
+        This page is about {p.name}, which your filter is hiding. Nothing is missing from the
+        documentation.
+      </span>
+      <button type="button" data-platform-page-show>
+        Show {p.name}
+      </button>
+    </p>
+  )
+}
+
+<style>
+  .pp {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .pp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font-size: var(--bo-t-12);
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+
+  /* One step above body and muted, so it reads as a summary of the page rather than its first
+     paragraph. It sits inside the title block, above the rule Starlight draws under the header. */
+  /* It carries a filter value and nothing else. Not `hidden`, because Pagefind's crawler is the
+     only consumer and a zero-size inline box is cheaper than a display rule to argue about. */
+  .pp-index {
+    display: none;
+  }
+
+  .pp-lede {
+    margin: 8px 0 0;
+    max-width: 38rem;
+    font-size: var(--bo-t-18);
+    line-height: 1.5;
+    color: var(--bo-muted);
+    text-wrap: pretty;
+  }
+
+  .pp-notice {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin: 16px 0 0;
+    padding: 10px 14px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-warning-bg);
+    color: var(--bo-soft-warning-fg);
+    font-size: var(--bo-t-13);
+    line-height: 1.5;
+  }
+
+  .pp-notice[hidden] {
+    display: none;
+  }
+
+  .pp-notice button {
+    margin-left: auto;
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .pp-notice button:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+</style>

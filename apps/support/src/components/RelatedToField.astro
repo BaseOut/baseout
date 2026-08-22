@@ -1,0 +1,212 @@
+---
+/**
+ * "What is this about?" — the platform a report or a request belongs to.
+ *
+ * WHY IT EXISTS. Every card on the board now prints `Related to`, and until this field the answer
+ * was assigned by us after the fact or not at all. A person writing about Notion knows that better
+ * than we do at triage, and asking costs one row (Oleh, 2026-08-20).
+ *
+ * THE SAME VOCABULARY THE BOARD READS BACK. The options are the platforms in `lib/platforms.ts`
+ * plus "All platforms", which is the board's own convention for an untagged row spoken out loud
+ * rather than left in a comment. A label a person picks when writing has to be the label they see
+ * on their request afterwards, or the two surfaces are describing the same fact in two languages.
+ *
+ * RADIOS, NOT BUTTONS. A request is about one thing, and radios give the arrow-key behaviour, the
+ * group semantics and the required-validation for free. They are drawn as chips; the input itself
+ * is visually hidden but never `display: none`, which would take it out of the tab order.
+ *
+ * `allowNew` ADDS THE PLATFORM WE DO NOT SUPPORT, which is the whole point of arriving here from
+ * the board's "Suggest a platform" tile: that reader's request is a platform NAME, and every other
+ * option on this list is wrong for them.
+ */
+import { PLATFORMS } from '../lib/platforms';
+import PlatformMark from './PlatformMark.astro';
+import Icon from './Icon.astro';
+
+interface Props {
+  kind: string;
+  /** Offer "a platform you do not support yet", with a name field. */
+  allowNew?: boolean;
+}
+
+const { kind, allowNew = false } = Astro.props;
+const group = `about-${kind}`;
+---
+
+<fieldset class="rt" data-related>
+  <legend class="rt-legend">What is this about?</legend>
+
+  <div class="rt-opts">
+    <label class="rt-opt">
+      <input type="radio" name="about" value="all" checked data-related-opt />
+      <span class="rt-face">
+        <Icon name="globe" size={14} />
+        All platforms
+      </span>
+    </label>
+
+    {
+      PLATFORMS.map((p) => (
+        <label class="rt-opt">
+          <input type="radio" name="about" value={p.id} data-related-opt />
+          <span class="rt-face">
+            <PlatformMark id={p.id} size={14} />
+            {p.name}
+          </span>
+        </label>
+      ))
+    }
+
+    {
+      allowNew && (
+        <label class="rt-opt">
+          <input type="radio" name="about" value="new-platform" data-related-opt data-related-new />
+          <span class="rt-face">
+            <Icon name="plus" size={14} />
+            A platform you do not support
+          </span>
+        </label>
+      )
+    }
+  </div>
+
+  {
+    allowNew && (
+      <label class="rt-new" data-related-newname hidden>
+        <span>Which platform?</span>
+        <input type="text" name="platformName" placeholder="Its name is enough" />
+      </label>
+    )
+  }
+</fieldset>
+
+<style>
+  .rt {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .rt-legend {
+    padding: 0;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  /* THE RHYTHM RESET, and it is not optional. Starlight's prose rhythm is a GENERAL-SIBLING rule,
+     so inside any flex box the first child keeps `margin-top: 0` and every one after it gets 16px:
+     the row stretches to the tallest and the rest sit lower, which is what "crooked" looks like.
+     Measured on the board's own scope control before this: first segment 52.2px tall, the three
+     beside it 36.2px, sitting 16px down. */
+  .rt-opts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .rt-opts > * { margin-top: 0; }
+
+  .rt-face { min-height: 32px; }
+
+  .rt-opt { display: inline-flex; }
+
+  /* Hidden from sight, never from the tab order or the accessibility tree: `display: none` on a
+     radio removes it from both, and the chip beside it would then be a decoration nobody can
+     reach with a keyboard. */
+  .rt-opt input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .rt-face {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 999px;
+    background: var(--bo-base-100);
+    color: var(--bo-muted-strong);
+    font-size: var(--bo-t-13);
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+
+  .rt-opt:hover .rt-face { border-color: var(--bo-primary); }
+
+  .rt-opt input:checked + .rt-face {
+    border-color: var(--bo-base-300);
+    background: var(--bo-base-200);
+    color: var(--sl-color-white);
+    font-weight: 600;
+  }
+
+  /* The ring has to be drawn by the chip, because the input it belongs to is a 1px box elsewhere. */
+  .rt-opt input:focus-visible + .rt-face {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* Desaturated rather than faded: a logo that disappears reads as a rendering fault. */
+  .rt-opt input:not(:checked) + .rt-face :global(.bo-mark) {
+    filter: grayscale(1);
+    opacity: 0.8;
+  }
+
+  /* IT HAS TO RESTATE THE FORM'S FIELD STYLE. An Astro scoped style does not cross into a child
+     component, so `contact.astro`'s `input` rules stop at this component's boundary and the box
+     rendered as a browser default: a different ground, a different border and a different height
+     from every field above and below it, in the same column. This is the third time that boundary
+     has cost something today. The values are the form's, kept in step by hand until the two fields
+     are worth a shared component. */
+  .rt-new {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .rt-new > * { margin-top: 0; }
+
+  .rt-new span {
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+
+  .rt-new input {
+    width: 100%;
+    /* 8px 12px, matched to `contact.astro`'s own fields by MEASUREMENT — at 10px this box stood
+       4.0px taller than the one directly beneath it, which is exactly the sort of difference that
+       reads as wrong without being nameable. */
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    color: var(--sl-color-white);
+    font: inherit;
+    font-size: var(--bo-t-14);
+  }
+
+  .rt-new input::placeholder { color: var(--bo-muted); }
+
+  .rt-new input:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .rt-new[hidden] { display: none; }
+</style>

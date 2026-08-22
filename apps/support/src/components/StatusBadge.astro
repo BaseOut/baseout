@@ -1,0 +1,26 @@
+---
+/**
+ * A request's state as a glyph, a word and a colour — all three, always.
+ *
+ * The tone table lives in `styles/support.css` and the meaning in `lib/status.ts`; this component
+ * exists so a surface cannot decide for itself what `Shipped` looks like. Before it there were
+ * three: `rb-badge-*` on the board, `rd-badge-*` on the detail page, and nothing at all on the
+ * column heads and filter chips.
+ */
+import Icon from './Icon.astro';
+import { statusMeta } from '../lib/status';
+import type { RequestStatus } from '../data/requests';
+
+interface Props {
+  status: RequestStatus;
+  size?: number;
+}
+
+const { status, size = 14 } = Astro.props;
+const meta = statusMeta(status);
+---
+
+<span class:list={['bo-badge', `bo-tone-${meta.tone}`]} data-status={meta.slug}>
+  <Icon name={meta.icon} size={size} />
+  {status}
+</span>

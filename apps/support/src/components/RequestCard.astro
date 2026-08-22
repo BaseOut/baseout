@@ -1,0 +1,528 @@
+---
+/**
+ * One request, as a card. The board's only card.
+ *
+ * IT EXISTS BECAUSE THE MARKUP WAS WRITTEN FOUR TIMES — the status columns, the terminal column,
+ * the platform candidates and the suggested list each carried their own copy, and the last of them
+ * had drifted into a different shape entirely. Adding one field to a card meant four edits and
+ * three chances to forget one.
+ *
+ * ── THREE BANDS, AND THE BAND IS WHAT TELLS THE READER WHAT KIND OF FACT IT IS ─────────────────
+ * Dan, 2026-08-20: "In the cards everything is mixed into one heap. The user does not understand
+ * what relates to what. An Airtable icon here, something else there." He is describing a measured
+ * fact rather than a feeling: the meta line was one wrapping flex row holding a status pill, a
+ * brand mark, a date, a documentation link and an author name, in whatever order those happened to
+ * exist. Measured on the four Planned cards it came out 77px tall with its four children on FOUR
+ * different y positions, and the same five facts landed on three lines on one card and one line on
+ * the next. Nothing about the treatment said which mark was the state of the work, which was the
+ * product it concerns and which was provenance, so the reader had to read all five to sort them.
+ *
+ * A card now has three bands and each band holds exactly one KIND of fact, in a fixed place:
+ *
+ *   1 · THE CONTEXT RAIL — the two facts that PLACE a request before its title is read: which
+ *       product it concerns, at the leading edge, and when it is expected, at the trailing one.
+ *       Both in the system's 11px uppercase micro-label, so the band reads as a frame around the
+ *       title rather than as content. It is the ONLY place a brand mark appears on a card, and the
+ *       subject slot is never empty: an untagged request is about Baseout itself (the board's own
+ *       convention, `data/requests.ts`), so it says ALL PLATFORMS behind the globe. A slot that is
+ *       sometimes there is a ragged top.
+ *
+ *   2 · THE REQUEST — title, summary, and the one control. Unchanged in substance.
+ *
+ *   3 · THE RECORD RAIL — under a hairline, split into two anchors. Its state (the badge, and the
+ *       documentation that proves a shipped thing) sits LEFT and carries the only colour in the
+ *       band; who raised it sits RIGHT in its own `auto` grid track.
+ *
+ * WHY THE FOOTER IS A GRID AND NOT A FLEX ROW WITH `margin-inline-start: auto`. That is the second
+ * complaint — "From Baseout is written crookedly in the middle" — and it was literally true: an
+ * auto margin inside a WRAPPING flex row puts the author at the end of whatever line it lands on,
+ * so it sat inline with the date on one card and alone on a third line at x=339 on the next. A
+ * grid track cannot wrap. The author is now at the card's trailing edge on every card at every
+ * width, and below 30rem it drops to its own line at the LEADING edge, which is a position rather
+ * than an accident.
+ *
+ * THE CALENDAR GLYPH IS GONE from the estimate. The words "Est. ship" already say the fact is a
+ * date, and a loose glyph on a 12px line was one of the scattered marks the complaint was about. A
+ * card now carries at most four glyphs and each one sits in a fixed slot: the platform mark in band
+ * 1, the status glyph and the documentation glyph in band 3, the arrow in the vote control.
+ *
+ * THE DOCUMENTATION LINK IS UNDERLINED RATHER THAN TEAL. It is the proof that an `Already exists`
+ * request is already built, so it has to be findable — but painting it with the accent put a
+ * second colour into a band whose whole job is to make the status colour legible. An underline is
+ * the affordance and it is the one WCAG names for distinguishing a link without colour.
+ */
+import { platform, type PlatformId } from '../lib/platforms';
+import type { FeatureRequest } from '../data/requests';
+import { VOTES_LIVE } from '../lib/votes';
+import PlatformMark from './PlatformMark.astro';
+import StatusBadge from './StatusBadge.astro';
+import Icon from './Icon.astro';
+
+interface Props {
+  r: FeatureRequest;
+  /**
+   * A platform candidate. The card IS the platform, so "ClickUp, related to ClickUp" would be the
+   * title twice: the subject band becomes a mark TILE instead, which is the shape the "Suggest a
+   * platform" doorway beside it already had. Everything below is identical, which is the point.
+   */
+  candidate?: boolean;
+}
+
+const { r, candidate = false } = Astro.props;
+const rel = r.platform ? platform(r.platform as PlatformId) : null;
+
+/* The estimate reads differently before and after the work. `Shipped` drops the word entirely,
+   because the badge two spans to its left already says it and "Shipped · Shipped Jun 2026" is the
+   kind of duplication that made the old meta line look like a heap. */
+const when = r.shipped
+  ? r.shipped
+  : r.estimate
+    ? `${r.status === 'Planned' ? 'Est. start' : 'Est. ship'} ${r.estimate}`
+    : null;
+
+const byLead = r.author === 'Baseout' ? 'From' : 'Raised by';
+const byName = r.author === 'Baseout' ? 'Baseout' : r.author;
+---
+
+<article
+  class:list={['rb-card', candidate && 'rb-pcard']}
+  data-slug={r.slug}
+  data-status={r.status}
+  data-platform={r.platform}
+>
+  <div class="rb-rail">
+    {candidate ? (
+      <span class="rb-ptile" aria-hidden="true">
+        {r.platform ? <PlatformMark id={r.platform as PlatformId} size={20} /> : <Icon name="plug" size={20} />}
+      </span>
+    ) : (
+      <span class="rb-subject">
+        {rel ? <PlatformMark id={rel.id} size={12} /> : <Icon name="globe" size={12} />}
+        <span class="rb-subject-n">{rel ? rel.name : 'All platforms'}</span>
+      </span>
+    )}
+    {when && <span class="rb-when">{when}</span>}
+  </div>
+
+  <div class="rb-main">
+
+    <h3 class="rb-title">
+      <a href={`/roadmap/${r.slug}/`}>{r.title}</a>
+    </h3>
+
+    <p class="rb-summary">{r.summary}</p>
+  </div>
+
+  {/* THE ACTION SITS IN THE CORNER, not on a line of its own under the text. A full-width footer
+      spent a whole row on one small button and left the space beside it empty; in the corner it is
+      where the eye already goes on a card it has finished reading, and the card loses a row.
+
+      THE BUTTON IS ALL THAT MAY LIVE HERE. The author's name was in this column for one draft, and
+      because the column is sized `auto`, "Raised by Priya N." set its width: the reading column
+      collapsed from 293px to 173px and every card grew to four wrapped lines of everything. A
+      corner holds a fixed-size control, never text of unknown length. */}
+  <div class="rb-side">
+    <button
+      type="button"
+      class="rb-vote"
+      data-vote={r.slug}
+      aria-pressed="false"
+      aria-label={`Vote for ${r.title}`}
+    >
+      <span class="rb-i rb-i-ask"><Icon name="arrow-big-up" size={14} /></span>
+      <span class="rb-i rb-i-cast"><Icon name="circle-check" size={14} /></span>
+      {VOTES_LIVE && <span class="rb-count">{r.votes}</span>}
+      <span class="rb-vote-word">Vote</span>
+    </button>
+  </div>
+
+  <div class="rb-foot">
+    <span class="rb-state">
+      <StatusBadge status={r.status} size={13} />
+      {r.docs && (
+        <a class="rb-docs" href={r.docs.href}>
+          <Icon name="book-open-check" size={12} />
+          {r.docs.label}
+        </a>
+      )}
+    </span>
+
+    <span class="rb-by">
+      <span class="rb-by-k">{byLead}</span>
+      <span class="rb-by-v">{byName}</span>
+    </span>
+  </div>
+</article>
+
+<style>
+  /* ── The card ───────────────────────────────────────────────────────────────────────────────
+     THREE BANDS IN A TWO-COLUMN GRID. Row 1 holds everything a person reads in column 1 and the
+     one thing they can DO in column 2. Row 2 is the footer rail and spans both, so the hairline
+     runs the full width of the card and the author has the whole trailing edge to sit at rather
+     than the narrow reading column. */
+  .rb-card {
+    /* THE CARD ZEROES ITS OWN TOP MARGIN, AND IT HAS TO BE DONE HERE. Starlight's prose rhythm is a
+       general-sibling rule that reaches every non-span, non-anchor element on the page, and the
+       board's three card containers all space themselves with `gap` — so every card after the first
+       in a column collected 16px it was not asked for. Measured: 40px between a column head and its
+       first card where 24 was intended, and 28px between cards where 12 was, on 17 of 20 cards.
+
+       The page tried to reset it with `.rb-col > *` and could not: Astro appends the PAGE's scope
+       class to that trailing selector, and a card carries this COMPONENT's scope class instead, so
+       the rule shipped, looked correct, matched nothing, and every gate stayed green. A component
+       resets itself in its own file. */
+    margin-top: 0;
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+    transition:
+      border-color 150ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .rb-card[hidden] { display: none; }
+
+  .rb-card:hover { border-color: var(--bo-primary); }
+
+  .rb-card:focus-within { border-color: var(--bo-primary); }
+
+  /* The rhythm reset has to be on the CARD's own children too, not only inside them: `.rb-side` was
+     the second child of a grid, so it took 16px off the top from Starlight's general-sibling prose
+     rule and the vote button hung below the title it belongs beside. Every box below that spaces
+     itself with `gap` is listed for the same reason. */
+  .rb-card > *,
+  .rb-main > *,
+  .rb-side > *,
+  .rb-foot > *,
+  .rb-rail > *,
+  .rb-state > * { margin-top: 0; }
+
+  .rb-main {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .rb-side {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    flex: none;
+  }
+
+  /* ── Band 1: the context rail ───────────────────────────────────────────────────────────────
+     TWO ANCHORS, ONE CLASS OF TYPE. The two facts that PLACE a request before anyone reads its
+     title are which product it concerns and when it is expected, and this band holds both: subject
+     at the leading edge, estimate at the trailing one, in the same 11px uppercase micro-label. It
+     is the one rung this system allows under 12px, and it allows it because the caps and the
+     tracking carry legibility the size does not.
+
+     IT SPANS THE WHOLE CARD, over the vote control rather than beside it, and that was a measured
+     correction: nested inside the reading column the rail had 194px of a 288px card and truncated
+     "ALL PLATFORMS" to "ALL PL…" on every board card. The card is three full-width bands with the
+     action set into the middle one, which is also why the rail and the footer read as a matched
+     pair — same anchors, same type, top and bottom of the same object.
+
+     THE ESTIMATE LIVES HERE RATHER THAN BESIDE ITS BADGE, and that is a considered move. It sat in
+     the footer next to the status, which is where it belongs semantically — and in a 288px board
+     column the badge, the estimate and the author would not hold one line, so the estimate wrapped
+     BELOW the author and the footer read as two ragged rows. Measured before the move: 8 of 12
+     board cards wrapped their footer. It also earns its new place: "is the thing I want coming?" is
+     the question this page exists to answer, and the answer is now at a fixed x on every card, so
+     it can be scanned straight down a column instead of hunted for in a paragraph of facts.
+
+     The WORD is muted and the MARK keeps its brand colours, so a tagged request is spotted by its
+     colour and read by its word. That is the Never-Alone rule doing real work: the untagged cards
+     carry a grey globe and the tagged ones a coloured mark, which is the glance-level answer to
+     "which of these is about Airtable". */
+  .rb-rail {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: minmax(0, auto) auto;
+    justify-content: space-between;
+    align-items: center;
+    column-gap: 12px;
+    /* 8px, NOT 4 (Dan, 2026-08-20: the title sits too close to the rail above it). The card's grid
+       declares `column-gap` only, so its row gap is 0 and this margin is the WHOLE distance between
+       the rail and the title — there is no second contributor to trim. Nor is there an inherited
+       one to fight: Starlight's prose rhythm would have put 16px on `.rb-main` as a later sibling,
+       and the `.rb-card > *` reset above already zeroes it, so what ships is exactly what is
+       written here. 8px is the rung that separates a label from the thing it labels everywhere else
+       on this card (the state group's gap, the vote control's own), and it keeps the rail closer to
+       its own title than the 12px that separates one card from the next. */
+    margin: 0 0 8px;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .rb-subject {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  /* The board's narrowest card is 288px wide and the longest platform name it can hold is nine
+     characters, so this never truncates today. It is here because a platform is data and the next
+     one added is not ours to keep short. */
+  .rb-subject-n {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rb-when {
+    justify-self: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ── Band 2: the request ────────────────────────────────────────────────────────────────────*/
+  .rb-title {
+    margin: 0;
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--sl-color-white);
+    text-wrap: pretty;
+  }
+
+  .rb-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* The whole card is the hit area, drawn once from the title's own link so there is no second
+     clickable box to keep in sync with it. It may not be an anchor wrapping the card, because the
+     card holds a Vote button and a documentation link and an anchor may not contain a control. */
+  .rb-title a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  .rb-summary {
+    margin: 0;
+    font-size: var(--bo-t-13);
+    line-height: 1.5;
+    color: var(--bo-muted);
+    text-wrap: pretty;
+  }
+
+  /* ── Band 3: state on the left, provenance on the right ─────────────────────────────────────
+     TWO GRID TRACKS, NOT A WRAPPING FLEX ROW. This is the whole fix for "written crookedly in the
+     middle": `minmax(0, 1fr) auto` gives the author a track of its own, so it sits at the trailing
+     edge whether the state group is one badge or a badge plus a date plus a documentation link.
+     `align-items: start` rather than `center`, so a state group that wraps to two lines on the
+     three cards that carry documentation keeps the author on the first line instead of dragging it
+     half a line down. */
+  .rb-foot {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 16px;
+    padding-top: 8px;
+    border-top: 1px solid var(--bo-base-300);
+    font-size: var(--bo-t-12);
+    line-height: 1.5;
+  }
+
+  /* Everything in this group is one statement about where the work stands, so it groups tightly
+     (8px) against the 16px that separates it from provenance. The badge carries the only colour in
+     the band, which is what makes the status readable at a glance down a column. */
+  .rb-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* Underlined and in the strong ink rather than teal — see the header note. The offset keeps the
+     rule off the descenders at 12px. */
+  .rb-docs {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: var(--bo-muted-strong);
+    text-decoration: underline;
+    text-decoration-color: var(--bo-base-300);
+    text-underline-offset: 3px;
+  }
+
+  .rb-docs:hover {
+    color: var(--bo-primary);
+    text-decoration-color: currentColor;
+  }
+
+  .rb-docs:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+    border-radius: var(--bo-r-4);
+  }
+
+  /* PROVENANCE HAS A PLACE, and the place holds at every column width. The lead-in and the name
+     are two different weights on purpose: "Raised by" is grammar and the name is the fact, and
+     splitting them is what makes a customer request and a Baseout-authored one tell themselves
+     apart at 12px without a second colour or a second glyph. */
+  .rb-by {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    flex: none;
+    white-space: nowrap;
+    color: var(--bo-muted);
+  }
+
+  .rb-by-v {
+    font-weight: 600;
+    color: var(--bo-muted-strong);
+  }
+
+  /* Under ~30rem the two tracks cannot both hold a line, so the rail stacks — and provenance goes
+     to the LEADING edge rather than staying right, because a lone right-aligned phrase under a
+     left-aligned one is exactly the stranded look this band was built to remove. */
+  @media (max-width: 30rem) {
+    .rb-foot {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 8px;
+    }
+  }
+
+  /* ── The platform candidate ─────────────────────────────────────────────────────────────────
+     Same three bands; band 1 is a mark tile instead of a micro-label, because the card IS the
+     platform and its name is already the title. The tile is the rung BELOW the card's own corner
+     (8 inside 12), which is the system's rule for a shape inside a frame. */
+  /* The candidate keeps MORE air than the plain card, because a 32px tile is a block and an 11px
+     micro-label is a line: the same gap under both would read as tighter under the tile. It moved
+     with the plain rail rather than being left behind, 8 → 12, which keeps the one-rung difference
+     the two cards had before. */
+  .rb-pcard .rb-rail { margin-bottom: 12px; }
+
+  .rb-ptile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    color: var(--bo-muted-strong);
+  }
+
+  /* ── The vote control ───────────────────────────────────────────────────────────────────────
+     THE VOTE IS THE SECONDARY BUTTON, which in this system means a soft fill of the accent with
+     the accent as the label — not an outline, and not the grey it used to wear. A vote is the one
+     thing this board exists to collect; painting it like disabled chrome was the loudest thing
+     wrong with the card. `In progress` gave up the accent for it (see `lib/status.ts`). */
+  .rb-vote {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease;
+  }
+
+  /* LIFT THE CONTROLS, NOT THE ROWS THEY SIT IN. Raising the whole footer raised a full-width
+     strip — the badge, the author's name and all the empty space between them — so the bottom
+     third of every card swallowed the click on the card itself. Only the two things a person can
+     actually operate are lifted above the title's overlay. */
+  .rb-vote,
+  .rb-docs {
+    position: relative;
+    z-index: 1;
+  }
+
+  .rb-vote-word { font-weight: 600; }
+
+  .rb-vote:hover { background: var(--bo-soft-primary-bg-hover); }
+
+  .rb-vote:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* …but the CARD must not paint a ring at the same time, which would read as a bug. */
+  .rb-card:has(.rb-vote:focus-visible) { outline: none; }
+
+  /* CAST IS THE QUIET STATE, and this is a reversal worth stating. The button used to go SOLID
+     when voted, so the loudest paint on the card was the action already taken: a wall of bright
+     buttons on the things you had done, and a soft one on the thing still asking (Oleh,
+     2026-08-19). Voted now steps back to the neutral ground with a check where the arrow was, so
+     the accent is only ever on what is still open.
+
+     It is NOT `disabled`. The control is a toggle and a misclick has to be undoable, so it keeps
+     its cursor, its focus ring, and a hover that lifts one step. Faint is the affordance for
+     "already done", never for "you may not". */
+  .rb-vote[aria-pressed='true'] {
+    background: var(--bo-base-200);
+    border-color: var(--bo-base-300);
+    color: var(--bo-muted-strong);
+  }
+
+  .rb-vote[aria-pressed='true']:hover {
+    background: var(--bo-base-300);
+    color: var(--bo-base-content);
+  }
+
+  /* `.rb-i` is a span this file owns: a scoped style never reaches inside `Icon.astro`. */
+  .rb-i { display: flex; }
+
+  /* One glyph is in the DOM twice and the state reveals one. The resting card shows the arrow; a
+     cast vote swaps it for the tick. BOTH SELECTORS ARE LOAD-BEARING — dropping the first leaves
+     the tick painted next to the arrow at rest, which is what happened when this rule was moved
+     between files by a regex that could not see a two-line selector. */
+  .rb-i-cast,
+  .rb-vote[aria-pressed='true'] .rb-i-ask {
+    display: none;
+  }
+
+  .rb-vote[aria-pressed='true'] .rb-i-cast { display: flex; }
+
+  .rb-count {
+    font-size: var(--bo-t-16);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* MEASURED AT 390: the control comes out 33px tall, which is a comfortable mouse target and a
+     poor thumb one. `pointer: coarse` raises it without touching the desktop density this product
+     is built around — the two readings are genuinely different requirements, not one compromise. */
+  @media (pointer: coarse) {
+    .rb-vote { min-height: 44px; }
+  }
+</style>
+

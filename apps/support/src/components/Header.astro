@@ -1,0 +1,246 @@
+---
+/**
+ * THE PORTAL HEADER, laid out left to right: brand · divider · nav · search · preferences.
+ *
+ * Starlight's own header is a three-column grid whose first column is sized to the SIDEBAR's width
+ * and carries `overflow: clip`, so the search box lines up with the content column no matter how
+ * long the site title is. That is a good rule for a pure docs site and the wrong one here: this
+ * portal has three destinations to name before anything is searched, and the nav has to sit beside
+ * the brand rather than at the far right of the row (Oleh, 2026-08-19). Once the nav is in the left
+ * group the grid's whole reason for existing is gone, so this is a flex row instead.
+ *
+ * WHAT WE GIVE UP by owning this file: the search box no longer aligns with the content column's
+ * centre line, and any header change Starlight ships in a future version lands here by hand. That
+ * is the cost of the layout being asked for, and it is worth stating out loud — this is the fifth
+ * component we override and the one that owns the most.
+ *
+ * MOBILE: below 50rem Starlight hides the preferences group and shows the menu button, and this
+ * file keeps that behaviour by keeping the same `sl-hidden md:sl-flex` classes. The nav is hidden
+ * with it and re-declared as two top-level sidebar entries — the mobile menu renders the sidebar,
+ * so that is where a phone reaches Roadmap and Contact.
+ */
+/* REAL PATHS, NOT `virtual:starlight/*`. Starlight's own components import each other through
+   virtual modules, but those have no type declarations outside the package — `astro check` reports
+   six `ts(2307)` on them, which is a gate failing on code that runs. So: our two overrides by
+   relative path, and the three we do not override from the package. The trade is that a LATER
+   override of ThemeSelect, LanguageSelect or SocialIcons through `components:` would not reach this
+   file; whoever adds one has to swap the import here too. */
+import Search from './Search.astro';
+import SiteTitle from './SiteTitle.astro';
+import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
+import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
+import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+
+/* DOCUMENTATION DOES NOT POINT AT `/`, and that is the shape of this navigation. `/` is the WELCOME
+   screen — the front door, reached by clicking the brand, with its own hero and its own search. It
+   is not a page of the manual, so nothing in this list lights up while you stand on it.
+   Documentation points at the manual's first page instead. */
+const NAV = [
+  { label: 'Documentation', href: '/start/what-baseout-is/' },
+  { label: 'Roadmap', href: '/roadmap/' },
+  { label: 'Contact us', href: '/contact/' },
+];
+
+/* THE LABEL IS "CONTACT US" AND THE URL IS `/contact/`, which now agree. They did not for a while:
+   the label read "Report a problem" on the argument that it named the lane almost everyone arrives
+   for. Dan overruled it on 2026-08-20, and he was right for a reason the earlier argument missed.
+   The page holds four lanes now, and three of them are not problems: a wish, a billing question and
+   a catch-all. A door labelled after one of its four rooms tells three quarters of the people
+   standing in front of it that they are in the wrong place. The step inside still names itself, so
+   nothing was lost by making the door neutral. */
+const here = Astro.url.pathname;
+const isDocs = here !== '/' && !here.startsWith('/roadmap') && !here.startsWith('/contact');
+
+const isCurrent = (href: string) =>
+  href.startsWith('/roadmap') || href.startsWith('/contact')
+    ? here.startsWith(href.replace(/\/$/, ''))
+    : isDocs;
+---
+
+<div class="header">
+  <div class="title-wrapper sl-flex">
+    <SiteTitle />
+  </div>
+
+  {/* The same rule Starlight uses to fence off the theme selector, reused so the two dividers in
+      this row are one idea rather than two lookalikes. It is a desktop-only ornament: on a phone the
+      nav is on its own row and has nothing to be fenced from. */}
+  <div class="hx-rule sl-hidden md:sl-flex" aria-hidden="true"></div>
+
+  {/* NO `sl-hidden md:sl-flex` HERE ANY MORE. Starlight hides its whole right-hand group below
+      50rem, and the nav used to go with it — which meant the two services had to be re-declared as
+      sidebar entries so a phone could reach them, and THAT put them into the documentation's
+      reading order (prev/next is derived from the sidebar). One nav that survives the breakpoint
+      removes the duplicate and its side effect at once. Below 50rem it wraps to its own row; see
+      the `--sl-nav-height` note in the styles. */}
+  <nav class="hx sl-flex" aria-label="Portal">
+    {NAV.map((item) => (
+      <a class="hx-link" href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+        {item.label}
+      </a>
+    ))}
+  </nav>
+
+  {/* SEARCH SITS ON THE RIGHT, not between the nav and the preferences. Centred it was the widest
+      thing on the row and read as the header's subject; the subject is the brand and where you are.
+      Unconditional: Starlight only skips the search when Pagefind is off AND the slot is stock, and
+      this portal overrides the slot — the pair is always ours to render. */}
+  <div class="hx-search sl-flex print:hidden">
+    <Search />
+  </div>
+
+  {/* The group survives the breakpoint too, but sheds everything except the theme control: with the
+      docs sidebar gone from the service pages there is no mobile menu on them to hold it, and a
+      theme switch that exists on some pages and not others is worse than a slightly busier row. */}
+  <div class="sl-flex print:hidden right-group">
+    <div class="sl-hidden md:sl-flex social-icons">
+      <SocialIcons />
+    </div>
+    <ThemeSelect />
+    <div class="sl-hidden md:sl-flex">
+      <LanguageSelect />
+    </div>
+  </div>
+</div>
+
+<style>
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 100%;
+  }
+
+  .title-wrapper {
+    flex: none;
+    /* Kept from Starlight: a long title must not grow into the row and push the search off it. */
+    overflow: clip;
+    padding: 0.25rem;
+    margin: -0.25rem;
+    min-width: 0;
+  }
+
+  .hx-rule {
+    flex: none;
+    width: 1px;
+    height: 24px;
+    background: var(--bo-base-300);
+  }
+
+  .hx {
+    flex: none;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .hx-link {
+    padding: 6px 10px;
+    border-radius: var(--bo-r-6);
+    color: var(--bo-muted-strong);
+    font-size: var(--bo-t-14);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .hx-link:hover {
+    background: var(--bo-base-200);
+    color: var(--sl-color-white);
+  }
+
+  /* The current section is stated, not implied. A header that never says where you are is a list of
+     places you could go and no answer to the question you actually have. */
+  .hx-link[aria-current='page'] {
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font-weight: 600;
+  }
+
+  .hx-link:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* The search pair has its own natural width (a field plus the ask button); letting it grow would
+     make the one control on this row that is already the widest wider still. `auto` here is what
+     pushes it and everything after it to the far end, so the empty space lands between the nav and
+     the search rather than after it. */
+  .hx-search {
+    flex: none;
+    margin-inline-start: auto;
+  }
+
+  .right-group {
+    flex: none;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .social-icons {
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .social-icons::after {
+    content: '';
+    height: 2rem;
+    border-inline-end: 1px solid var(--bo-base-300);
+  }
+
+  /* ── BELOW 50rem THE HEADER IS A GRID OF TWO ROWS ─────────────────────────────────────────────
+     Row one is the mark, the search and the theme control; row two is the nav, across the whole
+     width. The nav got the full row after the first attempt left it 198px and cut a label in half. The nav used to
+     vanish at this width, which is why the two services had to be duplicated as sidebar entries —
+     and that duplication is what put them into the documentation's prev/next sequence. One nav that
+     survives the breakpoint removes both.
+
+     GRID, NOT `flex-wrap`. Wrapping was tried and it breaks wherever the width happens to run out:
+     measured at 390 that put the theme control on a row of its own and the nav on a third, three
+     rows deep inside a bar sized for two. An explicit row break helped and then consumed a line of
+     its own. Named areas say where each thing goes and the arithmetic stops mattering.
+
+     `--sl-nav-height` is Starlight's own variable and everything downstream is computed from it: the
+     fixed header's height, `.main-frame`'s top padding, and the sidebar pane's `inset-block`.
+     Raising it is the documented way to make the bar taller; setting a height on the bar alone
+     would slide the whole page underneath it. */
+  @media (max-width: 49.999rem) {
+    :global(:root) { --sl-nav-height: 6.5rem; }
+
+    .header {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      grid-template-areas:
+        'brand gap search prefs'
+        'nav nav nav nav';
+      align-items: center;
+      row-gap: 8px;
+      column-gap: 12px;
+    }
+
+    .title-wrapper { grid-area: brand; }
+    .hx-search { grid-area: search; margin-inline-start: 0; }
+    .right-group { grid-area: prefs; }
+
+    .hx {
+      grid-area: nav;
+      min-width: 0;
+      /* Measured at 390 after reclaiming the menu-button gutter: 343px of labels in a 342px row.
+         The 2px gaps are the whole deficit — the pills carry 10px of padding each, so removing the
+         gap leaves 20px between labels and nothing scrolls. */
+      gap: 0;
+      /* Three full labels can exceed 390px. A scroll is the honest failure mode: everything stays
+         readable and reachable, and nothing is silently cut. */
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .hx::-webkit-scrollbar { display: none; }
+
+    /* Starlight centres its menu button across the whole nav height, which is now two rows — it
+       would float between them. Pin it to the first. */
+    :global(starlight-menu-button button) {
+      top: calc((3.25rem - var(--sl-menu-button-size)) / 2);
+    }
+  }
+</style>

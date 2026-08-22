@@ -1,0 +1,89 @@
+---
+title: Sources
+description: The connection to the platform your Spaces back up.
+---
+
+import PlatformTabs from '../../../components/PlatformTabs.astro';
+
+A **Source** is a connection to the platform you are backing up. It belongs to your account rather
+than to one Space, so you add it once and reuse it wherever you need it. The Sources list shows each
+one's name, how it was authorized, its status, how many Spaces use it, and how much it can see.
+
+What a Source *is* does not change with the platform. How you authorize one does, and so does what
+that authorization can reach.
+
+<PlatformTabs label="How a Source is authorized">
+  <div slot="airtable">
+    Two ways in, and they see different things. A **personal access token** is scoped by you, base by
+    base, when you create it. **OAuth** is scoped by the person who grants it, and can be revoked
+    from Airtable's own settings without telling Baseout.
+
+    [Which to use](/platforms/airtable/connecting/#which-to-use) covers how to pick.
+  </div>
+
+  <div slot="clickup">
+    ClickUp offers an **OAuth app** and a **personal API token** generated in your own ClickUp
+    settings. Either way the connection is made against a **Workspace**, ClickUp's top level, and a
+    person who belongs to several Workspaces authorizes them one at a time.
+
+    Whichever you use carries the permissions of the person who authorized it.
+  </div>
+
+  <div slot="notion">
+    Notion's token is not a grant. Connecting produces a token that is valid and can reach
+    **nothing**: access is handed over afterwards, page by page, from inside Notion.
+
+    Skipping that step is the single most common way a Notion connection looks healthy and finds
+    no content. See
+    [Sharing with the connection](/platforms/notion/connecting/#sharing-with-the-connection).
+  </div>
+</PlatformTabs>
+
+## Which method to use
+
+Both produce a working Source. The choice is not about Baseout, it is about who the grant belongs to
+and how it is changed afterwards, so it is answered on the platform's own page:
+[Connecting Airtable](/platforms/airtable/connecting/),
+[Connecting ClickUp](/platforms/clickup/connecting/),
+[Connecting Notion](/platforms/notion/connecting/).
+
+## Why one Source sees more than another
+
+A Source sees exactly what its authorization covers, and the person who made the grant is what sets
+that. Two Sources on the same platform, authorized by two people, will see different things. What
+was left out is not hidden from you inside Baseout, it is invisible to Baseout, which cannot know it
+exists. That is the usual reason something is missing from a picker: see
+[My bases are missing from the picker](/troubleshooting/missing-bases/).
+
+New objects are found by re-checking, never announced. No platform tells Baseout that a base was
+created, so the Source looks again and reports what it found. New objects are surfaced for you to
+add rather than added for you, because nothing should enter a backup, or a bill, without you
+choosing it.
+
+## More than one account
+
+An account can hold several Sources, including more than one on the same platform, told apart by
+their name and the account that authorized them. A Space uses **exactly one**, and different Spaces
+can use different Sources.
+
+## Removing one, and moving a Space
+
+Removal is guarded while Spaces still use it: unlink them first, and the warning states how many are
+affected.
+
+Moving a Space onto a different Source is a deliberate edit, and it resets that Space's base
+selection. Bases belong to a Source, so the ones you had chosen do not exist on the new one. You are
+asked to confirm before the selection is cleared, and declining leaves both the Source and the
+selection as they were.
+
+## Reconnecting
+
+Status, reconnect and the re-check for new objects all live on the Source rather than inside a
+Space, so one fix serves every Space using it. See
+[Reconnecting a broken connection](/connections/reconnecting/).
+
+## Next
+
+- [Destinations](/connections/destinations/): the other half of the account's connections
+- [Getting started](/start/getting-started/): choosing a Source during setup
+- [Schedule and scope](/backups/schedule-and-scope/): what the Space does with what the Source sees

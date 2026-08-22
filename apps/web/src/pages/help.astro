@@ -1,11 +1,16 @@
 ---
+import { env } from 'cloudflare:workers';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import Card from '../components/ui/Card.astro';
 import { getBreadcrumbs, getOwner } from '../lib/config';
+import { resolvePublicSupportUrl } from '../lib/support-url';
 
 const breadcrumbs = getBreadcrumbs('/help');
 const supportEmail = getOwner().email;
 const mailtoUrl = `mailto:${supportEmail}?subject=${encodeURIComponent('Baseout — Help request')}`;
+const supportUrl = resolvePublicSupportUrl(
+  (env as { PUBLIC_SUPPORT_URL?: string }).PUBLIC_SUPPORT_URL,
+);
 ---
 
 <SidebarLayout pageTitle="Help" breadcrumbs={breadcrumbs}>
@@ -15,13 +20,29 @@ const mailtoUrl = `mailto:${supportEmail}?subject=${encodeURIComponent('Baseout 
         <span class="iconify lucide--life-buoy text-primary size-8 shrink-0 mt-1"></span>
         <div class="min-w-0 space-y-3">
           <h2 class="text-lg font-bold">Help &amp; Support</h2>
-          <p class="text-sm text-base-content/70">
-            In-app chat support is coming soon. In the meantime, send us a note —
-            we usually reply within one business day.
-          </p>
+          {supportUrl ? (
+            <p class="text-sm text-base-content/70">
+              Docs, tickets, and the request board live on the Help Center. Email still works if you
+              would rather write us directly.
+            </p>
+          ) : (
+            <p class="text-sm text-base-content/70">
+              The public Help Center is not wired on this deploy yet. Send us a note — we usually
+              reply within one business day. Locally: <code>pnpm dev:support</code> on port 4342.
+            </p>
+          )}
           <div class="flex flex-col sm:flex-row sm:items-center gap-3 pt-2">
+            {supportUrl ? (
+              <a class="btn btn-primary btn-sm" href={supportUrl} data-help-portal>
+                <i class="iconify lucide--book-open size-4"></i>
+                <span>Open Help Center</span>
+              </a>
+            ) : null}
             <a
-              class="btn btn-primary btn-sm"
+              class:list={[
+                'btn btn-sm',
+                supportUrl ? 'btn-ghost' : 'btn-primary',
+              ]}
               href={mailtoUrl}
               data-help-mailto
             >

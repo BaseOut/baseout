@@ -53,5 +53,10 @@ declare namespace Cloudflare {
      * leaves it dark (warn-only). Matches `env.ENTITLEMENT_ENFORCEMENT === "1"`.
      */
     ENTITLEMENT_ENFORCEMENT?: string;
+    /**
+     * Public Help Center origin (`apps/support`). When set, `/help` offers
+     * an "Open Help Center" CTA. Unset = mailto-only (DNS/auth not live).
+     */
+    PUBLIC_SUPPORT_URL?: string;
   }
 }

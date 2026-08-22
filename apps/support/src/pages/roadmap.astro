@@ -1,0 +1,787 @@
+---
+/**
+ * The public request board.
+ *
+ * SHAPE: three columns for the live states, and the two TERMINAL states reachable by filter rather
+ * than by column — a column of rejections is not what anyone came to read, but a board that hides
+ * them entirely teaches every asker that requests go nowhere.
+ *
+ * FILTER LABELS CARRY COUNTS, INCLUDING ZEROS. "In progress 2" and "Not planned 1" are the same
+ * kind of honesty: a zero pre-empts "why is this empty", and a visible rejection count says the
+ * board is read by someone.
+ *
+ * WHAT A VOTE DOES is stated once, in a sentence, near the votes. Dropbox posts the equivalent as a
+ * moderator comment and it is the single thing that makes a vote feel like it lands somewhere.
+ *
+ * STATUS IS A COLOUR, and it is the product's colour rather than a new one — `lib/status.ts`
+ * carries the mapping and the argument. It is spent in three places: the SECTION HEAD, the FILTER
+ * CHIP (the status ink in the glyph at rest, the full soft pair when pressed), and the card's own
+ * badge.
+ *
+ * THE WHOLE CARD IS THE LINK. It lit up on hover and only the title took the click, which is a
+ * promise the card did not keep. Done with an overlay on the title's own anchor rather than by
+ * wrapping the card in one, because a card holds a Vote button and a documentation link, and an
+ * anchor may not contain another control.
+ *
+ * PLATFORM IS A FACET, NEVER A TAB AND NEVER A COLUMN. A tab would claim the board is about one
+ * platform, and the great majority of what is on it is about Baseout; a column would put an
+ * orthogonal question on the axis the state machine already owns.
+ *
+ * PLATFORMS ARE THEIR OWN SECTION, because a platform is not a feature. Mixed into the three
+ * feature columns those five rows would be invisible among twenty, which is exactly the thing this
+ * is supposed to make votable.
+ *
+ * SUGGESTED IS A FULL-WIDTH LIST UNDER THE COLUMNS, NOT A FOURTH COLUMN (Dan: "maybe like across,
+ * because there's going to be a lot more of those"). Intake is the one state with no ceiling, so a
+ * column of three cards beside a column of forty breaks in the first week. AND IT IS A COMMITMENT,
+ * not a status: an intake list visibly going stale converts "nobody has got to it yet" into
+ * "nobody works here".
+ *
+ * ── THE 2026-08-20 REWORK ──────────────────────────────────────────────────────────────────────
+ * Dan rejected the previous board as a patch job rather than a design, in three specifics and one
+ * general. What changed, and why:
+ *
+ * 1 · THE CARD IS THREE BANDS NOW. "Everything is mixed into one heap." The argument and the
+ *     measurements are in `components/RequestCard.astro`, which owns that fix entirely.
+ *
+ * 2 · THE FILTER BAR IS TWO NAMED TIERS SEPARATED BY A RULE. The scope control and the status
+ *     chips were 8px apart with nothing between them, which is the spacing of two rows of ONE
+ *     control. They are not one control: platform governs what every status count below it even
+ *     MEANS, and status filters within that. So each tier is announced by its own micro-label —
+ *     PLATFORM, STATUS — and a hairline with 16px on either side sits between them. The label is
+ *     what makes the rule legible: a bare line between two rows of pills is decoration, and a line
+ *     between two named axes is structure.
+ *
+ * 3 · THE PRIMARY ACTION LEFT THE FILTER BAR. "Add a request" sat at the bar's trailing edge,
+ *     which put a page-level action inside the block that narrows the page. It is now anchored to
+ *     the lede, opposite the sentence that invites it, and the bar holds nothing but filters.
+ *
+ * 4 · ONE HEAD SYSTEM FOR ALL FIVE GROUPS. The three column heads were 11px uppercase tracked at
+ *     0.04em and the two section heads were 13px mixed-case tracked at 0.02em, so the board and the
+ *     sections under it read as two different documents — which is the "does not read as one
+ *     system" half of the complaint. Planned, In progress, Shipped, Platforms and Suggested are
+ *     five groups of the same rank; they now wear one head, one hint style and one rule, and differ
+ *     only in the arrangement each group's contents need.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Icon from '../components/Icon.astro';
+import RequestCard from '../components/RequestCard.astro';
+import {
+  REQUESTS,
+  BOARD_COLUMNS,
+  ALL_STATUSES,
+  FEATURE_REQUESTS,
+  PLATFORM_REQUESTS,
+  countByStatus,
+  countByPlatform,
+} from '../data/requests';
+import PlatformMark from '../components/PlatformMark.astro';
+import { PLATFORMS } from '../lib/platforms';
+import { statusMeta } from '../lib/status';
+import { VOTES_LIVE } from '../lib/votes';
+
+/* The columns hold FEATURE requests only. Kind decides the section, status decides the state —
+   rendering a platform candidate in both places would double it in the DOM and give one vote two
+   buttons, which the local vote record would then disagree with itself about. */
+const grouped = BOARD_COLUMNS.map((status) => ({
+  status,
+  items: FEATURE_REQUESTS.filter((r) => r.status === status),
+}));
+
+const suggested = FEATURE_REQUESTS.filter((r) => r.status === 'Suggested');
+const terminal = FEATURE_REQUESTS.filter(
+  (r) => r.status !== 'Suggested' && !BOARD_COLUMNS.includes(r.status),
+);
+const sugMeta = statusMeta('Suggested');
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Roadmap',
+    description: 'What we are building, what shipped, and what you want next.',
+    tableOfContents: false,
+    /* NO PAGINATION. Starlight derives prev/next from the SIDEBAR, and this page is in the sidebar
+       so a phone can reach it — which put it into the documentation's reading order. Measured: the
+       docs home said "Previous: Contact". These two lines are what keep a service out of a
+       sequence it is not part of; anything else added as a top-level sidebar link needs them too. */
+    prev: false,
+    next: false,
+  }}
+>
+  <div class="rb" data-board>
+    {/* THE LEDE AND THE DOOR, on one row. The last sentence of the first paragraph is "add one if
+        it is missing", and the button that does it now sits opposite that sentence instead of at
+        the end of a row of filters. A grid rather than a flex row with an auto margin: two tracks
+        cannot wrap past one another, so the button is at the trailing edge at every width and
+        drops under the prose in one step below 48rem. */}
+    <div class="rb-top">
+      <div class="rb-lede">
+        <p>
+          Everything here is a request, some ours and some yours. Vote for what you want most, and
+          <a href="/contact/?kind=request">add one</a> if it is missing.
+        </p>
+        <p class="rb-what">
+          A vote goes into the list we read when choosing what to build next. It is not a delivery
+          date, and not a queue.
+        </p>
+        {!VOTES_LIVE && (
+          <p class="rb-note">
+            Counts arrive with the store that records them. The buttons already work, and a vote is
+            remembered in this browser for now.
+          </p>
+        )}
+      </div>
+
+      <a class="rb-add" href="/contact/?kind=request">
+        <Icon name="plus" size={16} />
+        Add a request
+      </a>
+    </div>
+
+    {/* TWO TIERS, NAMED, WITH A RULE BETWEEN THEM. Nine controls on one undifferentiated block read
+        as nine of the same kind of thing. These answer different questions and one governs the
+        other: narrowing to Notion changes what every status count underneath it means. */}
+    <div class="rb-bar">
+      <div class="rb-tier">
+        <p class="rb-tier-label" id="rb-plat-label">Platform</p>
+        {/* A DIFFERENT SHAPE ON PURPOSE. The status chips are pills that filter within a set; this
+            chooses which product the whole page is about. Drawn as one segmented block with square
+            corners at the 8px rung, a rung more type and a shared recessed ground, so the two are
+            told apart before either is read. */}
+        <div class="rb-scope" role="group" aria-labelledby="rb-plat-label">
+          <button type="button" class="rb-seg" data-plat-filter="all" aria-pressed="true">
+            <Icon name="globe" size={16} />
+            Any platform
+          </button>
+          {PLATFORMS.map((p) => (
+            <button type="button" class="rb-seg" data-plat-filter={p.id} aria-pressed="false">
+              <PlatformMark id={p.id} size={16} />
+              {p.name} <span class="rb-n">{countByPlatform(p.id)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="rb-tier rb-tier-status">
+        <p class="rb-tier-label" id="rb-stat-label">Status</p>
+        <div class="rb-filters" role="group" aria-labelledby="rb-stat-label">
+          <button type="button" class="rb-chip bo-tone-primary" data-filter="all" aria-pressed="true">
+            All <span class="rb-n">{REQUESTS.length}</span>
+          </button>
+          {ALL_STATUSES.map((s) => (
+            <button
+              type="button"
+              class:list={['rb-chip', `bo-tone-${statusMeta(s).tone}`]}
+              data-filter={s}
+              data-status={statusMeta(s).slug}
+              aria-pressed="false"
+            >
+              <Icon name={statusMeta(s).icon} size={14} />
+              {s} <span class="rb-n">{countByStatus(s)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    {/* Amber, because this is "read this before you draw a conclusion", and the conclusion on offer
+        is that we have not been asked for much. A filter that silently removes the majority of a
+        board has to say it removed them. Not red: nothing is broken and the reader chose it. */}
+    <p class="rb-narrow bo-tone-warning" data-plat-narrow hidden>
+      <span data-plat-narrow-text></span>
+      <button type="button" data-plat-show-all>Show all</button>
+    </p>
+
+    <div class="rb-board">
+      {grouped.map((col) => (
+        <section class="rb-col" data-sec={col.status}>
+          <header class="rb-grphead">
+            <h2 class:list={['rb-head', `bo-tone-${statusMeta(col.status).tone}`]}>
+              <Icon name={statusMeta(col.status).icon} size={14} />
+              <span>{col.status}</span>
+              <span class="rb-n">{col.items.length}</span>
+            </h2>
+            <p class="rb-hint">{statusMeta(col.status).hint}</p>
+          </header>
+          {col.items.map((r) => <RequestCard r={r} />)}
+          {col.items.length === 0 && <p class="rb-empty">Nothing here yet.</p>}
+        </section>
+      ))}
+
+      {/* Terminal states live in the DOM so a filter can reveal them without a second page — and so
+          the counts in the filter bar are not pointing at something that does not exist. */}
+      <section class="rb-col rb-col-terminal" data-sec="terminal" hidden>
+        {terminal.map((r) => <RequestCard r={r} />)}
+      </section>
+    </div>
+
+    {/* ── Platform candidates ───────────────────────────────────────────────────────────────── */}
+    <section class="rb-sec" data-sec="platform" aria-labelledby="rb-plat-h">
+      <header class="rb-grphead">
+        <h2 class="rb-head" id="rb-plat-h">
+          <Icon name="plug" size={14} />
+          <span>Platforms</span>
+          <span class="rb-n">{PLATFORM_REQUESTS.length}</span>
+        </h2>
+      {/* A candidate we carry no brand mark for takes the connector glyph instead. Substituting
+          another platform's logo, or leaving a gap where every sibling has one, would both be worse
+          than saying plainly that this one is not built. */}
+        <p class="rb-hint">
+          Which platform Baseout backs up next. These are candidates, not commitments, and the one
+          people vote for is the one we look at first.
+        </p>
+      </header>
+      <div class="rb-pgrid">
+        {PLATFORM_REQUESTS.map((r) => <RequestCard r={r} candidate />)}
+
+        {/* A TILE IN THE GRID, NOT A LINK IN THE PARAGRAPH. "Not listed? Name it" was a sentence in
+            the hint above, which is the one place a reader scanning five product names never looks.
+            Sitting last in the same grid it reads as the end of the list — the option after the
+            options — and it is the size of the thing it produces. Dashed, ghosted and unvotable, so
+            it cannot be mistaken for a candidate that already exists. It carries
+            `about=new-platform`, which the request form uses to pre-answer the two questions this
+            reader has already answered by being here. */}
+        <a class="rb-newp" href="/contact/?kind=request&about=new-platform">
+          <span class="rb-newp-icon"><Icon name="plus" size={20} /></span>
+          <span class="rb-newp-title">Suggest a platform</span>
+          <span class="rb-newp-body">
+            Name the one you use. It joins this list and can be voted for like the rest.
+          </span>
+        </a>
+      </div>
+    </section>
+
+    {/* ── Suggested: full width, because this is the list that grows ────────────────────────── */}
+    <section class="rb-sec" data-sec="Suggested" aria-labelledby="rb-sug-h">
+      <header class="rb-grphead">
+        <h2 class:list={['rb-head', `bo-tone-${sugMeta.tone}`]} id="rb-sug-h">
+          <Icon name={sugMeta.icon} size={14} />
+          <span>Suggested</span>
+          <span class="rb-n">{suggested.length}</span>
+        </h2>
+        <p class="rb-hint">
+          {sugMeta.hint} Nothing here is committed. Voting is how we decide what to look at first.
+        </p>
+      </header>
+      {/* CARDS, NOT ROWS. This was a table of one-line items with the title and the summary side by
+          side on a single line, and it read as a leftover: the title had no room to be a title, the
+          summary was clipped by whatever the title left, and the whole block looked unlike every
+          other request on the page. These are requests like the ones above, so they are the same
+          card. It stays a list — one column, full width, because this is the group that grows and a
+          three-column grid of them would be a wall. */}
+      <div class="rb-sgrid">
+        {suggested.map((r) => <RequestCard r={r} />)}
+      </div>
+    </section>
+
+    {/* Both facets can be true of nothing at once. Without this the page just ends after the filter
+        bar, which reads as a page that failed to load rather than a question with no answer. */}
+    <p class="rb-none" data-board-empty hidden>
+      No requests match both filters. Widen one of them to see the rest.
+    </p>
+  </div>
+</StarlightPage>
+
+<script>
+  import { wireBoard } from '../lib/board';
+  wireBoard();
+</script>
+
+<style>
+  /* THE BOARD IS NOT AN ARTICLE, SO IT DOES NOT TAKE THE PROSE MEASURE.
+     Starlight caps this page's column at `--sl-content-width` (46rem = 736px), which is right for
+     a paragraph and wrong for three cards: measured at a 1497px viewport the columns were 235px
+     each REGARDLESS of screen size, because the cap is on the column, not the window. That is why
+     the titles were breaking after two words no matter how much room the browser had.
+     BOTH halves are inside `:global`. Written as `:global(.content-panel:has(.rb)) .sl-container`
+     the trailing part gets Astro's scope class appended — and `.sl-container` is Starlight's
+     element, which carries no such class, so the rule matched nothing and the columns stayed 235px
+     while the CSS sat in the bundle looking correct.
+     STARLIGHT RENDERS TWO CONTENT PANELS, one for the page title and one for the body, and they
+     are siblings — so `:has(.rb)` matched only the second and the h1 stayed at the 46rem prose
+     measure while the board went to 66. Measured: the title started 160px to the RIGHT of the
+     content under it, which reads as the heading belonging to something else. Widening from the
+     shared `main` catches both, and `:has(.rb)` still scopes it to this page alone. */
+  :global(main:has(.rb) .sl-container) {
+    max-width: 66rem;
+  }
+
+  /* ── THE PROSE-RHYTHM RESET, AND WHY THE LIST IS THIS LONG ──────────────────────────────────
+     Starlight's prose container applies a lobotomised-owl margin written for paragraphs, and it is
+     a GENERAL-SIBLING rule, so it does not stop at the top level — it reaches into every nested box
+     on this page. Measured, before this existed: each filter chip after the first carried a 16px
+     top margin inside a flex row that already spaces itself with `gap`, which is why `All` sat a
+     step above the five chips beside it, and three column heads sat 16px out of step with each
+     other. EVERY box on this page that spaces itself with `gap` has to appear here, so any new one
+     gets added in the same edit that creates it.
+
+     WHAT THIS LIST CANNOT REACH, and it took a computed value to find out: a CHILD COMPONENT.
+     Astro appends this page's scope class to the trailing `*`, and `RequestCard.astro` renders with
+     its own, so `.rb-col > *` matched every box the page owns and not one card. The cards reset
+     themselves in their own file, which is the only place that can. Anything else added here that
+     comes from a component needs the same treatment.
+
+     Starlight exempts `a`, `span`, `strong`, `em`, `del`, `input`, `code` and `br` from the rule,
+     which is why a rail full of spans needs no reset and a stack of `<article>` does. Do not read
+     that exemption as a reason to skip the list: an element's tag is not a stable property of a
+     design. */
+  .rb > * + *,
+  .rb-top > *,
+  .rb-lede > *,
+  .rb-bar > *,
+  .rb-tier > *,
+  .rb-scope > *,
+  .rb-filters > *,
+  .rb-narrow > *,
+  .rb-board > *,
+  .rb-col > *,
+  .rb-grphead > *,
+  .rb-head > *,
+  .rb-sec > * + *,
+  .rb-pgrid > *,
+  .rb-sgrid > *,
+  .rb-newp > * { margin-top: 0; }
+
+  /* ── The lede and the door ──────────────────────────────────────────────────────────────────
+     NO WIDTH CAP ON THE PROSE, AND THAT IS A DELIBERATE REVERSAL. This block was capped at 40rem to
+     bring it inside the 65–75 characters the rest of the system reads at, and the cap was right
+     about the measure and wrong about the block: it left a narrow ragged column under a full-width
+     heading and above a full-width board, which is its own kind of hard to read.
+
+     What the 65–75 rule actually protects is the RETURN SWEEP, the eye finding the start of the
+     next line. A statement that occupies one line has no return sweep to lose. So the fix moved to
+     the copy: each of these is short enough to sit on one line at the board's width. Keep them that
+     way. `text-wrap: pretty` is the insurance for the narrower windows where one of them wraps. */
+  .rb-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 24px;
+  }
+
+  .rb-lede p {
+    margin: 0 0 6px;
+    font-size: var(--bo-t-14);
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+
+  .rb-lede p:last-child { margin-bottom: 0; }
+
+  .rb-what { color: var(--bo-muted-strong); }
+  .rb-note { color: var(--bo-muted); }
+
+  .rb-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding: 8px 16px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content) !important;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .rb-add:hover { background: var(--bo-secondary); }
+
+  .rb-add:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* Below 48rem the two tracks cannot both hold their content, so the door steps under the prose
+     rather than squeezing it. `justify-self: start` keeps it at the leading edge: a lone button
+     centred under a left-aligned paragraph is the stranded look this layout exists to avoid. */
+  @media (max-width: 48rem) {
+    .rb-top { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
+    .rb-add { justify-self: start; }
+  }
+
+  /* ── The filter bar: two named tiers, one rule ──────────────────────────────────────────────
+     The rule and the 16px on either side of it are the visible form of a fact the page could only
+     state before: platform is the OUTER question and status is the inner one. The micro-labels are
+     what make the rule structural rather than decorative — a line between two rows of pills is a
+     line, and a line between PLATFORM and STATUS is a boundary. */
+  .rb-bar { margin: 28px 0 32px; }
+
+  .rb-tier {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .rb-tier-status {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  /* The same micro-label rung as every group head below, which is what makes the page one system:
+     an axis of the board and a group of the board are announced the same way. */
+  .rb-tier-label {
+    margin: 0;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  /* ── The scope control ──────────────────────────────────────────────────────────────────── */
+  .rb-scope {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 4px;
+    max-width: 100%;
+    padding: 6px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-200);
+  }
+
+  .rb-seg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 8px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-8);
+    background: none;
+    color: var(--bo-muted-strong);
+    font: inherit;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    line-height: 1.3;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+
+  .rb-seg:hover { color: var(--sl-color-white); }
+
+  /* The selected segment lifts to the page's own ground, which is the inverse of the chips below:
+     there the pressed state adds colour, here it adds LIGHT, and a raised tile inside a recessed
+     track is the oldest signal a segmented control has. */
+  .rb-seg[aria-pressed='true'] {
+    border-color: var(--bo-base-300);
+    background: var(--bo-base-100);
+    color: var(--sl-color-white);
+  }
+
+  .rb-seg[aria-pressed='false'] :global(.bo-mark) {
+    filter: grayscale(1);
+    opacity: 0.8;
+  }
+
+  .rb-seg:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .rb-seg .rb-n { font-weight: 600; }
+
+  /* ── The status chips ───────────────────────────────────────────────────────────────────────
+     A CHIP CARRIES ITS STATUS'S COLOUR AT REST, in the glyph only. Tinting six resting chips would
+     make the filter bar the loudest thing on the page and leave the pressed state nothing to say;
+     an inked glyph is enough to tie the chip to the group it filters to, and pressing it spends the
+     full soft pair. `--tone-*` comes from the `bo-tone-*` class in `styles/support.css`. */
+  .rb-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .rb-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 999px;
+    background: var(--bo-base-100);
+    color: var(--sl-color-text);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    cursor: pointer;
+    /* Colour, border and weight only — nothing here animates a layout property, so a filter press
+       cannot reflow the row it lives in. */
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease;
+  }
+
+  .rb-chip :global(.bo-i) { color: var(--tone-ink); }
+
+  .rb-chip:hover { border-color: var(--tone-ink); }
+
+  .rb-chip:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  .rb-chip[aria-pressed='true'] {
+    border-color: transparent;
+    background: var(--tone-bg);
+    color: var(--tone-fg);
+    font-weight: 600;
+  }
+
+  .rb-chip[aria-pressed='true'] :global(.bo-i) { color: inherit; }
+
+  /* The ghost tone has no tint to press into — `--tone-bg` is the interaction grey, which is what a
+     hover looks like. Pressed ghost gets a ring instead, so "selected" never reads as "hovered". */
+  .rb-chip.bo-tone-ghost[aria-pressed='true'] { border-color: var(--bo-neutral); }
+
+  .rb-n {
+    font-size: var(--bo-t-12);
+    font-variant-numeric: tabular-nums;
+    color: var(--bo-muted);
+  }
+
+  .rb-chip[aria-pressed='true'] .rb-n { color: inherit; }
+
+  /* The narrowing notice. Same shape and same amber as the documentation filter's, because it is
+     the same statement: your own choice is why this looks emptier than it is. */
+  .rb-narrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 20px;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-8);
+    background: var(--tone-bg);
+    color: var(--tone-fg);
+    font-size: var(--bo-t-13);
+    line-height: 1.45;
+  }
+
+  .rb-narrow[hidden] { display: none; }
+
+  .rb-narrow button {
+    margin-left: auto;
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .rb-narrow button:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* ── ONE HEAD FOR ALL FIVE GROUPS ───────────────────────────────────────────────────────────
+     Planned, In progress, Shipped, Platforms and Suggested are five groups of equal rank, and they
+     used to be announced two different ways. The head is the micro-label rung — 11px, 700,
+     uppercase, tracked — with the group's own status glyph carrying its colour and the count
+     beside the word. The hint under it says what the state MEANS rather than what it is called, and
+     `lib/status.ts` keeps each one short enough to hold ONE line in a third of the content column,
+     because a hint that wraps pushes its column's cards out of step with the other two. */
+  .rb-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 2px;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bo-muted-strong);
+  }
+
+  .rb-head :global(.bo-i) { color: var(--tone-ink, var(--bo-muted-strong)); }
+
+  .rb-hint {
+    margin: 0;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    color: var(--bo-muted);
+    text-wrap: pretty;
+  }
+
+  /* THREE COLUMNS NEED REAL WIDTH. At 60rem a third of the content column is ~230px, and a card
+     that narrow wraps its title after two words. Two across from 60rem, three only from 82rem,
+     where a card has room for a line of text rather than a stack of fragments. */
+  .rb-board {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 1fr;
+  }
+
+  @media (min-width: 60rem) { .rb-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 82rem) { .rb-board { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+  /* Filtering collapses the board to one column: three headed columns showing one card between
+     them reads as two errors and a result. `[data-filtered]` lives on `.rb` rather than on the
+     grid, because a platform choice narrows the whole page and not just the columns. */
+  .rb[data-filtered] .rb-board { grid-template-columns: 1fr; }
+  .rb[data-filtered] .rb-col > .rb-grphead { display: none; }
+
+  .rb-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .rb-col[hidden] { display: none; }
+
+  .rb-empty {
+    margin: 0;
+    font-size: var(--bo-t-13);
+    color: var(--bo-muted);
+  }
+
+  /* ── The two sections under the columns ─────────────────────────────────────────────────────
+     A hairline above and a step of space, and nothing else. They are separated from the board by
+     being below it and by being announced; a tinted panel or a shadow would make them read as
+     asides to the board rather than as further parts of it. Same rule, same 24px, as the one
+     inside the filter bar, so the page has one vocabulary for "a new question starts here". */
+  .rb-sec {
+    margin: 40px 0 0;
+    padding-top: 24px;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .rb-sec[hidden] { display: none; }
+
+  /* The head and its hint are ONE block, which is why they are wrapped rather than left as two
+     siblings of the cards: the column is a flex stack with a 12px gap, and a head sitting loose in
+     it would take that gap between itself and its own hint. Inside the wrapper the pair keeps the
+     2px that makes them read as a label and its subtitle.
+
+     THIS MARGIN IS ONLY HALF THE GAP UNDER A COLUMN HEAD, which is what made the head look adrift
+     (Dan, 2026-08-20). `.rb-col` is a flex stack whose 12px gap falls between the header and the
+     first card as well as between the cards, so the head sat 12 + 12 = 24px above its own first
+     card while the cards were 12px apart. Now 8 + 12 = 20px: still two thirds more than the gap
+     between siblings, so the head still owns the stack under it rather than floating between two
+     groups, and 4px closer to the card it labels. Both numbers are on the 4px grid. */
+  .rb-grphead { margin: 0 0 8px; }
+
+  .rb-sec > .rb-grphead { margin-bottom: 16px; }
+
+  /* ONE RUNG UP FOR THE TWO SECTION HEADS, AND NOTHING ELSE CHANGES. `Platforms` and `Suggested`
+     announce a whole width of the page; the three column heads announce a third of it. They stay
+     the same head — same caps, same 700, same 0.06em, same glyph and count — and differ by one
+     rung on the ladder, 11 → 12, which is the smallest step this system has.
+
+     WEIGHT AND TRACKING ARE DELIBERATELY UNTOUCHED. The lesson this page already paid for is that
+     REGISTER, not size, is what makes a heading loud: caps at 700 read larger than a bigger size
+     at 400, which is why the earlier 13px mixed-case section heads had to go. Since the register
+     is identical to the column heads' and only the rung moves, there is nothing to compensate for
+     — a heavier weight or looser tracking here would be the shout. `.rb-n` is already 12px, so the
+     count now matches its own word instead of out-sizing it. */
+  .rb-sec > .rb-grphead > .rb-head { font-size: var(--bo-t-12); }
+
+  /* Platform candidates are CARDS, not rows, and that is the one place a card earns its keep here:
+     the set is small, closed, and compared against itself. Rows would rank them; a grid says these
+     are alternatives. Narrower tracks than the board's columns because a candidate carries a name
+     and a line, not a paragraph. */
+  .rb-pgrid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 1fr;
+  }
+
+  @media (min-width: 48rem) { .rb-pgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 72rem) { .rb-pgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+  /* The add tile. Dashed rather than solid, and no vote control: it is a doorway, not a candidate,
+     and a bordered card with a Vote button on it would be read as one. It carries the SAME 32px
+     mark tile the candidates beside it wear, so the doorway is the shape of the thing it makes. */
+  .rb-newp {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 14px 16px;
+    border: 1px dashed var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: none;
+    color: inherit;
+    text-decoration: none;
+    transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out;
+  }
+
+  .rb-newp:hover {
+    border-color: var(--bo-primary);
+    background: var(--bo-base-200);
+  }
+
+  .rb-newp:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .rb-newp-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-bottom: 4px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    color: var(--bo-muted-strong);
+  }
+
+  .rb-newp-title {
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--sl-color-white);
+  }
+
+  .rb-newp-body {
+    font-size: var(--bo-t-13);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  /* One column, full width. This is the group that grows, and a reader scanning it is reading
+     titles down a single line rather than across a grid. */
+  .rb-sgrid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .rb-none {
+    margin: 24px 0 0;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted);
+  }
+
+  .rb-none[hidden] { display: none; }
+
+  /* MEASURED AT 390: the chips come out 33px tall, which is a comfortable mouse target and a poor
+     thumb one. `pointer: coarse` raises them to 44 without touching the desktop density this
+     product is built around — the two readings are genuinely different requirements, not one
+     compromise. */
+  @media (pointer: coarse) {
+    .rb-chip,
+    .rb-add {
+      min-height: 44px;
+    }
+  }
+</style>

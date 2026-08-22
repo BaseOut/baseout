@@ -1,0 +1,450 @@
+---
+/**
+ * "Which platform are you backing up?" — the first block of the welcome page.
+ *
+ * THE LANDING IS WHERE A VISITOR DECLARES WHO THEY ARE, and it is the only screen where asking is
+ * free. Everywhere else the platform filter lives quietly in the sidebar and starts with everything
+ * on, because a reader mid-task should never be interrogated. Here nobody is mid-task yet, so three
+ * cards are cheaper than making them find a chip later (Oleh, 2026-08-20).
+ *
+ * IT IS AN OFFER, NOT A GATE. Nothing below it is hidden until a card is pressed, and the page is
+ * complete for someone who ignores it entirely. A landing that demands a choice before it will show
+ * you anything is a landing that loses the person who does not know the answer yet.
+ *
+ * THE MARK CARRIES THE RECOGNITION and the vocabulary line carries the proof: a reader who works in
+ * Bases and Tables knows instantly which card is theirs, before reading a word of the name.
+ *
+ * ── TWO VARIANTS SHIP TOGETHER, AND THE DIFFERENCE IS WHAT A CLICK DOES ──────────────────────
+ *
+ * `reactive` — the card is a DOOR. It is a real `<a href>` to that platform's connecting page; the
+ *   click handler only writes the preference on the way out. So it works with the script blocked,
+ *   opens in a new tab on a middle click, and shows its target in the status bar.
+ * `filter` — the card is a SELECTOR. It is a `<button>`, the page stays put, and everything below
+ *   re-reads the preference it just wrote: the steps take that platform's nouns and its own pages
+ *   join the documentation directory. The client's ask, in his words: "this card should in fact be
+ *   a filter that switches everything under it".
+ *
+ * BOTH ARE SERVER-RENDERED AND THE STYLESHEET PICKS ONE, which is the same mechanism the rest of
+ * this page uses. It is not an optimisation: a variant chosen by script paints the loser first and
+ * visibly swaps it, and an `<a>` cannot be turned into a non-navigating toggle by CSS at all. The
+ * two lists therefore hold the same four lines of card markup twice, deliberately, and that
+ * duplication dies with the losing variant.
+ *
+ * A CARD THAT SELECTS MUST NOT SAY "START HERE". The doors keep that label because it is what they
+ * do; the selectors carry a state line instead (a glyph, a word and a colour, so removing any one
+ * of the three still leaves the state readable). The way on to that platform's own documentation
+ * moves to the foot of the block, where it names its destination exactly.
+ */
+import { PLATFORMS, FILTER_KEY } from '../lib/platforms';
+import PlatformMark from './PlatformMark.astro';
+import Icon from './Icon.astro';
+
+/* NO AVAILABILITY ON THESE CARDS, and the flags that used to be here are gone (Oleh, 2026-08-20).
+   For a fortnight each card read its own roadmap row and stamped ClickUp "In progress · Q1 2027"
+   and Notion "Planned · Q3 2027", with a call to action of "Read the plan" instead of "Start
+   here". The reasoning was sound and the premise was not: this portal is a DEMONSTRATION of what
+   the finished product's documentation looks like, not a status board for the product. The same
+   ruling took the provisional banners off the documentation pages, and these three chips were the
+   last surface on the portal still contradicting it.
+   What that costs, said plainly so nobody has to rediscover it: a visitor can now pick ClickUp and
+   read a complete set of ClickUp pages for a thing they cannot buy yet. That is the demo, and the
+   roadmap is still one click away from the header on every page. */
+---
+
+<section class="ps not-content" aria-labelledby="ps-h" data-platform-start data-storage-key={FILTER_KEY}>
+  <div class="ps-head">
+    <h2 class="ps-h" id="ps-h">Which platform are you backing up?</h2>
+    <p class="ps-sub ps-sub-nav">
+      Pick one and the documentation follows it. You can change it any time, and nothing below is
+      hidden until you do.
+    </p>
+    <p class="ps-sub ps-sub-pick">
+      Pick one and this page follows it: the steps take its words, and its own pages join the
+      documentation below. Every page you open next is narrowed to match.
+    </p>
+  </div>
+
+  <ul class="ps-grid ps-grid-nav">
+    {
+      PLATFORMS.map((p) => (
+        <li>
+          <a
+            class="ps-card"
+            href={`/platforms/${p.id}/connecting/`}
+            data-platform-start-pick={p.id}
+          >
+            <span class="ps-mark">
+              <PlatformMark id={p.id} size={28} />
+            </span>
+            <span class="ps-name">{p.name}</span>
+            <span class="ps-vocab">
+              {p.vocab.top}s, {p.vocab.mid}s, {p.vocab.row}s
+            </span>
+            <span class="ps-go">
+              Start here
+              <Icon name="arrow-right" size={14} />
+            </span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  <ul class="ps-grid ps-grid-pick">
+    {
+      PLATFORMS.map((p) => (
+        <li>
+          <button
+            type="button"
+            class="ps-card ps-pick"
+            data-platform-start-select={p.id}
+            aria-pressed="false"
+          >
+            <span class="ps-mark">
+              <PlatformMark id={p.id} size={28} />
+            </span>
+            <span class="ps-name">{p.name}</span>
+            <span class="ps-vocab">
+              {p.vocab.top}s, {p.vocab.mid}s, {p.vocab.row}s
+            </span>
+            <span class="ps-state">
+              <span class="ps-state-off">
+                <Icon name="circle-dashed" size={14} />
+                Select
+              </span>
+              <span class="ps-state-on">
+                <Icon name="circle-check" size={14} />
+                Selected
+              </span>
+            </span>
+          </button>
+        </li>
+      ))
+    }
+  </ul>
+
+  {/* THE DOOR, and the reason it exists: a selector does not take you anywhere, so without this the
+      reader is left holding a filter and no way through it. It points at "What we back up in X"
+      rather than at the connecting page ON PURPOSE — step 1 of the path directly below already
+      re-points itself at `/platforms/<id>/connecting/`, and two links to one page inside one screen
+      is the page arguing with itself about what to do next. The nine other pages of that platform
+      arrive in the documentation directory further down.
+
+      IT IS NOT THERE UNTIL THERE IS A PLATFORM. A door to nowhere and a "show all three" for a page
+      that is already showing all three are both controls that cannot act; and reserving their line
+      would charge the filter variant 40px of blank page the reactive variant does not pay, which
+      would leave the two differing by their spacing as well as by their behaviour. */}
+  <div class="ps-foot">
+    {
+      PLATFORMS.map((p) => (
+        <a class="ps-door" data-plat={p.id} href={`/platforms/${p.id}/what-we-back-up/`}>
+          What we back up in {p.name}
+          <Icon name="arrow-right" size={14} />
+        </a>
+      ))
+    }
+    <button type="button" class="ps-clear" data-platform-start-clear>Show all three</button>
+  </div>
+</section>
+
+<script>
+  import { mountPlatformStart } from '../lib/platform-start';
+  mountPlatformStart();
+</script>
+
+<style>
+  .ps {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .ps-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .ps-h {
+    margin: 0;
+    font-size: var(--bo-t-20);
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--bo-base-content);
+  }
+
+  .ps-sub {
+    margin: 0;
+    max-width: 38rem;
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  .ps-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .ps-grid > li {
+    display: flex;
+  }
+
+  /* A card rather than a chip, because this is the one place the choice is the subject of the
+     screen rather than a control beside something else. Flat, hairline, one surface step: the same
+     card the rest of this page uses, so it does not read as a promotion.
+
+     ONE RULE SET FOR BOTH VARIANTS. The doors are anchors and the selectors are buttons, so the
+     resets below (`font`, `text-align`, `appearance`) exist for the second and are inert for the
+     first. Two rule sets would be two paints for one card, and they would drift. */
+  .ps-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    width: 100%;
+    padding: 20px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out;
+  }
+
+  .ps-pick {
+    cursor: pointer;
+  }
+
+  .ps-card:hover {
+    border-color: var(--bo-primary);
+    background: var(--bo-base-200);
+  }
+
+  .ps-card:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .ps-mark {
+    display: flex;
+    margin-bottom: 8px;
+  }
+
+  /* A plain block since the availability chip beside it was removed; there is nothing left to lay
+     out in a row. */
+  .ps-name {
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    color: var(--bo-base-content);
+  }
+
+  /* The proof. Someone who works in Bases and Tables recognises their card here even if the mark
+     and the name both failed them. */
+  .ps-vocab {
+    font-size: var(--bo-t-13);
+    line-height: 1.45;
+    color: var(--bo-muted);
+  }
+
+  .ps-go,
+  .ps-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  .ps-go {
+    color: var(--bo-primary);
+  }
+
+  .ps-state-off,
+  .ps-state-on {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ps-state-off {
+    color: var(--bo-muted);
+  }
+
+  /* `--bo-soft-primary-fg`, NOT `--bo-primary`, and this was measured rather than reasoned. This
+     label is the only teal on the page that sits INSIDE a 20% teal tint, and that is the exact case
+     DESIGN.md's Two Soft Pairs rule exists for: the plain hue on its own tint measured 4.25:1 in
+     light theme, under the 4.5 floor. The darkened pair is what the tint is tuned against, and it
+     measures 5.25:1 on the same ground (8.35:1 in dark). The door in the foot keeps the plain hue, because it sits
+     on the page and not in a tint. */
+  .ps-state-on {
+    display: none;
+    color: var(--bo-soft-primary-fg);
+  }
+
+  /* ── Which variant is on screen ───────────────────────────────────────────────────────────────
+   * Keyed to `html[data-shots]`, which a pre-paint inline script in `LandingBody.astro` stamps
+   * BEFORE this markup is parsed, so the page cannot flash the losing variant. `display: none` and
+   * not `visibility` or `content-visibility`: those two leave the box in the layout, and the loser
+   * would go on charging the page its full height.
+   */
+  .ps-sub-pick,
+  .ps-grid-pick,
+  .ps-foot {
+    display: none;
+  }
+
+  :root[data-shots='filter'] .ps-sub-nav,
+  :root[data-shots='filter'] .ps-grid-nav {
+    display: none;
+  }
+
+  :root[data-shots='filter'] .ps-sub-pick {
+    display: block;
+  }
+
+  :root[data-shots='filter'] .ps-grid-pick {
+    display: grid;
+  }
+
+  /* BOTH ATTRIBUTES, and the second is the point: with no platform named there is no door to draw
+     and no narrowing to undo, so the row is not there at all. Reserving its height instead would
+     have cost the filter variant 40px of blank page that the reactive variant does not pay, and the
+     two would then have differed by their spacing as well as by their behaviour — which is exactly
+     what a one-variable comparison must not do. */
+  :root[data-shots='filter'][data-shot-platform] .ps-foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+
+  /* Starlight's prose rhythm is a general-sibling rule and it reaches inside any nested flex or
+     grid box: the first child keeps `margin-top: 0` and every sibling after it takes 16px. That is
+     what put a row of buttons 16px below each other inside their own row once already.
+     `not-content` on the section exempts the subtree; these are the belt to that pair of braces. */
+  .ps > *,
+  .ps-head > *,
+  .ps-grid > li > *,
+  .ps-card > *,
+  .ps-state > *,
+  .ps-foot > * {
+    margin-top: 0;
+  }
+
+  /* ── The selected card ────────────────────────────────────────────────────────────────────────
+   * DRIVEN BY THE ROOT ATTRIBUTE, NOT BY `aria-pressed`, for the reason `ShotSwitch.astro` gives:
+   * the attribute is stamped by the pre-paint script and `aria-pressed` is not corrected until the
+   * module runs, so keying to it would light the wrong card for a frame. `aria-pressed` is still
+   * maintained by `lib/platform-start.ts` — it is what a screen reader reads.
+   *
+   * THE PAINT IS THE DOCUMENTED FILTER-CHIP SELECTED STATE (DESIGN.md §5: teal border, 20% teal
+   * tint, teal label), not the roadmap's raised-tile-in-a-recessed-track. The roadmap's scope
+   * control can afford a track because its segments are small; wrapping three 12px-radius cards in
+   * one would be a card inside a card, which this system prohibits by name.
+   *
+   * `data-shot-platform` is only ever set when the preference names EXACTLY ONE platform, which is
+   * `lib/landing-strip.ts`'s rule: a reader with two on has not told us whose page this is, and no
+   * card should claim they did.
+   */
+  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable'],
+  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup'],
+  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion'] {
+    border-color: var(--bo-primary);
+    background: var(--bo-soft-primary-bg);
+  }
+
+  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable'] .ps-state-on,
+  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup'] .ps-state-on,
+  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion'] .ps-state-on {
+    display: inline-flex;
+  }
+
+  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable'] .ps-state-off,
+  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup'] .ps-state-off,
+  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion'] .ps-state-off {
+    display: none;
+  }
+
+  /* The hover would otherwise repaint the selected card back to the unselected grey, which reads as
+     the selection being cancelled by the pointer resting on it. */
+  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable']:hover,
+  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup']:hover,
+  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion']:hover {
+    background: var(--bo-soft-primary-bg-hover);
+  }
+
+  /* ── The foot ─────────────────────────────────────────────────────────────────────────────── */
+  .ps-door {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    line-height: 1.45;
+    color: var(--bo-primary);
+    text-decoration: none;
+    border-radius: var(--bo-r-4);
+  }
+
+  :root[data-shot-platform='airtable'] .ps-door[data-plat='airtable'],
+  :root[data-shot-platform='clickup'] .ps-door[data-plat='clickup'],
+  :root[data-shot-platform='notion'] .ps-door[data-plat='notion'] {
+    display: inline-flex;
+  }
+
+  .ps-door:hover {
+    text-decoration: underline;
+  }
+
+  .ps-door:focus-visible,
+  .ps-clear:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* THE WAY BACK, and it is the only one. A card that is already selected does not deselect on a
+     second click: three cards narrowing to one is a radio group, and a radio that turns itself off
+     when you press it again is how someone loses their choice by double-clicking. So the widening
+     is an explicit control, quiet, and shown only while there is something to widen — which is the
+     same offer the sidebar's narrowing notice makes on every documentation page. */
+  .ps-clear {
+    display: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--bo-t-13);
+    line-height: 1.45;
+    color: var(--bo-muted);
+    cursor: pointer;
+    border-radius: var(--bo-r-4);
+    transition: color 150ms ease-out;
+  }
+
+  :root[data-shot-platform] .ps-clear {
+    display: inline-block;
+  }
+
+  .ps-clear:hover {
+    color: var(--bo-base-content);
+  }
+
+  @media (max-width: 60rem) {
+    .ps-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

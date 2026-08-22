@@ -56,6 +56,10 @@
   "vars": {
     "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
     "PUBLIC_AUTH_BASE_URL": "https://baseout-dev.openside.workers.dev",
+    // Optional origin of apps/support. Leave unset until DNS + the support
+    // Worker are live (openspec/changes/support Phase 5). Local: set via
+    // wrangler --var to http://localhost:4342 while `pnpm dev:support` runs.
+    // "PUBLIC_SUPPORT_URL": "https://support.baseout.com",
     // Embedding hosts allowed to frame the app AND to complete the embed
     // handshake (shared-embed-protocol; one list feeds both frame-ancestors
     // and the child bridge). Dev allows any Chrome extension; production

@@ -1,0 +1,201 @@
+---
+/**
+ * "Show docs for" — the platform chips above the documentation tree.
+ *
+ * IT SUBTRACTS, IT NEVER SUBSTITUTES, and that distinction is the whole design. A platform DROPDOWN
+ * scopes the site: pick ClickUp and the docs claim to be ClickUp's, which is false for the 15 of our
+ * 38 pages that never name a platform at all. Clerk shipped that shape and their universal pages
+ * started losing to platform-scoped ones in search (their ticket, DOCS-11910); Next.js has had the
+ * same class of bug open for months, where switching the variant leaves you on a page that was never
+ * written for it. None of the six connector catalogs we surveyed uses one.
+ *
+ * A multi-select that starts with everything ON has neither problem. The first visit shows the whole
+ * documentation, so nothing is hidden from someone who has not chosen; narrowing removes noise and
+ * never replaces a page with another platform's.
+ *
+ * WHY IT LIVES ABOVE THE TREE rather than above the content: it governs what EXISTS, and the
+ * sidebar is where "what exists" is answered. Over the content it would compete with the page title
+ * and have no authority over navigation.
+ *
+ * THE MAP IS BUILT HERE, NOT GUESSED IN THE BROWSER. Every page carrying a `platform` frontmatter
+ * field is emitted as href → platform so the client can hide the right rows without parsing titles.
+ * The site is static, so this is the only moment the two halves can meet.
+ */
+import { getCollection } from 'astro:content';
+import { PLATFORMS, FILTER_KEY } from '../lib/platforms';
+import PlatformMark from './PlatformMark.astro';
+
+const docs = await getCollection('docs');
+const pages: Record<string, string> = {};
+for (const entry of docs) {
+  const id = (entry as { data: { platform?: string } }).data.platform;
+  if (id) pages[`/${entry.id}/`] = id;
+}
+
+/* The whole mark travels with the map so the client can draw one on each row it finds: viewBox,
+   gradient defs and every path with its own fill. Sending the geometry rather than a class name
+   means the sidebar's rows and the chips above them come from one source; a second copy of these
+   paths in a stylesheet would be a second thing to keep in step with `lib/platforms.ts`. */
+const marks = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.mark]));
+---
+
+<div class="pf" data-platform-filter data-storage-key={FILTER_KEY}>
+  <span class="pf-h" id="pf-h">Show docs for</span>
+
+  <div class="pf-chips" role="group" aria-labelledby="pf-h">
+    {
+      PLATFORMS.map((p) => (
+        <button
+          type="button"
+          class="pf-chip"
+          data-platform-chip={p.id}
+          aria-pressed="true"
+          title={`Show ${p.name} pages`}
+        >
+          <PlatformMark id={p.id} size={13} />
+          <span>{p.name}</span>
+        </button>
+      ))
+    }
+  </div>
+
+  {/* Shown only while something is hidden. A filter set weeks ago and then forgotten is how a
+      reader concludes we never wrote the page, so it is never allowed to go quiet. */}
+  <p class="pf-narrow" data-platform-narrow hidden>
+    <span data-platform-narrow-text></span>
+    <button type="button" data-platform-show-all>Show all</button>
+  </p>
+
+  {/* `is:inline` says out loud what Astro would do anyway with an attribute present, and stops the
+      compiler warning that this script will not be processed. It is data, not code. */}
+  <script
+    is:inline
+    type="application/json"
+    data-platform-map
+    set:html={JSON.stringify({ pages, marks })}
+  />
+</div>
+
+<script>
+  import { mountPlatformFilter } from '../lib/platform-filter';
+  mountPlatformFilter();
+</script>
+
+<style>
+  .pf {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 0 16px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  /* 11px is the floor, and it is spent here rather than on anything read in sequence: an uppercase
+     tracked micro-label is a signpost, not prose. */
+  .pf-h {
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .pf-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* THE CHIP IS NEUTRAL AND THE LOGO IS NOT. Painting the whole chip in the accent made three
+     different products look like three states of one thing, and buried the only part that carries
+     recognition (Oleh, 2026-08-20). So the chip states itself in greys and the mark keeps its own
+     brand colour: on, the chip has a ground and the mark is in full colour; off, the ground goes and
+     the mark goes grey. Pressed is the DEFAULT here, because everything starts on. */
+  .pf-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 999px;
+    background: none;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-12);
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+
+  .pf-chip:hover {
+    border-color: var(--bo-primary);
+    color: var(--bo-base-content);
+  }
+
+  .pf-chip[aria-pressed='true'] {
+    border-color: var(--bo-base-300);
+    background: var(--bo-base-200);
+    color: var(--bo-base-content);
+  }
+
+  .pf-chip:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 1px;
+  }
+
+  /* Off is DESATURATED, not faded away. A row where one logo vanishes reads as a rendering fault,
+     and the silhouette is what makes the row scannable without reading it; draining the colour says
+     "not now" while keeping the shape that says which one. */
+  /* A MONOCHROME BRAND CANNOT DESATURATE, so a small dim carries the off-state for Notion, whose
+     mark is already grey. It is 0.8 and not the 0.55 this shipped with: at 0.55 the ClickUp mark —
+     two gradients that grayscale to a mid tone — composited into the dark ground and disappeared
+     entirely, which is the exact failure the paragraph above forbids. Measured, not guessed. */
+  .pf-chip[aria-pressed='false'] :global(.bo-mark) {
+    filter: grayscale(1);
+    opacity: 0.8;
+  }
+
+
+  /* Amber, because this is "read this before you draw a conclusion". Not red: nothing is broken,
+     and the reader chose it. */
+  .pf-narrow {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-warning-bg);
+    color: var(--bo-soft-warning-fg);
+    font-size: var(--bo-t-12);
+    line-height: 1.45;
+  }
+
+  .pf-narrow[hidden] {
+    display: none;
+  }
+
+  .pf-narrow button {
+    margin-left: auto;
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: var(--bo-t-12);
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .pf-narrow button:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+</style>

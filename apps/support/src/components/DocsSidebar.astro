@@ -1,0 +1,19 @@
+---
+/**
+ * Starlight's sidebar, with the platform chips above it.
+ *
+ * AN OVERRIDE THAT DELEGATES. The tree itself, its persistence across navigations and its mobile
+ * behaviour are Starlight's; re-implementing any of that to gain a row above it would mean owning
+ * three things to add one.
+ *
+ * The filter sits ABOVE the tree and inside the same scroll container, so it scrolls away with the
+ * documentation rather than pinning a control the reader has already used. The notice it raises
+ * when something is hidden is the part that must not scroll out of reach, and that one is repeated
+ * on the page itself.
+ */
+import Default from '@astrojs/starlight/components/Sidebar.astro';
+import PlatformFilter from './PlatformFilter.astro';
+---
+
+<PlatformFilter />
+<Default><slot /></Default>
