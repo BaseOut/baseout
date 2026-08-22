@@ -11,6 +11,7 @@ import {
   likePattern,
   normalizeSearchConfig,
   paginateChangelog,
+  pickLatestSchemaHashByBase,
   type PaginableEntry,
 } from "../../../src/lib/per-space/schema-query";
 
@@ -154,5 +155,28 @@ describe("paginateChangelog", () => {
     const p3 = paginateChangelog(feed, { limit: 2, cursor: p2.nextCursor! });
     expect(p3.entries.map((x) => x.entityId)).toEqual(["f1"]);
     expect(p3.nextCursor).toBeNull();
+  });
+});
+
+describe("pickLatestSchemaHashByBase", () => {
+  it("keeps the newest startedAt hash per base in one pass", () => {
+    const older = new Date("2026-01-01T00:00:00Z");
+    const newer = new Date("2026-08-01T00:00:00Z");
+    expect(
+      pickLatestSchemaHashByBase([
+        { baseId: "appA", hash: "old", startedAt: older },
+        { baseId: "appB", hash: "b", startedAt: older },
+        { baseId: "appA", hash: "new", startedAt: newer },
+      ]),
+    ).toEqual({ appA: "new", appB: "b" });
+  });
+
+  it("treats a missing startedAt as oldest", () => {
+    expect(
+      pickLatestSchemaHashByBase([
+        { baseId: "appA", hash: "no-ts", startedAt: null },
+        { baseId: "appA", hash: "dated", startedAt: new Date("2026-01-01T00:00:00Z") },
+      ]),
+    ).toEqual({ appA: "dated" });
   });
 });

@@ -19,6 +19,7 @@ import {
   type ScopedEntity,
 } from "../../../../lib/per-space/schema-read-io";
 import { clampLimit } from "../../../../lib/per-space/schema-query";
+import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,11 +50,24 @@ export async function spacesSchemaReadHandler(
     return jsonResponse({ error: "invalid_request", param: "entity" }, 400);
   }
 
-  const { db: masterDb } = locals.getMasterDb();
+  const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
   if (!space || space.status !== "active") return jsonResponse({ error: "space_db_not_ready" }, 409);
   if (space.backend !== "managed_pg" || !space.pgLocator) {
     return jsonResponse({ error: "backend_not_implemented" }, 501);
+  }
+
+  try {
+    await ensureSpaceSchemaCurrent(masterDb, sql, {
+      spaceId,
+      pgLocator: space.pgLocator,
+      schemaVersion: space.schemaVersion,
+    });
+  } catch (err) {
+    return jsonResponse(
+      { error: "upgrade_failed", message: err instanceof Error ? err.message : String(err) },
+      500,
+    );
   }
 
   try {

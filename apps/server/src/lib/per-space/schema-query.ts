@@ -280,3 +280,19 @@ export function paginateChangelog<E extends PaginableEntry>(
   }
   return { entries: page, nextCursor };
 }
+
+/**
+ * Collapse base-run rows (one query) into the newest schema_hash per base.
+ * Used by schemaHashesFor so getSchema is O(1) queries, not O(bases).
+ */
+export function pickLatestSchemaHashByBase(
+  rows: { baseId: string; hash: string | null; startedAt: Date | null }[],
+): Record<string, string | null> {
+  const best = new Map<string, { hash: string | null; t: number }>();
+  for (const row of rows) {
+    const t = row.startedAt?.getTime() ?? 0;
+    const prev = best.get(row.baseId);
+    if (!prev || t > prev.t) best.set(row.baseId, { hash: row.hash, t });
+  }
+  return Object.fromEntries([...best].map(([id, v]) => [id, v.hash]));
+}

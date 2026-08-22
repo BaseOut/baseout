@@ -18,6 +18,7 @@ import {
   decodeCursor,
   encodeCursor,
   likePattern,
+  pickLatestSchemaHashByBase,
   type MatchField,
   type SearchConfig,
 } from "./schema-query";
@@ -29,22 +30,29 @@ const isoOrNull = (d: Date | null): string | null => (d ? d.toISOString() : null
 /**
  * Current captured schema hash per base = the schema_hash on that base's most
  * recent base_run. `apps/api` derives ETags from this; it never hashes itself.
+ *
+ * One query for the whole Space — a per-base loop was O(bases) extra RTTs on
+ * every getSchema (the large-catalog cliff on Data/Schema first paint).
  */
 export async function schemaHashesFor(
   tx: SpaceTx,
   baseIds: string[],
 ): Promise<Record<string, string | null>> {
+  const unique = [...new Set(baseIds)];
   const out: Record<string, string | null> = {};
-  for (const baseId of [...new Set(baseIds)]) {
-    const [row] = await tx
-      .select({ hash: spacePg.baseRuns.schemaHash })
-      .from(spacePg.baseRuns)
-      .where(and(eq(spacePg.baseRuns.baseId, baseId), isNotNull(spacePg.baseRuns.schemaHash)))
-      .orderBy(desc(spacePg.baseRuns.startedAt))
-      .limit(1);
-    out[baseId] = row?.hash ?? null;
-  }
-  return out;
+  for (const id of unique) out[id] = null;
+  if (unique.length === 0) return out;
+
+  const rows = await tx
+    .select({
+      baseId: spacePg.baseRuns.baseId,
+      hash: spacePg.baseRuns.schemaHash,
+      startedAt: spacePg.baseRuns.startedAt,
+    })
+    .from(spacePg.baseRuns)
+    .where(and(inArray(spacePg.baseRuns.baseId, unique), isNotNull(spacePg.baseRuns.schemaHash)));
+
+  return { ...out, ...pickLatestSchemaHashByBase(rows) };
 }
 
 // ───────────────────────── scoped, paginated reads (design D1/D3) ─────────────────────────
