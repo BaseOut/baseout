@@ -43,8 +43,13 @@ overrides:
 allowBuilds:
   # Test-only local Postgres for the createTestHarness spike
   # (openspec/changes/system-test-harness-spike) — unpacks the zonky
-  # PostgreSQL 16 binaries on machines without Docker.
+  # PostgreSQL 16 binaries on machines without Docker. CI runs on
+  # ubuntu-latest (linux-x64); omitting that optional dep fails
+  # `pnpm install --frozen-lockfile` with ERR_PNPM_IGNORED_BUILDS.
   '@embedded-postgres/darwin-arm64': true
+  '@embedded-postgres/darwin-x64': true
+  '@embedded-postgres/linux-arm64': true
+  '@embedded-postgres/linux-x64': true
   esbuild: true # Vite / Astro bundler — installs platform binary
   msw: true # Test mocking — sets up service worker
   protobufjs: true # Transitive — codegens long.js descriptors
