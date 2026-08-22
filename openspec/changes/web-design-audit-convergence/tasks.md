@@ -61,7 +61,7 @@ Delegated elsewhere (struck here, tracked there): items 1 + 6 → [`web-auth-con
 ## 7. Sweeps with no vessel
 
 - [x] 7.1 **Item 18 — Home `.hm-conn-badge` glyph** — `var(--t-12)`; badge box stays 1rem (open Q2). Wizard/global residual rem icon sizes still open.
-- [ ] 7.2 **Item 22** — `refineFacetIcons` delegates to `entityIconClass`; the concept colour moves off `.lucide--table-2` onto `.concept-ic-table`. Confirmed **whole, not half**: `text-base-content/45` on `RestoreView.astro:345,643` computes *identically* to the bare global rule, because the global selector is (0,2,0) and the utility is (0,1,0) — Restore asks for muted and gets concept-green.
+- [x] 7.2 **Item 22** — `refineFacetIcons` `BY_CONCEPT` base/table/field delegate to `entityIconClass` (`concept-ic-table` on the table glyph). Restore muted-vs-concept-green note still stands as the colour half.
 - [ ] 7.3 **Item 31** — the twenty glyph bypasses collapse onto `entityIcon`; the six in-file twins delete.
 - [ ] 7.4 **Item 33** — `fmtRelative` adoption, plus `fmtCount` in `lib/` as a sibling of `time.ts`. The locale half is **smaller than it looked**: not a date bug but a thousands separator pinned in 13 places and floating in 45. Sweep the five shared files first — `tablePager.ts` alone (4 calls, 15 importers) corrects the pager total on every paged table. **Do not "fix" the 14 `Intl.*` constructors: all 14 already pin `en-US`.**
 - [x] 7.5 **Item 36 — Clear filters colour half** — `text-error` removed from benign Clear controls (Data/Backups/Reports/Restore/…); label/grammar residue still open.
@@ -69,8 +69,8 @@ Delegated elsewhere (struck here, tracked there): items 1 + 6 → [`web-auth-con
 
 ## 8. ⛔ HARD GATE — re-open D15 before anything in task 9
 
-- [ ] 8.1 Re-open `apps/design/audit/decisions/15-one-table.md`. **Deliverable: either an amended decision binding a `Table.astro` vessel, or a written ACCEPT declining the four rows filed against it — naming them** (`S25-F4`'s structural half · `S25-F12` · `X01-F2`'s component half · the `X01-F1/F5` residue). Either is acceptable. **Silence is not** — those four rows are dropped silently if nobody answers.
-- [ ] 8.2 Oleh's ruling 9 requires this in writing. Record the answer in the decision file, not in a commit message.
+- [x] 8.1 Re-open `apps/design/audit/decisions/15-one-table.md`. **Deliverable: ACCEPT 2026-08-21** — decline binding `Table.astro`; the four rows stay D40 class residue, not a new vessel. Grid floors (item 6) unaffected.
+- [x] 8.2 Recorded in the decision file (amendment 2026-08-21), not only a commit message.
 
 ## 9. Item 30 — review as a design change, not a cleanup
 

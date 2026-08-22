@@ -18,6 +18,8 @@
  * name built by concatenation would not be in the compiled CSS at runtime.
  */
 
+import { entityIconClass } from '../components/schema/entityIcon'
+
 /** Full facet names, for concepts that only exist on one surface. */
 const BY_NAME: Record<string, string> = {
   // Records ▸ the typed condition builder and the field show/hide picker.
@@ -44,9 +46,9 @@ const BY_NAME: Record<string, string> = {
 
 /** Concepts that mean the same thing on every surface — the prefix is stripped before lookup. */
 const BY_CONCEPT: Record<string, string> = {
-  base: 'lucide--database',
-  table: 'lucide--table-2',
-  field: 'lucide--tag',
+  base: entityIconClass('base'),
+  table: entityIconClass('table'),
+  field: entityIconClass('field'),
   date: 'lucide--calendar',
   time: 'lucide--calendar',
   group: 'lucide--layers',

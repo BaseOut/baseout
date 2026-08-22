@@ -147,3 +147,27 @@ prevent.
 
 **Two of the six unbounded tables in D41 item 6 are inside this decision's §3** — do not touch them
 until the gate is answered, and do not double-count them.
+
+---
+
+## AMENDMENT 2026-08-21 — **ACCEPT: decline binding `Table.astro` as a vessel**
+
+The hard gate required a written answer. Silence is no longer the default.
+
+**Disposition: ACCEPT — decline the four filed rows as a reason to bind a new `Table.astro` vessel.** They stay as class-level residue under D40 (`.tbl-colhead` / `tableSort.ts` / `TablePager`), not as a cataloged table component that every list must mount.
+
+**Why (evidence, not taste):**
+
+1. **Runtime headers cannot be a static vessel.** Data Browse (and Schema Health's metric band) build `<th>` sets from the live schema. A Storybook `Table.astro` with a fixed column recipe cannot express that without becoming a passthrough wrapper — the audit already recorded this as X-M19 / DataBrowse being skipped by binary greps.
+2. **Waves 1–2 already shared the table job.** `tableSort.ts`, `TablePager`, `.tbl-frame`, `.tbl-colhead`, and `wireRowKeys` are the shared anatomy. Item 26/27 remaining work is adoption of those classes, which D40 said must happen either way and a later vessel does not undo.
+3. **The four rows do not need a new component to close honestly:**
+   - **S25-F4 structural half** — still blocked on `DestinationSummary.inUseBy` lacking `spaceId` (P7.1). A vessel would not grow the model.
+   - **S25-F12** — dead keyboard wiring over a one-column list; correct when rows have ids (same P7.1), not when the markup is wrapped.
+   - **X01-F2 component half** — the 9-class / 1-component observation is real; the remedy in this tree is D40 class convergence, not a second pager-shaped extraction.
+   - **X01-F1 / X01-F5 residue** — header/sort work that class adoption covers; leftover after D40 is follow-up, not a vessel trigger.
+
+**What this ACCEPT does not do:** it does not cancel item 6 (Health grid floors — still ship). It does not cancel pager adoption on unbounded tables that are *outside* this decision's §3. It does not forbid a future `Table.astro` if a second identical static-header call site appears (YAGNI until then).
+
+**Who can reopen:** a design ruling that binds a vessel against the residue after items 26–28 land. Until then the four rows are **declined as vessel-blockers**, not silently dropped.
+
+

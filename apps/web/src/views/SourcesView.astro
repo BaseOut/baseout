@@ -16,6 +16,7 @@
 import Alert from '../components/ui/Alert.astro';
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
+import { SOURCE_PLATFORMS } from '../lib/provider-catalog';
 import type { SourceSummary } from '../stores/sources';
 
 interface Props {
@@ -56,6 +57,7 @@ const detailHref = (s: SourceSummary) =>
   s.status === 'needs_connection'
     ? `/sources/detail?id=${s.id}&new=1&method=${s.auth}&name=${encodeURIComponent(s.name)}`
     : `/sources/detail?id=${s.id}`;
+const comingSoonPlatforms = SOURCE_PLATFORMS.filter((p) => p.availability === 'coming_soon');
 ---
 
 <div class="mx-auto max-w-5xl space-y-6">
@@ -155,7 +157,7 @@ const detailHref = (s: SourceSummary) =>
             >
               <td>
                 <div class="flex flex-col">
-                  <span class="font-semibold">{s.name}</span>
+                  <a href={detailHref(s)} class="font-semibold hover:underline">{s.name}</a>
                   <span class="text-xs text-base-content/66">{s.auth === 'pat' ? 'Personal access token' : 'OAuth'}</span>
                 </div>
               </td>
@@ -170,6 +172,20 @@ const detailHref = (s: SourceSummary) =>
       </table>
       </div>
     </div>
+  )}
+
+  {comingSoonPlatforms.length > 0 && (
+    <section>
+      <h2 class="mb-3 text-xs font-bold uppercase tracking-wider text-base-content/50">More sources coming soon</h2>
+      <div class="grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
+        {comingSoonPlatforms.map((p) => (
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 opacity-70">
+            <span class="min-w-0 text-sm font-semibold">{p.label}<span class="block text-xs font-normal text-base-content/50">{p.note}</span></span>
+            <Badge variant="default">Coming soon</Badge>
+          </div>
+        ))}
+      </div>
+    </section>
   )}
 </div>
 

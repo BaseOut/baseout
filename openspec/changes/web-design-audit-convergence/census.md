@@ -40,14 +40,14 @@ S1 register rows: audit claims **74**. This census tracks them via the 41 ship-o
 | 14 | EmptyState vessel adoption | outstanding (partial) | Data + **BackupsListView / RestoreHistoryView** empties (action slot for modal CTA). Registry `.reg-empty` left deliberate. |
 | 15 | Badge only path + Running primary | outstanding (15b + banned-pair batch) | Vessel + Running→primary. **Banned `badge-soft badge-neutral` → `badge-ghost`**: Inbox (4) + Won't retry (2). Full raw-class sweep still open. |
 | 16 | Double-submit + failed-action toast | already-satisfied | `postCancelRun` toasts on !ok / throw; UndoToast on BackupRunDetail + BackupHistoryWidget. |
-| 17 | wireRowKeys | already-satisfied | `lib/wireRowKeys.ts` + importers incl. `Table.astro`. **D15 hard gate still unanswered** in writing. |
+| 17 | wireRowKeys | already-satisfied | `lib/wireRowKeys.ts` + importers incl. `Table.astro`. **D15 answered 2026-08-21 (ACCEPT — no Table.astro vessel).** |
 | 18 | Sub-12px icons | outstanding (partial) | `.hm-conn-badge .iconify` → `var(--t-12)` (badge box stays 1rem — open Q2). Wizard / global residual rem sizes remain. |
 | 19 | Spec doc corrections | owned-by-sync-reconcile | Designer's docs; push UP via `/sync-reconcile`, not edit here (§3.6). |
 | 20 | Support dead end | owned-by-support | Q#6 skip. CTAs → `/help`. Change PROPOSED 0/32. |
 | 21 | Connect wizard → Alert | outstanding (partial) | Cleanup schedule + BaseSelectionTable banners on Alert. `.switch-confirm` / `.bases-reset-note` still bespoke. |
-| 22 | refineFacetIcons + concept colour | outstanding | `refineFacetIcons.ts` still hardcodes `lucide--table-2`. |
+| 22 | refineFacetIcons + concept colour | already-satisfied | `refineFacetIcons.ts` `BY_CONCEPT` delegates `base`/`table`/`field` to `entityIconClass` (includes `concept-ic-table`). |
 | 23 | Remaining exitEdit (C4/C7) | already-satisfied | Same `registryEditMode` as #2. |
-| 24 | Lead cell `<a href>` | outstanding | Rows still `onclick`/`location=` on Sources/Dest/Reports/Backups. |
+| 24 | Lead cell `<a href>` | outstanding (partial) | Sources + Destinations name cells are real `<a href>` (⌘-click). Reports/Backups rows still `onclick`. |
 | 25 | Breadcrumb consumer | outstanding | `Breadcrumbs.astro` unused by views; Record crumbs are spans. |
 | 26 | aria-sort + header buttons | outstanding (partial) | Present on `Table.astro` / some Data; many hand-built `<th data-sort-col>` lack `aria-sort`. |
 | 27 | data-sort-col off element name | outstanding | Still on `<th>` widely. |
@@ -56,7 +56,7 @@ S1 register rows: audit claims **74**. This census tracks them via the 41 ship-o
 | 30 | btn-md carve-out | already-satisfied | **0** `btn-md` in apps/web. |
 | 31 | entityIcon bypasses | outstanding | Bypass glyphs remain (Restore, refine, …). |
 | 32 | One page name · one narrow tier | outstanding | Sweep not complete. |
-| 33 | fmtRelative + fmtCount | outstanding | `fmtRelative` in `time.ts`; **no** `fmtCount`; `tablePager` still bare `toLocaleString()`. |
+| 33 | fmtRelative + fmtCount | outstanding (partial) | `fmtRelative` in `time.ts`; **`fmtCount`** in `lib/fmtCount.ts`; `tablePager` uses it. Remaining: other `toLocaleString()` count sites. |
 | 34 | wireViewState Schema/Data | outstanding | Module exists; not on Schema’s nine / DataBrowse. |
 | 35 | setButtonLoading convergence | outstanding (partial) | DocsTab Save/Delete/New → `setButtonLoading`. Other one-offs (StaticImport, BaseSelectionTable, ReportDefinition, …) remain. |
 | 36 | text-error Clear filters | already-satisfied (colour half) | `text-error` removed from Clear controls. Label/grammar residue still open. |
