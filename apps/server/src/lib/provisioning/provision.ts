@@ -53,11 +53,16 @@ export interface SpaceDbProvisionWriter {
     recordsEnabled: boolean;
     provisionedByUserId?: string | null;
   }): Promise<void>;
-  /** Mark active with the backend locator + applied schema version. */
+  /**
+   * Mark active with the backend locator + applied schema version. `backend`
+   * tells the writer which locator column(s) the string maps to (pg_locator
+   * for managed_pg; d1_database_id + d1_database_name for d1).
+   */
   markActive(input: {
     spaceId: string;
     locator: string | null;
     schemaVersion: number;
+    backend: SpaceDbBackend;
   }): Promise<void>;
   /** Mark error with a message. */
   markError(input: { spaceId: string; message: string }): Promise<void>;
@@ -67,7 +72,14 @@ export interface SpaceDbProvisionWriter {
 export interface ProvisionBackends {
   /** managed_pg: create the schema-per-Space + apply DDL; returns pg_locator. */
   managedPg: (spaceId: string) => Promise<string>;
-  // d1 + byodb factories land when those backends are implemented.
+  /**
+   * d1: create the per-Space D1 database via the Cloudflare REST API + apply
+   * the sqlite DDL; returns the serialized D1 locator (server-d1-backend).
+   * Optional — the route supplies it only when CLOUDFLARE_ACCOUNT_ID +
+   * CLOUDFLARE_D1_API_TOKEN are configured; absent ⇒ backend_not_implemented.
+   */
+  d1?: (spaceId: string) => Promise<string>;
+  // byodb factory lands when that backend is implemented.
 }
 
 export interface ProvisionDeps {
@@ -131,8 +143,13 @@ export async function provisionSpaceDatabase(
     provisionedByUserId: input.provisionedByUserId ?? null,
   });
 
-  if (backend !== "managed_pg") {
-    // d1 + byodb are not wired yet (tracer bullet = managed_pg first).
+  const factory =
+    backend === "managed_pg"
+      ? deps.backends.managedPg
+      : backend === "d1"
+        ? deps.backends.d1
+        : undefined; // byodb is not wired yet
+  if (!factory) {
     await deps.writer.markError({
       spaceId: input.spaceId,
       message: `backend_not_implemented:${backend}`,
@@ -141,11 +158,12 @@ export async function provisionSpaceDatabase(
   }
 
   try {
-    const locator = await deps.backends.managedPg(input.spaceId);
+    const locator = await factory(input.spaceId);
     await deps.writer.markActive({
       spaceId: input.spaceId,
       locator,
       schemaVersion: SPACE_SCHEMA_VERSION,
+      backend,
     });
     return { ok: true, status: "active", backend, locator };
   } catch (err) {
@@ -163,16 +181,25 @@ export async function provisionSpaceDatabase(
 // fakes; the PG-backed deps are wired by the DELETE branch of the
 // provision-database route.
 //
-// d1/byodb teardown is deferred with those backends (needs the Cloudflare D1
-// API token / customer DB creds); a row with no locator (never provisioned) is
-// dropped without a backend call. The caller for a real Space-delete flow lives
-// in apps/web (master DB owns Spaces) — that cross-app wire is the follow-up.
+// The d1 arm (server-d1-backend 3.2) is injected like the pg one: the route
+// supplies deleteD1 only when the Cloudflare API token is configured; absent ⇒
+// backend_not_implemented, matching the provision side. byodb teardown is
+// deferred with that backend (needs customer DB creds); a row with no locator
+// (never provisioned) is dropped without a backend call. The caller for a real
+// Space-delete flow lives in apps/web (master DB owns Spaces) — that cross-app
+// wire is the follow-up.
 
 export interface DeprovisionDeps {
-  /** Current backend + locator for the Space, or null if there is no row. */
+  /**
+   * Current backend + locator for the Space, or null if there is no row.
+   * For d1 rows the locator is the database UUID (d1_database_id) — what the
+   * Cloudflare DELETE endpoint addresses.
+   */
   getRow(spaceId: string): Promise<{ backend: string; locator: string | null } | null>;
   /** Drop the managed_pg schema-per-Space (idempotent DROP SCHEMA … CASCADE). */
   dropManagedPg(spaceId: string): Promise<void>;
+  /** Delete the per-Space D1 database (idempotent; 404 = success). Optional — supplied only when the CF API token is configured. */
+  deleteD1?(locator: string): Promise<void>;
   /** Delete the space_databases control-plane row. */
   deleteRow(spaceId: string): Promise<void>;
 }
@@ -198,8 +225,13 @@ export async function deprovisionSpaceDatabase(
     return { ok: true, status: "deprovisioned" };
   }
 
-  if (row.backend !== "managed_pg") {
-    // d1/byodb teardown needs the backend's own credentials — deferred.
+  const teardown =
+    row.backend === "managed_pg"
+      ? () => deps.dropManagedPg(input.spaceId)
+      : row.backend === "d1" && deps.deleteD1
+        ? () => deps.deleteD1!(row.locator!)
+        : undefined; // byodb, or d1 without the CF API token configured
+  if (!teardown) {
     return {
       ok: false,
       code: "backend_not_implemented",
@@ -208,7 +240,7 @@ export async function deprovisionSpaceDatabase(
   }
 
   try {
-    await deps.dropManagedPg(input.spaceId);
+    await teardown();
     await deps.deleteRow(input.spaceId);
     return { ok: true, status: "deprovisioned" };
   } catch (err) {

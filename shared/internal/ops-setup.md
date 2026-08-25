@@ -270,6 +270,31 @@ owned by web's migrations (`apps/web/drizzle/0025_admin_audit_log.sql`) — run
 **When to redeploy:** any `apps/admin` source change; plus redeploy **web**
 whenever `ADMIN_APP_URL` or the handoff secret changes.
 
+### §D1 — Per-Space D1 provisioning token (`CLOUDFLARE_D1_API_TOKEN`)
+
+The engine (`apps/server`) creates/deletes/queries one Cloudflare **D1 database
+per Space** (`baseout-{env}-space-{spaceId}`, `server-d1-backend`) via the
+Cloudflare REST API — runtime-created databases cannot be Worker bindings, so
+this rides an API token instead of a binding.
+
+**Generate** (dashboard → My Profile → API Tokens → Create Token → Custom):
+
+- Permission: **Account → D1 → Edit** — nothing else (least privilege,
+  CLAUDE.md §3.3). Scope to this account only.
+- Holder: the **engine Worker only** — never web, never workflows (workflows
+  reaches per-Space data only through engine internal routes).
+- Set per env: engine `.dev.vars` locally (`CLOUDFLARE_ACCOUNT_ID`,
+  `CLOUDFLARE_D1_API_TOKEN`, `BASEOUT_ENV`) — the deploy script bulk-syncs;
+  staging/production via their own secret sets. Unset ⇒ the `d1` backend
+  answers 501 and everything else is unaffected.
+- The same pair also powers the D1 DB-size meter (shared-entitlements 3.2).
+
+**Rotation:** mint the replacement token first, update `.dev.vars` (dev) /
+env secrets (staging, prod), redeploy, then revoke the old token. Blast
+radius note: D1:Edit can delete any D1 database on the account (Cloudflare
+cannot scope per-database) — accepted risk recorded in
+`openspec/changes/server-d1-backend/design.md`.
+
 ---
 
 ## 2. DigitalOcean — Postgres per env

@@ -11,13 +11,21 @@ export interface Env {
   /** Hyperdrive binding — used in deployed envs (production / staging). Optional locally. */
   HYPERDRIVE?: Hyperdrive;
   /**
-   * Cloudflare account + a D1-read API token — used by the DB-size meter
-   * (shared-entitlements 3.2) to read a D1 Space's `file_size` via the CF REST
-   * API (PRAGMAs unsupported). Optional: absent until the token is provisioned,
-   * in which case D1 DB-size measurement returns null (managed_pg is unaffected).
+   * Cloudflare account + a D1 API token (scoped D1:Edit, this account only —
+   * ops-setup.md §D1). Used by per-Space D1 provisioning/teardown/queries
+   * (server-d1-backend) and the DB-size meter (shared-entitlements 3.2).
+   * Optional: absent until the token is provisioned, in which case the d1
+   * backend answers 501 and D1 DB-size measurement returns null (managed_pg
+   * is unaffected).
    */
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_D1_API_TOKEN?: string;
+  /**
+   * Environment segment for per-Space/per-org Cloudflare resource names
+   * (`baseout-{env}-space-{spaceId}` D1 databases, mirroring the R2 bucket
+   * convention). Lowercase [a-z0-9-_]. Defaults to "dev" when unset.
+   */
+  BASEOUT_ENV?: string;
   /**
    * AES-256-GCM key (base64-encoded 32 bytes) — must match apps/web.
    * The engine decrypts connection/storage tokens and re-encrypts on BYOS

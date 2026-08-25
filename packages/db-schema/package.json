@@ -26,6 +26,11 @@
       "types": "./src/space/pg-ddl-upgrade.ts",
       "import": "./src/space/pg-ddl-upgrade.ts",
       "default": "./src/space/pg-ddl-upgrade.ts"
+    },
+    "./space/sqlite-ddl": {
+      "types": "./src/space/sqlite-ddl.ts",
+      "import": "./src/space/sqlite-ddl.ts",
+      "default": "./src/space/sqlite-ddl.ts"
     }
   },
   "scripts": {

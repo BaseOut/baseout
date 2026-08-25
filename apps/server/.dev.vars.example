@@ -48,6 +48,17 @@ INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 # Generate: `openssl rand -base64 32`.
 BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
 
+# === Per-Space D1 provisioning (server-d1-backend) ===
+# Account-scoped Cloudflare API token, permission D1:Edit ONLY (least
+# privilege). The engine creates/deletes/queries per-Space D1 databases via
+# the Cloudflare REST API — runtime-created databases cannot be Worker
+# bindings. Generation/rotation: shared/internal/ops-setup.md §D1.
+# Leave both unset to keep the d1 backend answering 501 (managed_pg unaffected).
+# BASEOUT_ENV names the env segment in `baseout-{env}-space-{spaceId}` (default dev).
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_D1_API_TOKEN=
+BASEOUT_ENV=dev
+
 # === Airtable on-demand token refresh (self-heal expired tokens) ===
 # ConnectionDO lazy-refreshes an expired Airtable access token on /token using
 # the stored refresh token — so backups don't 401 on a stale token and you never

@@ -20,6 +20,8 @@ apps/server/.openspec-target
 # Personal / ephemeral
 meeting.link
 brainstorm-agenda.html
+.tmp/
+.cursor/
 
 # Environment + secrets (NEVER commit)
 .dev.vars

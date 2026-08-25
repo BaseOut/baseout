@@ -4,7 +4,9 @@
 // lifecycle (web never connects to per-Space DBs), so provisioning runs here:
 // validate posture → upsert space_databases → create the backend + apply the
 // per-Space schema → mark active. managed_pg runs inline (schema-per-Space DDL
-// on the shared cluster, fast); d1/byodb are not yet wired (501).
+// on the shared cluster, fast); d1 creates a real Cloudflare D1 database via
+// the REST API when CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_D1_API_TOKEN are set
+// (server-d1-backend) — without them the d1 arm answers 501, as byodb does.
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 //
@@ -28,11 +30,20 @@ import {
   dropManagedPgSchema,
   drizzleSpaceDbWriter,
 } from "../../../../lib/provisioning/provision-pg";
+import { applyD1Schema } from "../../../../lib/provisioning/provision-d1";
+import { deleteD1Database, type D1ApiConfig } from "../../../../lib/provisioning/d1-api";
 import { resolveEntitlements } from "../../../../lib/entitlements/resolve";
 import { spaceDatabases, spaces } from "../../../../db/schema";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** D1 REST config when the token is provisioned; null keeps the d1 arm at 501. */
+function d1ConfigFromEnv(env: Env): D1ApiConfig | null {
+  return env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_D1_API_TOKEN
+    ? { accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_D1_API_TOKEN }
+    : null;
+}
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -56,19 +67,30 @@ export async function spacesProvisionDatabaseHandler(
       return jsonResponse({ error: "invalid_request" }, 400);
     }
     const { db, sql } = locals.getMasterDb();
+    const d1Config = d1ConfigFromEnv(env);
     const result = await deprovisionSpaceDatabase(
       {
         async getRow(id) {
           const [row] = await db
-            .select({ backend: spaceDatabases.backend, locator: spaceDatabases.pgLocator })
+            .select({
+              backend: spaceDatabases.backend,
+              pgLocator: spaceDatabases.pgLocator,
+              d1DatabaseId: spaceDatabases.d1DatabaseId,
+            })
             .from(spaceDatabases)
             .where(eq(spaceDatabases.spaceId, id))
             .limit(1);
-          return row ? { backend: row.backend, locator: row.locator } : null;
+          if (!row) return null;
+          // d1's teardown locator is the database UUID (what the CF DELETE addresses).
+          const locator = row.backend === "d1" ? row.d1DatabaseId : row.pgLocator;
+          return { backend: row.backend, locator };
         },
         async dropManagedPg(id) {
           await dropManagedPgSchema(sql, id);
         },
+        ...(d1Config
+          ? { deleteD1: (locator: string) => deleteD1Database(d1Config, locator) }
+          : {}),
         async deleteRow(id) {
           await db.delete(spaceDatabases).where(eq(spaceDatabases.spaceId, id));
         },
@@ -136,10 +158,23 @@ export async function spacesProvisionDatabaseHandler(
         }
       : undefined;
 
+  const d1Config = d1ConfigFromEnv(env);
   const result = await provisionSpaceDatabase(
     {
       writer: drizzleSpaceDbWriter(db),
-      backends: { managedPg: (id) => applyManagedPgSchema(sql, id) },
+      backends: {
+        managedPg: (id) => applyManagedPgSchema(sql, id),
+        ...(d1Config
+          ? {
+              d1: (id) =>
+                applyD1Schema({
+                  spaceId: id,
+                  envName: env.BASEOUT_ENV ?? "dev",
+                  config: d1Config,
+                }),
+            }
+          : {}),
+      },
       isolationGate,
     },
     { spaceId, backend, recordsEnabled, provisionedByUserId },

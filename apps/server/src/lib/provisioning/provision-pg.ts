@@ -10,6 +10,7 @@ import { spacePgDdlStatements } from "@baseout/db-schema/space/pg-ddl";
 import type { Sql } from "postgres";
 import type { AppDb } from "../../db/worker";
 import { spaceDatabases } from "../../db/schema";
+import { parseD1Locator } from "./d1-locator";
 import { schemaNameForSpace, type SpaceDbBackend } from "./posture";
 import type { SpaceDbProvisionWriter } from "./provision";
 
@@ -48,13 +49,24 @@ export function drizzleSpaceDbWriter(db: AppDb): SpaceDbProvisionWriter {
     },
 
     async markActive(input) {
-      // locator → pg_locator (managed_pg is the only backend that reaches
-      // markActive today; d1/byodb will set their own locator columns).
+      // Backend decides the locator column(s): managed_pg stores the schema
+      // name in pg_locator; d1 splits the serialized locator into
+      // d1_database_id + d1_database_name (byodb lands with that backend).
+      const locatorColumns =
+        input.backend === "d1" && input.locator !== null
+          ? (() => {
+              const d1 = parseD1Locator(input.locator);
+              return {
+                d1DatabaseId: d1.d1DatabaseId,
+                d1DatabaseName: d1.d1DatabaseName,
+              };
+            })()
+          : { pgLocator: input.locator };
       await db
         .update(spaceDatabases)
         .set({
           status: "active",
-          pgLocator: input.locator,
+          ...locatorColumns,
           schemaVersion: input.schemaVersion,
           lastSchemaSyncAt: new Date(),
           provisionedAt: new Date(),

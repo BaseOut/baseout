@@ -789,6 +789,9 @@ export const spaceDatabases = baseout.table('space_databases', {
   //                on the shared cluster)
   //   byodb      → byodb_connection_string_enc (AES-256-GCM-encrypted customer PG DSN)
   d1DatabaseId: text('d1_database_id'),
+  // Dashboard-legible D1 name beside the UUID locator (server-d1-backend,
+  // migration 0039_d1_database_name).
+  d1DatabaseName: text('d1_database_name'),
   pgLocator: text('pg_locator'),
   byodbConnectionStringEnc: text('byodb_connection_string_enc'),
   // Tier-facing isolation class (shared-db-isolation-ladder L1). Backfilled from

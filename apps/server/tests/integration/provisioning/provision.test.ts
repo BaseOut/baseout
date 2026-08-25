@@ -15,7 +15,11 @@ function fakeWriter(initialStatus: string | null = null) {
   const state = {
     calls: [] as string[],
     status: initialStatus,
-    lastActive: null as { locator: string | null; schemaVersion: number } | null,
+    lastActive: null as {
+      locator: string | null;
+      schemaVersion: number;
+      backend: string;
+    } | null,
     lastError: null as { message: string } | null,
   };
   const writer: SpaceDbProvisionWriter = {
@@ -30,7 +34,11 @@ function fakeWriter(initialStatus: string | null = null) {
     async markActive(input) {
       state.calls.push("markActive");
       state.status = "active";
-      state.lastActive = { locator: input.locator, schemaVersion: input.schemaVersion };
+      state.lastActive = {
+        locator: input.locator,
+        schemaVersion: input.schemaVersion,
+        backend: input.backend,
+      };
     },
     async markError(input) {
       state.calls.push("markError");
@@ -83,7 +91,55 @@ describe("provisionSpaceDatabase", () => {
     expect(state.lastActive).toEqual({
       locator: "bo_space_abc",
       schemaVersion: SPACE_SCHEMA_VERSION,
+      backend: "managed_pg",
     });
+  });
+
+  it("provisions d1 when the d1 factory is supplied: begin → factory → markActive", async () => {
+    const { state, writer } = fakeWriter();
+    const locator = JSON.stringify({
+      d1DatabaseId: "22222222-2222-4222-8222-222222222222",
+      d1DatabaseName: "baseout-dev-space-x",
+    });
+    const res = await provisionSpaceDatabase(
+      { writer, backends: { managedPg: okManagedPg(), d1: async () => locator } },
+      { spaceId: SPACE_ID, backend: "d1", recordsEnabled: true },
+    );
+    expect(res).toEqual({ ok: true, status: "active", backend: "d1", locator });
+    expect(state.calls).toEqual(["getStatus", "beginProvisioning", "markActive"]);
+    expect(state.lastActive).toEqual({
+      locator,
+      schemaVersion: SPACE_SCHEMA_VERSION,
+      backend: "d1",
+    });
+  });
+
+  it("marks error for d1 when the d1 factory throws (provision_failed)", async () => {
+    const { state, writer } = fakeWriter();
+    const res = await provisionSpaceDatabase(
+      {
+        writer,
+        backends: {
+          managedPg: okManagedPg(),
+          d1: async () => {
+            throw new Error("cf boom");
+          },
+        },
+      },
+      { spaceId: SPACE_ID, backend: "d1", recordsEnabled: true },
+    );
+    expect(res).toEqual({ ok: false, code: "provision_failed", message: "cf boom" });
+    expect(state.calls).toEqual(["getStatus", "beginProvisioning", "markError"]);
+  });
+
+  it("byodb stays not-implemented even when the d1 factory is supplied", async () => {
+    const { state, writer } = fakeWriter();
+    const res = await provisionSpaceDatabase(
+      { writer, backends: { managedPg: okManagedPg(), d1: async () => "x" } },
+      { spaceId: SPACE_ID, backend: "byodb", recordsEnabled: true },
+    );
+    expect(res).toEqual({ ok: false, code: "backend_not_implemented" });
+    expect(state.lastError?.message).toContain("backend_not_implemented:byodb");
   });
 
   it("is idempotent: an already-active row short-circuits", async () => {
@@ -198,8 +254,11 @@ describe("provisionSpaceDatabase", () => {
 });
 
 // In-memory fake for the teardown deps: records the call sequence.
-function fakeDeprovision(row: { backend: string; locator: string | null } | null, dropThrows?: string) {
-  const state = { calls: [] as string[] };
+function fakeDeprovision(
+  row: { backend: string; locator: string | null } | null,
+  opts: { dropThrows?: string; withD1?: boolean; d1Throws?: string } = {},
+) {
+  const state = { calls: [] as string[], d1Locators: [] as string[] };
   const deps: DeprovisionDeps = {
     async getRow() {
       state.calls.push("getRow");
@@ -207,11 +266,20 @@ function fakeDeprovision(row: { backend: string; locator: string | null } | null
     },
     async dropManagedPg() {
       state.calls.push("dropManagedPg");
-      if (dropThrows) throw new Error(dropThrows);
+      if (opts.dropThrows) throw new Error(opts.dropThrows);
     },
     async deleteRow() {
       state.calls.push("deleteRow");
     },
+    ...(opts.withD1
+      ? {
+          deleteD1: async (locator: string) => {
+            state.calls.push("deleteD1");
+            state.d1Locators.push(locator);
+            if (opts.d1Throws) throw new Error(opts.d1Throws);
+          },
+        }
+      : {}),
   };
   return { state, deps };
 }
@@ -238,7 +306,7 @@ describe("deprovisionSpaceDatabase", () => {
     expect(state.calls).toEqual(["getRow", "deleteRow"]); // no dropManagedPg
   });
 
-  it("non-managed backend with a locator: teardown deferred (501), nothing dropped", async () => {
+  it("d1 without a deleteD1 dep: teardown deferred (501), nothing dropped", async () => {
     const { state, deps } = fakeDeprovision({ backend: "d1", locator: "d1-db-123" });
     const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
     expect(res.ok).toBe(false);
@@ -246,8 +314,36 @@ describe("deprovisionSpaceDatabase", () => {
     expect(state.calls).toEqual(["getRow"]); // no drop, no delete
   });
 
+  it("d1 with a deleteD1 dep: deletes the database then the row", async () => {
+    const { state, deps } = fakeDeprovision(
+      { backend: "d1", locator: "d1-db-123" },
+      { withD1: true },
+    );
+    const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
+    expect(res).toEqual({ ok: true, status: "deprovisioned" });
+    expect(state.calls).toEqual(["getRow", "deleteD1", "deleteRow"]);
+    expect(state.d1Locators).toEqual(["d1-db-123"]);
+  });
+
+  it("surfaces a D1 delete failure as deprovision_failed and does NOT delete the row", async () => {
+    const { state, deps } = fakeDeprovision(
+      { backend: "d1", locator: "d1-db-123" },
+      { withD1: true, d1Throws: "d1 boom" },
+    );
+    const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("deprovision_failed");
+      expect(res.message).toBe("d1 boom");
+    }
+    expect(state.calls).toEqual(["getRow", "deleteD1"]); // deleteRow not reached
+  });
+
   it("surfaces a drop failure as deprovision_failed and does NOT delete the row", async () => {
-    const { state, deps } = fakeDeprovision({ backend: "managed_pg", locator: "bo_space_abc" }, "drop boom");
+    const { state, deps } = fakeDeprovision(
+      { backend: "managed_pg", locator: "bo_space_abc" },
+      { dropThrows: "drop boom" },
+    );
     const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
     expect(res.ok).toBe(false);
     if (!res.ok) {
