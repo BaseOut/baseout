@@ -13,6 +13,11 @@
 import type { AppLocals, Env } from "../../../../env";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import { readAllEntities, withSpaceSchema } from "../../../../lib/per-space/space-db-pg";
+import { createSpaceD1Executor } from "../../../../lib/per-space/d1-query";
+import {
+  readAllEntities as readAllEntitiesD1,
+  schemaHashesFor as schemaHashesForD1,
+} from "../../../../lib/per-space/space-db-d1";
 import {
   readEntitiesScoped,
   schemaHashesFor,
@@ -35,7 +40,7 @@ function jsonResponse(body: unknown, status: number): Response {
 
 export async function spacesSchemaReadHandler(
   request: Request,
-  _env: Env,
+  env: Env,
   _ctx: ExecutionContext,
   locals: AppLocals,
   spaceId: string,
@@ -53,6 +58,34 @@ export async function spacesSchemaReadHandler(
   const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
   if (!space || space.status !== "active") return jsonResponse({ error: "space_db_not_ready" }, 409);
+
+  // d1 arm (server-d1-data-plane): the unscoped Browse read only. The scoped
+  // paginated variant keeps 501 with its own reason until a consumer needs it
+  // (design D5 — half-lit surfaces are labeled, not faked). No lazy upgrade:
+  // fresh d1 provisions are already at the current schema version.
+  if (space.backend === "d1") {
+    if (!space.d1DatabaseId || !env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_D1_API_TOKEN) {
+      return jsonResponse({ error: "backend_not_implemented" }, 501);
+    }
+    if (scoped) {
+      return jsonResponse({ error: "backend_not_implemented", reason: "d1_scoped_unsupported" }, 501);
+    }
+    try {
+      const exec = createSpaceD1Executor(
+        { accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_D1_API_TOKEN },
+        space.d1DatabaseId,
+      );
+      const entities = await readAllEntitiesD1(exec);
+      const schemaHashByBase = await schemaHashesForD1(exec, entities.bases.map((b) => b.baseId));
+      return jsonResponse({ ok: true, ...entities, schemaHashByBase }, 200);
+    } catch (err) {
+      return jsonResponse(
+        { error: "schema_read_failed", message: err instanceof Error ? err.message : String(err) },
+        500,
+      );
+    }
+  }
+
   if (space.backend !== "managed_pg" || !space.pgLocator) {
     return jsonResponse({ error: "backend_not_implemented" }, 501);
   }

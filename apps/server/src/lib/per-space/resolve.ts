@@ -7,6 +7,8 @@ import type { AppDb } from "../../db/worker";
 export interface ResolvedSpaceDb {
   backend: string; // 'd1' | 'managed_pg' | 'byodb'
   pgLocator: string | null;
+  /** Cloudflare D1 database UUID — what the HTTP query API addresses (d1 backend). */
+  d1DatabaseId: string | null;
   recordsEnabled: boolean;
   status: string; // 'pending' | 'provisioning' | 'active' | 'migrating' | 'error'
   /** Applied per-Space schema version; drives the lazy upgrade (system-per-space-upgrade). */
@@ -21,6 +23,7 @@ export async function resolveSpaceDb(
     .select({
       backend: spaceDatabases.backend,
       pgLocator: spaceDatabases.pgLocator,
+      d1DatabaseId: spaceDatabases.d1DatabaseId,
       recordsEnabled: spaceDatabases.recordsEnabled,
       status: spaceDatabases.status,
       schemaVersion: spaceDatabases.schemaVersion,

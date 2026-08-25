@@ -69,6 +69,13 @@ import {
   withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
 import { diffViews, parseViewsField } from "../../../../lib/per-space/views-sync";
+import { createSpaceD1Executor } from "../../../../lib/per-space/d1-query";
+import {
+  applySchemaDiff as applySchemaDiffD1,
+  ensureBaseRun as ensureBaseRunD1,
+  readSchemaWorkingSet as readSchemaWorkingSetD1,
+  regenerateQueryViews as regenerateQueryViewsD1,
+} from "../../../../lib/per-space/space-db-d1";
 import {
   loadDescribeBaseData,
   runDescribeBase,
@@ -169,6 +176,74 @@ export async function spacesSchemaSyncHandler(
   const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
   if (!space || space.status !== "active") return jsonResponse({ error: "space_db_not_ready" }, 409);
+
+  // d1 arm (server-d1-data-plane): the CORE schema path only — base run →
+  // working set → diff → apply → (records-enabled) live-pivot views. MCP
+  // views/interfaces/automations, the unknown-sweep, synced-view inference,
+  // AI descriptions/health, and the lazy upgrade are pg-coupled today and are
+  // skipped EXPLICITLY (per-section d1_unsupported, never silently). Fresh d1
+  // provisions are stamped at the current SPACE_SCHEMA_VERSION, so skipping
+  // the upgrade is safe by construction.
+  if (space.backend === "d1") {
+    if (!space.d1DatabaseId || !env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_D1_API_TOKEN) {
+      return jsonResponse({ error: "backend_not_implemented" }, 501);
+    }
+    const exec = createSpaceD1Executor(
+      { accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_D1_API_TOKEN },
+      space.d1DatabaseId,
+    );
+    const viewCaptureModeD1 = await resolveViewCaptureMode(env.VIEW_CAPTURE_OVERRIDE, () =>
+      resolveViewCaptureModeForRun(masterDb, backupRunId),
+    );
+    const restModeD1 = viewCaptureModeD1 === "rest";
+    const capturedForD1 = restModeD1 ? captured : stripCapturedViews(captured);
+    try {
+      const baseRunId = await ensureBaseRunD1(exec, backupRunId, captured.baseId);
+      const prior = await readSchemaWorkingSetD1(exec, captured.baseId);
+      const result = diffSchema({
+        captured: capturedForD1,
+        prior,
+        runId: baseRunId,
+        confident,
+        includeViews: restModeD1,
+      });
+      await applySchemaDiffD1(exec, {
+        baseId: captured.baseId,
+        baseRunId,
+        result,
+        schemaJson: capturedForD1,
+      });
+      if (space.recordsEnabled) {
+        try {
+          await regenerateQueryViewsD1(exec, {});
+        } catch {
+          // best-effort, same contract as the pg arm — the next sync retries.
+        }
+      }
+      const unsupported = { ok: false as const, reason: "d1_unsupported" };
+      return jsonResponse(
+        {
+          ok: true,
+          baseRunId,
+          recordsEnabled: space.recordsEnabled,
+          viewCaptureMode: viewCaptureModeD1,
+          schemaChanged: result.schemaChanged,
+          lifecycle: result.lifecycle.length,
+          updates: result.schemaUpdates.length,
+          ...(interfaceCapture || interfaceSync ? { interfaceSync: interfaceSync ?? unsupported } : {}),
+          ...(automationCapture || automationSync ? { automationSync: automationSync ?? unsupported } : {}),
+          ...(viewsCapture && !restModeD1 ? { viewsSync: unsupported } : viewsSync ? { viewsSync } : {}),
+        },
+        200,
+      );
+    } catch (err) {
+      return jsonResponse(
+        { error: "sync_failed", message: err instanceof Error ? err.message : String(err) },
+        500,
+      );
+    }
+  }
+
   if (space.backend !== "managed_pg" || !space.pgLocator) {
     return jsonResponse({ error: "backend_not_implemented" }, 501);
   }

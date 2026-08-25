@@ -13,6 +13,16 @@
   "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
 
+  // Test-only local D1 (miniflare-provisioned) — the space-db-d1 suite runs the
+  // per-Space schema I/O against real D1 semantics instead of SQL-string mocks.
+  "d1_databases": [
+    {
+      "binding": "TEST_D1",
+      "database_name": "space-d1-test",
+      "database_id": "00000000-0000-0000-0000-000000000001"
+    }
+  ],
+
   "durable_objects": {
     "bindings": [
       { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
