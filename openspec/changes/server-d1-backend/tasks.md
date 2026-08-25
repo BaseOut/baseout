@@ -20,7 +20,7 @@ TDD per CLAUDE.md §3.4: pure modules get Vitest first; Cloudflare API interacti
 ## 4. Query path
 
 - [x] 4.1 D1 HTTP query executor behind the `per-space/resolve.ts` seam (same interface as the pg executor); mocked fetch tests for query + error mapping. _Brokered page routes still 501 on non-`managed_pg` until they dispatch on `createSpaceD1Executor` — follow-up, not a provision blocker._
-- [ ] 4.2 Sqlite view builders (live pivot, plain `CREATE VIEW`) applied at provision + schema-sync; tests over the same fixtures `query-views.ts` uses. — _2026-08-24 correction: previously checked off but NO sqlite view builders exist anywhere in the tree (query-views.ts is PG-matview-only). Un-checked; still to build._
+- [ ] 4.2 Sqlite view builders (live pivot, plain `CREATE VIEW`) applied at provision + schema-sync; tests over the same fixtures `query-views.ts` uses. — _2026-08-24 correction: previously checked off but NO sqlite view builders existed. 2026-08-25: pure builders NOW land (`per-space/query-views-sqlite.ts`, mirror of query-views.ts; json_valid/json_type safe-casts; verified executing on real SQLite incl. corrupt-JSON cells). APPLICATION still pending: a fresh provision has no tables to pivot, so views apply via schema-sync's future d1 write arm — that arm (and brokered-read dispatch, 4.1 note) is the same follow-up: the whole per-space read/write I/O layer is drizzle-over-postgres today._
 
 ## 5. Secret + runbook (same change)
 
