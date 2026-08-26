@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  expiredSessionDataCookies,
   extractSessionTokenCookie,
   invalidateSessionCache,
   SESSION_CACHE,
@@ -97,5 +98,18 @@ describe('session Cache API key', () => {
     expect(parseCachedAuthPayload(JSON.stringify(payload))).toEqual(payload)
     expect(parseCachedAuthPayload('not-json')).toBeNull()
     expect(parseCachedAuthPayload('{}')).toBeNull()
+  })
+
+  it('expires both session_data cookie variants (plain local + __Secure- deployed)', () => {
+    const cookies = expiredSessionDataCookies()
+    expect(cookies).toHaveLength(2)
+    const plain = cookies.find((c) => c.startsWith('better-auth.session_data='))
+    const secure = cookies.find((c) => c.startsWith('__Secure-better-auth.session_data='))
+    expect(plain).toContain('Max-Age=0')
+    expect(plain).toContain('Path=/')
+    expect(secure).toContain('Max-Age=0')
+    expect(secure).toContain('Path=/')
+    // __Secure- prefixed cookies are rejected by browsers without Secure.
+    expect(secure).toContain('Secure')
   })
 })

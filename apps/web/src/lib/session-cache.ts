@@ -37,6 +37,22 @@ export function invalidateSessionCache(token: string | null | undefined): void {
 
 export const SESSION_CACHE_CONTROL = `private, max-age=${Math.floor(SESSION_TTL_MS / 1000)}`
 
+// better-auth's cookieCache (auth-factory.ts session.cookieCache) snapshots the
+// user into a signed `session_data` cookie and getSession serves it VERBATIM
+// for its 5-minute Max-Age — a second stale layer on top of SESSION_CACHE. A
+// route that mutates a field the middleware gates on (termsAcceptedAt) must
+// expire this cookie on its response alongside invalidateSessionCache, or the
+// next navigation is decided by the stale snapshot and bounces the user back
+// to /welcome (the blank-welcome trap, 2026-08-26). Both name variants are
+// returned because the cookie is `__Secure-` prefixed on deployed https
+// origins and plain under local dev (resolveUseSecureCookies).
+export function expiredSessionDataCookies(): string[] {
+  return [
+    'better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax',
+    '__Secure-better-auth.session_data=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=None',
+  ]
+}
+
 type SessionCachePayload = Pick<CachedAuth, 'user' | 'session' | 'account'>
 
 export async function sessionCacheRequest(token: string): Promise<Request> {

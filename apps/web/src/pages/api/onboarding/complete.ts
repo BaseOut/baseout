@@ -14,6 +14,7 @@ import {
   resolveStripeEnv,
 } from '../../../lib/stripe'
 import {
+  expiredSessionDataCookies,
   extractSessionTokenCookie,
   invalidateSessionCache,
 } from '../../../lib/session-cache'
@@ -26,6 +27,19 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
+}
+
+// Success responses expire the better-auth session_data cookie so the client's
+// follow-up navigation to `/` re-reads the user from the DB instead of the
+// 5-minute cookie snapshot that still says termsAcceptedAt=null (see
+// expiredSessionDataCookies). Set-Cookie on a same-origin fetch response is
+// applied by the browser, so the WelcomeView `fetch` transports it.
+function onboardedResponse(body: unknown): Response {
+  const res = jsonResponse(body, 200)
+  for (const cookie of expiredSessionDataCookies()) {
+    res.headers.append('Set-Cookie', cookie)
+  }
+  return res
 }
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -87,7 +101,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         // DB is already consistent; drop any stale cached entry so the
         // upcoming `/` navigation sees the real post-onboarding state.
         invalidateSessionCache(sessionToken)
-        return jsonResponse({ ok: true, alreadyOnboarded: true }, 200)
+        return onboardedResponse({ ok: true, alreadyOnboarded: true })
       }
       if (err.detail.kind === 'user_not_found') {
         return jsonResponse({ error: 'User not found' }, 404)
@@ -179,5 +193,5 @@ export const POST: APIRoute = async ({ request, locals }) => {
   await markTermsAccepted(locals.db, locals.user.id)
   invalidateSessionCache(sessionToken)
 
-  return jsonResponse({ ok: true }, 200)
+  return onboardedResponse({ ok: true })
 }
