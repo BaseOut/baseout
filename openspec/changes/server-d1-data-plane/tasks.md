@@ -20,4 +20,4 @@ TDD per CLAUDE.md §3.4. The d1 I/O module tests execute against a REAL local D1
 ## 3. Verification
 
 - [x] 3.1 Targeted suites + apps/server tsc green.
-- [ ] 3.2 Token-day smoke (extends server-d1-backend 6.1): provision d1 Space → schema-only backup → schema-sync 200 → schema-read returns the tree → deprovision. Log here with date + Space id. _Blocked on CLOUDFLARE_D1_API_TOKEN (Dan-requests item 4). Runner ready: `apps/server/scripts/smoke-d1.mjs`._
+- [x] 3.2 Token-day smoke (extends server-d1-backend 6.1): provision d1 Space → schema-only backup → schema-sync 200 → schema-read returns the tree → deprovision. Log here with date + Space id. — _**GREEN 2026-08-25**, Space `03c01553-ba6f-4719-826d-d2f8aa4349f5`: full runner pass (provision → schema-sync 200 → schema-read round-trip → deprovision, D1 + master row verified gone) against a local `wrangler dev` engine carrying wrangler's OAuth bearer as `CLOUDFLARE_D1_API_TOKEN` via `--var` — the durable dashboard token (Dan) is only needed for DEPLOYED envs now. Details + the dev-DB 0039 migration trap in server-d1-backend 6.1._
