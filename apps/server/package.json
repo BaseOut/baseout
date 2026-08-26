@@ -11,6 +11,7 @@
     "deploy": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler deploy",
     "deploy:dev": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler deploy --env dev && pnpm run secrets:sync:dev",
     "secrets:sync:dev": "node scripts/sync-secrets.mjs --env dev",
+    "preview:sync": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler preview settings update -y",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

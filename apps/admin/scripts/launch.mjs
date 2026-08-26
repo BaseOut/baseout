@@ -41,5 +41,9 @@ if (!existsSync(TEMPLATE)) {
 
 writeFileSync(OUT, readFileSync(TEMPLATE, 'utf8').replaceAll('{{DATABASE_URL}}', dbUrl));
 
+// render-config: emit wrangler.jsonc only (used by preview:sync + typegen) —
+// no astro process. Mirrors apps/web/scripts/launch.mjs.
+if (command === 'render-config') process.exit(0);
+
 const child = spawn('node', [ASTRO, command], { stdio: 'inherit', shell: false, cwd: ROOT });
 child.on('exit', (code) => process.exit(code ?? 0));

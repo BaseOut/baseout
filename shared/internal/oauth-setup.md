@@ -18,8 +18,15 @@ provisioning), [refactor-roadmap.md](./refactor-roadmap.md).
 |-----------|--------------------------------------------------|-----------------------|------------------------------------|
 | local     | `https://baseout.local:4331`                     | (no deploy)           | `pnpm --filter @baseout/web dev`   |
 | dev       | `https://baseout-dev.openside.workers.dev`       | `baseout-dev`         | `pnpm --filter @baseout/web deploy`            |
-| staging   | `https://baseout-staging.openside.workers.dev`   | `baseout-staging`     | `pnpm --filter @baseout/web deploy:staging`    |
-| prod      | `https://console.baseout.dev`                    | `baseout`             | `pnpm --filter @baseout/web deploy:production` |
+| preview   | `https://console.baseout.dev`                    | `baseout-console` (Worker Previews) | Workers Builds on non-`main` branches; base config via `pnpm --filter @baseout/web preview:sync` |
+| prod      | `https://console.baseout.com`                    | `baseout-console`     | Workers Builds on `main` (manual escape hatch: `pnpm --filter @baseout/web deploy:production`) |
+
+> 2026-08-25 (Cloudflare pivot / `shared-worker-previews`): there is **no staging
+> Worker** — staging is Worker Previews on the production script. The old
+> `baseout-staging` / `baseout` rows described workers that were never created.
+> Preview OAuth secrets are **separate** from production's: they live in the
+> preview base config (`wrangler preview secret put … --worker-name baseout-console`),
+> so a provider's client id/secret must be entered there too, not only on prod.
 
 The browser-facing origin is what `PUBLIC_AUTH_BASE_URL` resolves to in each
 env (set via wrangler config `vars` for deployed envs, via `--var` flag on the
@@ -252,6 +259,29 @@ entire rollout (`web-auth-airtable-sso` task 0.2).
 
 Each item below is a single URI to register in a single OAuth app. Tick the
 box and update [§3](#3-current-registration-status) when done.
+
+> **2026-08-25 origin remap (`shared-worker-previews`):** any
+> `https://baseout-staging.openside.workers.dev/...` item below is **obsolete**
+> (that worker never existed and never will — skip it, don't register it), and
+> `https://console.baseout.dev` rows now mean the **preview** environment, not
+> prod. The two deployed origins that need every provider's callback are:
+>
+> - **prod** — `https://console.baseout.com<callback path>` (per §2)
+> - **preview** — `https://console.baseout.dev<callback path>` (per §2)
+>
+> Preview flows additionally need the provider client id/secret entered as
+> **preview secrets** on `baseout-console` (see §1 note) — registering the URI
+> alone is not enough. Until both halves are done for a provider, its Connect
+> flow in previews fails; smoke it per provider after registration
+> (`openspec/changes/shared-worker-previews/tasks.md` §6).
+>
+> ⚠️ **HOLD preview-origin registrations until the first staging build.**
+> Custom-domain previews serve at `<preview-name>.console.baseout.dev` per the
+> beta docs — the stable staging origin is likely
+> `https://staging.console.baseout.dev`, NOT bare `console.baseout.dev`.
+> Observe the real preview URL first, then register callbacks for that exact
+> origin (and fix the previews-block `PUBLIC_AUTH_BASE_URL` to match). See
+> `openspec/changes/shared-worker-previews/design.md` D7.
 
 ### 4.1 Google Drive (boss-owned, Google Cloud Console)
 

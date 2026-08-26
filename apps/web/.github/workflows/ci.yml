@@ -149,41 +149,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run deploy
 
-  deploy-staging:
-    needs: [lint, typecheck, unit, integration, build]
-    if: false  # gated until staging Hyperdrive + DB provisioned (DO auth pending). See pipeline-roadmap.md "Awaiting DO authorization".
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - name: Install dependencies
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          FONTAWESOME_TOKEN: ${{ secrets.FONTAWESOME_TOKEN }}
-        run: npm ci
-      - name: Migrate staging Postgres
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        run: node scripts/migrate.mjs
-      - name: Deploy to baseout-staging
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npm run deploy:staging
-      - name: Smoke /api/me (expect 401)
-        run: |
-          status=$(curl -sS -o /dev/null -w "%{http_code}" https://baseout-staging.openside.workers.dev/api/me)
-          if [ "$status" != "401" ]; then
-            echo "Expected 401 from /api/me, got $status" >&2
-            exit 1
-          fi
+  # deploy-staging job removed 2026-08-25 (shared-worker-previews): staging is
+  # Worker Previews on the production script now — Workers Builds deploys
+  # previews from non-main branches; there is no baseout-staging Worker and
+  # the deploy:staging npm script was deleted.
 
   upload-prod-version:
     needs: [lint, typecheck, unit, integration, build]

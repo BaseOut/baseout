@@ -77,11 +77,83 @@
     }
   ],
 
-  // Routes — intentionally none. Dev serves on workers.dev; admin.baseout.com
-  // is wired at production-deploy time in the `admin` umbrella change.
+  // Routes — intentionally none here. Dev serves on workers.dev.
+  // admin.baseout.com is a dashboard Custom Domain on the production script
+  // `baseout-admin` (attached 2026-08-24); admin.baseout.dev is the preview
+  // custom domain (dashboard-attached — never declare preview routes here).
 
   "observability": {
     "enabled": false,
     "logs": { "enabled": false }
+  },
+
+  // Worker Previews (beta) base config for the production script
+  // `baseout-admin`. `pnpm --filter @baseout/admin preview:sync` runs
+  // `wrangler preview settings update --worker-name baseout-admin`, which
+  // deep-merges this into its preview defaults (existing preview secrets
+  // survive). Every binding a preview needs MUST be restated here — previews
+  // inherit nothing from production except compat/assets/placement.
+  // Previews stay on the DEV Hyperdrive/KV.
+  "previews": {
+    "vars": {
+      // Web's staging preview origin (bare console.baseout.dev = production).
+      "WEB_APP_URL": "https://staging.console.baseout.dev"
+    },
+    "hyperdrive": [
+      {
+        "binding": "HYPERDRIVE",
+        "id": "ba2652f40f864918a2da0849f24d12a2"
+      }
+    ],
+    "kv_namespaces": [
+      {
+        "binding": "SESSION",
+        "id": "dc4341c8e5fa45cc82047733f66a6113"
+      }
+    ],
+    "services": [
+      {
+        "binding": "BACKUP_ENGINE",
+        "service": "baseout-server"
+      }
+    ]
+  },
+
+  "env": {
+    // Production script `baseout-admin` — bindings managed in the dashboard
+    // (Dan, 2026-08-24 sync); mirrored here so a manual
+    // `wrangler deploy --env production` cannot silently drop them.
+    // Secrets (ADMIN_HANDOFF_SECRET) are dashboard-managed — never synced
+    // from .dev.vars (that sync is dev-worker-only).
+    "production": {
+      "name": "baseout-admin",
+      "vars": {
+        "WEB_APP_URL": "https://console.baseout.com"
+      },
+      // baseout-live-pg — the LIVE customer database.
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "62a17f7db4c6402ca5cde230360c1e5b",
+          "localConnectionString": "{{DATABASE_URL}}"
+        }
+      ],
+      // baseout-live-admin — production admin session KV (2026-08-24 sync).
+      "kv_namespaces": [
+        {
+          "binding": "SESSION",
+          "id": "a35756e5e5c84bd0a2511794daff8be5"
+        }
+      ],
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server"
+        }
+      ],
+      "images": {
+        "binding": "IMAGES"
+      }
+    }
   }
 }

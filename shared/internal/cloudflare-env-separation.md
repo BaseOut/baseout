@@ -1,7 +1,131 @@
 # Cloudflare prod/staging separation — what the docs actually say
 
-**Status:** LARGELY RESOLVED 2026-08-24 (Dan/Autumn sync + same-day cutover). Kept for the audit
-trail and the still-open beta questions. What happened:
+**Status:** LARGELY RESOLVED 2026-08-24; **BETA DOCS + CONFIG MODEL LANDED 2026-08-25** (see the
+section immediately below). Kept for the audit trail and the still-open beta questions.
+
+---
+
+## 2026-08-25 — beta docs exist; previews are configured from the wrangler file
+
+Dan shared the Worker Previews closed-beta documentation (call, 2026-08-25). It supersedes the
+GA docs quoted later in this file for anything previews-related:
+
+- https://worker-previews-docs-2.preview.developers.cloudflare.com/workers/previews/
+- …`/configuration/` — the `previews` config block, base config, secrets commands
+- …`/resources/` — per-binding isolation matrix (DOs auto-isolate; everything else is restated)
+- …`/custom-domains/` — preview custom domains (wildcard DNS + cert; Access recommended)
+
+**The settled model (call decisions):**
+
+1. **Bindings come from the wrangler file, not the dashboard.** A pushed config OVERRIDES
+   dashboard-set values for the same key; secrets survive. The dashboard "Import from
+   production" button is a known beta bug. Each app now carries its preview base config as a
+   `previews` block in `wrangler.jsonc.example` (web: nested in `env.production`; server +
+   admin: top level) and pushes it with `pnpm --filter @baseout/<app> preview:sync`
+   (→ `wrangler preview settings update`, wrangler ≥ 4.116). Every binding a preview needs is
+   RESTATED in that block — previews inherit only compat/assets/placement. This is the
+   documented fix for *"no existing preview base config binding to inherit from"*.
+2. **Preview secrets never copy from production.** `wrangler preview secret put <NAME>
+   --worker-name <script>` (or `secret bulk`). This is the fix for *"missing required secret
+   value"*. `baseout-console` + `baseout-server` preview secret rosters were already re-entered
+   (verified via `wrangler preview settings --json`, 2026-08-25); `baseout-admin`'s were empty —
+   `ADMIN_HANDOFF_SECRET` must be set fresh and byte-identical on BOTH console + admin previews.
+3. **Cloudflare = production + previews, nothing else.** Local dev is `wrangler dev` mimicking
+   the infra locally (local DOs); it never appears in the dashboard. The old `env.staging`
+   blocks were deleted from web + server templates (no staging scripts ever existed).
+4. **Workers Builds settings (branch pinning, build-time `DATABASE_URL` for migrations) are
+   dashboard build-config and were already done by Dan** — do not re-add `DATABASE_URL` or
+   routes to wrangler. Preview/production custom domains (`console.baseout.dev`,
+   `admin.baseout.com`, `admin.baseout.dev`) are dashboard Custom Domains — never wrangler
+   `routes`.
+5. **⚠ Service bindings from previews resolve to PRODUCTION deployments** (beta docs
+   `/resources/`): preview web/admin call live `baseout-server` (live DB) while their own
+   HYPERDRIVE is `baseout-dev-pg`. Engine flows in previews are therefore cross-wired — open
+   item for Dan (options in `openspec/changes/shared-worker-previews/design.md` D5).
+6. **Preview URLs are public by default** — Cloudflare Access in front of them is Dan's
+   open decision (Zero Trust dashboard).
+7. **DigitalOcean build connection: on hold** — with Cloudflare builds configured it should be
+   unnecessary; revisit at the Aug-26 regroup.
+
+**2026-08-25 push results — one bug SOLVED, one escalated:**
+
+- **10024 (Hyperdrive) is SOLVED.** The "missing required secret value" for a preview Hyperdrive
+  binding is the **origin database password**, sent as an undocumented `password` field on the
+  binding object. Wrangler 4.116 never sends it (verified in its source — it PATCHes only
+  `{type, id}`), and neither the beta docs nor the dashboard say so, which is why every path
+  failed. Working call (raw API, wrangler's own OAuth token):
+
+  ```
+  PATCH /accounts/<acct>/workers/workers/<script>
+  {"previews_base_config":{"env":{"HYPERDRIVE":
+    {"type":"hyperdrive","id":"<hyperdrive-id>","password":"<origin DB password>"}}}}
+  ```
+
+  Once the binding exists, later plain `{type,id}` updates inherit the secret — so
+  `preview:sync` works from then on. `baseout-console` previews are now COMPLETE on both
+  config fields (HYPERDRIVE→`baseout-dev-pg`, SESSION→`baseout-dev-session`, IMAGES,
+  `console.baseout.dev` vars; secrets survived) and `pnpm --filter @baseout/web preview:sync`
+  ran green end-to-end. Feed the `password` discovery back to Cloudflare/Dan — it should be
+  in their docs and in wrangler.
+
+- **10013 ROOT-CAUSED AND FIXED (same day):** it was NOT a per-worker platform bug — it was a
+  **poisoned stored row**. `baseout-server` and `baseout-admin` had HYPERDRIVE rows sitting in
+  `previews_base_config` (seeded 2026-08-24, before/around the secret requirement) **without
+  the required `password` secret**. The PATCH endpoint re-validates the entire merged object on
+  every write, so the stored invalid row made ANY write fail — even a no-op
+  `{"logpush":false}` — surfacing as generic 10013 instead of a validation error.
+  **The heal is a single PATCH that re-states the hyperdrive binding WITH the password** — the
+  merged object becomes valid and the endpoint unblocks instantly. Verified: after healing,
+  no-op PATCHes, `preview:sync` (server + admin), and `wrangler preview secret put` all pass.
+  Diagnostic signature for next time: 10013 on every payload for one worker while identical
+  payloads succeed on another ⇒ look for an invalid stored binding (likely a secretless
+  hyperdrive row), not a broken endpoint.
+
+- **End state (2026-08-25): ALL THREE workers' preview configs are COMPLETE** on both fields —
+  dev HYPERDRIVE (`ba2652…`), full binding sets, `console.baseout.dev` vars, secrets intact,
+  and the paired preview `ADMIN_HANDOFF_SECRET` set fresh on console + admin. Remaining smoke
+  is human: staging-branch push → magic-link login on console.baseout.dev; OAuth provider
+  callback registration before Connect smokes.
+
+- **Two parallel fields exist on the worker object:** `previews_base_config` (dashboard's
+  "Base configuration", the older name) and `preview_defaults` (what wrangler `preview
+  settings` reads/writes). Their contents drifted; all three workers' are now aligned. Keep
+  both in sync until Cloudflare collapses them.
+
+- **Solutions explored for the regroup (2026-08-25 evening — details in
+  `openspec/changes/shared-worker-previews/design.md` D5–D7):**
+  - *Service-binding→prod gap (D5):* recommend **token partition** now (preview
+    `BACKUP_ENGINE_INTERNAL_TOKEN` ≠ prod `INTERNAL_TOKEN` → engine calls from previews fail
+    cleanly instead of cross-writing DBs; zero code). Full engine-in-previews is a small,
+    scoped refactor (one `getEngineBinding(env)` helper + `BACKUP_ENGINE_URL` shim pointing at
+    the server's stable staging preview URL). Preview-to-preview bindings are not in the API
+    today (probed; it stores but ignores extra fields) — roadmap question for the beta channel.
+  - *Public previews (D6):* account has ZERO Access apps today (verified). Ready plan: Zero
+    Trust free plan + one Access app, policy = `@openside.com` via One-Time PIN; the beta
+    integrates Access across workers.dev + custom preview URLs. workers.dev preview URLs can
+    also be toggled off separately. ~15 min once Dan approves.
+  - *Preview hostname catch (D7):* custom-domain previews serve at
+    `<preview-name>.console.baseout.dev` (likely `staging.console.baseout.dev`) — confirm at
+    the first staging build, then fix `PUBLIC_AUTH_BASE_URL` in the previews blocks and only
+    then register OAuth callbacks for the observed origin.
+  - *Branch pinning:* not verifiable via API from Autumn's token (builds endpoints 403) —
+    confirm the build-trigger branch filter in the dashboard at the regroup.
+
+- **Cloudflare feedback for Dan (docs/product gaps, not blockers):** (1) the hyperdrive
+  `password` field is required but undocumented, and wrangler never sends it — first-time
+  hyperdrive preview bindings are impossible through every official path; (2) a stored
+  secretless hyperdrive row bricks the whole worker-object PATCH with an unactionable 10013 —
+  it should be a targeted validation error (and the API shouldn't have accepted the row);
+  (3) the dashboard "Import from production" flow is what created those poisoned rows.
+
+**Rendered-vs-template trap (fixed 2026-08-25):** the Aug-24 cutover edits were made in the
+gitignored rendered `wrangler.jsonc` files; `launch.mjs` re-renders those from
+`wrangler.jsonc.example` on every dev/build, so the edits were one `pnpm dev` away from silent
+reversion. All three templates now carry the cutover state (`shared-worker-previews` task 1).
+
+---
+
+**Pre-2026-08-25 status (2026-08-24 sync + cutover):**
 
 - **§7 Q1 answered:** ONE Worker per app with dashboard Production + Previews (beta) — no parallel
   `-staging`/`-prod` scripts. Prod scripts: `baseout-console` (renamed from `baseout-web`),

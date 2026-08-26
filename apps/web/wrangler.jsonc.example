@@ -9,7 +9,9 @@
 // via `wrangler dev --var PUBLIC_AUTH_BASE_URL:https://baseout.local:4331`,
 // so the literal value below is what gets baked into the deployed dev worker.
 // Top-level config = dev environment (worker `baseout-dev`).
-// `env.staging` and `env.production` override the dev-specific bits.
+// `env.production` (script `baseout-console`) overrides the dev-specific bits;
+// staging is Worker Previews on that production script (no staging Worker) —
+// see env.production.previews below + shared/internal/cloudflare-env-separation.md.
 //
 // Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,
 // kv_namespaces, send_email, services, durable_objects) from top-level
@@ -18,8 +20,8 @@
 //
 // Deploy:
 //   npm run deploy             # dev      → baseout-dev.openside.workers.dev
-//   npm run deploy:staging     # staging  → baseout-staging.openside.workers.dev
-//   npm run deploy:production  # prod     → baseout.dev (custom domain)
+//   npm run deploy:production  # prod     → console.baseout.com (Workers Builds normally owns this)
+//   npm run preview:sync       # push env.production.previews → baseout-console preview defaults
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-dev",
@@ -126,53 +128,34 @@
       "remote": true
     }
   ],
+  // env.staging was removed 2026-08-25: staging is Worker Previews on the
+  // production script now (shared-worker-previews); a `baseout-staging`
+  // script never existed. Cloudflare has exactly two envs per Worker —
+  // production + previews; local dev is `wrangler dev` (top level above).
   "env": {
-    "staging": {
-      "name": "baseout-staging",
-      "vars": {
-        "EMAIL_FROM": "Baseout <login@mail.staging.baseout.dev>",
-        "PUBLIC_AUTH_BASE_URL": "https://baseout-staging.openside.workers.dev"
-      },
-      // TODO(staging): provision a Hyperdrive pointing at the staging
-      // Postgres cluster and swap this `id`. The placeholder will fail
-      // `wrangler deploy --env staging` until a real id is in place —
-      // fail-loud is intentional, it prevents staging from ever
-      // accidentally pointing at the dev or prod database.
-      "hyperdrive": [
-        {
-          "binding": "HYPERDRIVE",
-          "id": "STAGING_HYPERDRIVE_ID_PLACEHOLDER",
-          "localConnectionString": "{{DATABASE_URL}}"
-        }
-      ],
-      "send_email": [
-        {
-          "name": "EMAIL"
-        }
-      ],
-      // TODO(staging): provision a KV namespace for staging sessions
-      // and swap this `id`. See ops-setup doc for the wrangler kv command.
-      "kv_namespaces": [
-        {
-          "binding": "SESSION",
-          "id": "STAGING_KV_PLACEHOLDER"
-        }
-      ]
-    },
+    // Production script `baseout-console` (renamed from the never-created
+    // `baseout`; live since 2026-08-24, serves console.baseout.com).
+    // Bindings MIRROR the deployed version verbatim (read via
+    // `wrangler versions view --name baseout-console`, 2026-08-25) — a
+    // config-driven deploy overrides dashboard-set values for the same
+    // key, so anything missing here would be DROPPED from production.
+    // Secrets are dashboard/preview-managed and survive deploys; never
+    // sync .dev.vars at this env (that sync is dev-worker-only).
     "production": {
-      "name": "baseout",
+      "name": "baseout-console",
       "vars": {
         "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
-        "PUBLIC_AUTH_BASE_URL": "https://baseout.dev"
+        "PUBLIC_AUTH_BASE_URL": "https://console.baseout.com",
+        "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
+        // Staff-console origin for /login ?returnTo= + /api/admin/handoff.
+        "ADMIN_APP_URL": "https://admin.baseout.com"
+        // NO E2E_TEST_MODE here — dev/preview only (see top-level comment).
       },
-      // TODO(prod): provision a Hyperdrive pointing at the prod Postgres
-      // cluster and swap this `id`. Placeholder forces fail-loud at
-      // `wrangler versions upload` so prod can never silently reuse the
-      // dev Hyperdrive.
+      // baseout-live-pg — the LIVE customer database.
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
-          "id": "PROD_HYPERDRIVE_ID_PLACEHOLDER",
+          "id": "62a17f7db4c6402ca5cde230360c1e5b",
           "localConnectionString": "{{DATABASE_URL}}"
         }
       ],
@@ -181,14 +164,74 @@
           "name": "EMAIL"
         }
       ],
-      // TODO(prod): provision a KV namespace for prod sessions and swap
-      // this `id`. See ops-setup doc for the wrangler kv command.
+      // baseout-live — production session KV (2026-08-24 sync).
       "kv_namespaces": [
         {
           "binding": "SESSION",
-          "id": "PROD_KV_PLACEHOLDER"
+          "id": "962f82f21924411280c9ead537200908"
         }
-      ]
+      ],
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server"
+        }
+      ],
+
+      // Worker Previews (beta) base config for `baseout-console`.
+      // `pnpm --filter @baseout/web preview:sync` runs
+      // `wrangler preview settings update -e production`, deep-merging this
+      // into the Worker's preview defaults (existing preview secrets — the
+      // OAuth client pairs, BETTER_AUTH_SECRET, etc. — survive). Every
+      // binding a preview needs MUST be restated: previews inherit nothing
+      // from production except compat/assets/placement (beta docs).
+      // Previews serve `<preview-name>.console.baseout.dev` (dashboard
+      // Custom Domain; the staging-branch preview = staging.console.baseout.dev,
+      // verified live 2026-08-25 — bare console.baseout.dev serves PRODUCTION).
+      // Preview URLs are Cloudflare-Access-gated. Previews run against the
+      // DEV database/KV — never live resources.
+      // ⚠ Service bindings from previews resolve to the PRODUCTION
+      // deployment of the target (beta docs /resources/) — preview web
+      // drives the live baseout-server. Known gap, see
+      // openspec/changes/shared-worker-previews/design.md D5.
+      "previews": {
+        "vars": {
+          "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
+          "PUBLIC_AUTH_BASE_URL": "https://staging.console.baseout.dev",
+          "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
+          // Admin's staging preview (workers.dev form — admin.baseout.dev is
+          // not attached as a preview domain yet; becomes
+          // staging.admin.baseout.dev when it is).
+          "ADMIN_APP_URL": "https://staging-baseout-admin.openside.workers.dev",
+          // Preview carries the E2E gate like dev (Playwright targets previews).
+          "E2E_TEST_MODE": "true"
+        },
+        // baseout-dev-pg — previews share the dev database.
+        "hyperdrive": [
+          {
+            "binding": "HYPERDRIVE",
+            "id": "ba2652f40f864918a2da0849f24d12a2"
+          }
+        ],
+        "send_email": [
+          {
+            "name": "EMAIL"
+          }
+        ],
+        // baseout-dev-session — previews share the dev session KV.
+        "kv_namespaces": [
+          {
+            "binding": "SESSION",
+            "id": "d5cac1df2216476eaeb38e9fca639559"
+          }
+        ],
+        "services": [
+          {
+            "binding": "BACKUP_ENGINE",
+            "service": "baseout-server"
+          }
+        ]
+      }
     }
   }
 }

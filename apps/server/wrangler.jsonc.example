@@ -12,6 +12,11 @@
 //
 // Deployed Workers do NOT use localConnectionString — they connect via the
 // Hyperdrive `id`. So the placeholder rendering matters only for local dev.
+//
+// Env model (Cloudflare pivot, 2026-08-24/25): ONE production script
+// (`baseout-server`, the top level here) + Worker Previews (beta) for
+// staging — see the `previews` block and shared/internal/
+// cloudflare-env-separation.md. There is no staging Worker script.
 
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -38,12 +43,6 @@
     { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
   ],
 
-  // Hyperdrive — local dev uses localConnectionString; the `id` is just a
-  // label until the Hyperdrive is provisioned for staging/production deploy.
-  // postgres-js direct TLS hangs inside workerd's nodejs_compat — Hyperdrive
-  // (which proxies the connection) is what actually makes per-request
-  // postgres-js usable from a Worker. See apps/web/wrangler.jsonc for the
-  // matching binding (same dev DB cluster, same id is fine for local dev).
   // Workers AI — schema description generation (server-schema-descriptions).
   // Platform-authenticated binding: no API key, no .dev.vars entry. Optional in
   // Env typing; generation is skipped when absent. NOTE: local `wrangler dev`
@@ -58,8 +57,10 @@
   // ever .get()s from it (download route); all writes stay on the Trigger.dev
   // Node runner. Optional in Env typing — absent binding degrades the
   // download route to 503, never affects backups.
+  // baseout-live — production bucket (bound by Dan, 2026-08-24 sync). The
+  // dev/test bucket baseout-backups-dev stays on env.dev + previews.
   "r2_buckets": [
-    { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
+    { "binding": "BACKUPS_R2", "bucket_name": "baseout-live" }
   ],
 
   // Transactional email (server-reports task 5) — the SAME Cloudflare Email
@@ -74,30 +75,62 @@
   // PUBLIC_APP_URL is apps/web's origin, used for report view + manage links.
   "vars": {
     "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
-    "PUBLIC_APP_URL": "https://baseout.local:4331"
+    "PUBLIC_APP_URL": "https://console.baseout.com"
   },
 
+  // baseout-live-pg — the LIVE customer database (top level IS the
+  // production script `baseout-server`; 2026-08-24). Local `wrangler dev`
+  // ignores the id and uses localConnectionString (dev DB from .env).
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "ba2652f40f864918a2da0849f24d12a2",
+      "id": "62a17f7db4c6402ca5cde230360c1e5b",
       "localConnectionString": "{{DATABASE_URL}}"
     }
   ],
 
-  // Cron triggers: LIVE in env.dev below (env blocks need their own triggers).
-  // Top-level stays off until staging/production env blocks are real
-  // (server-oauth-refresh-cron-health design; enable alongside
-  // shared-server-service-binding-staging-prod).
-  // "triggers": {
-  //   "crons": [
-  //     "0 * * * *",     // webhook renewal — hourly (server-cron-webhook-renewal)
-  //     "*/15 * * * *",  // OAuth token refresh — every 15 minutes
-  //     "0 * * * *",     // trial-expiry monitor — hourly
-  //     "0 * * * *",     // quota-usage monitor — hourly
-  //     "0 2 * * *"      // smart-cleanup scheduler — daily at 02:00 UTC
-  //   ]
-  // },
+  // Worker Previews (beta) base config for script `baseout-server`.
+  // `pnpm --filter @baseout/server preview:sync` runs
+  // `wrangler preview settings update`, which deep-merges this block into the
+  // Worker's preview defaults (existing preview secrets survive). Every
+  // binding a preview needs MUST be restated here — previews inherit nothing
+  // from production except compat/assets/placement (beta docs /configuration/).
+  // Hyperdrive stays on baseout-dev-pg (test), never live.
+  "previews": {
+    "vars": {
+      "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
+      // Web's staging preview origin (bare console.baseout.dev = production).
+      "PUBLIC_APP_URL": "https://staging.console.baseout.dev"
+    },
+    "hyperdrive": [
+      {
+        "binding": "HYPERDRIVE",
+        "id": "ba2652f40f864918a2da0849f24d12a2"
+      }
+    ],
+    "ai": { "binding": "AI" },
+    "r2_buckets": [
+      { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
+    ],
+    "send_email": [{ "name": "EMAIL" }],
+    "durable_objects": {
+      "bindings": [
+        { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+        { "name": "SPACE_DO", "class_name": "SpaceDO" }
+      ]
+    }
+  },
+
+  // Cron triggers — MUST match the schedules live on the production script
+  // (verified via the schedules API, 2026-08-24): wrangler deploy syncs
+  // schedules, so omitting these here would DELETE prod's crons.
+  "triggers": {
+    "crons": [
+      "*/15 * * * *", // OAuth token refresh sweep + run reconciliation
+      "0 13 * * *", // OAuth idle keep-alive (shared-oauth-refresh-keepalive)
+      "0 * * * *" // Airtable webhook renewal (server-cron-webhook-renewal)
+    ]
+  },
 
   // Service bindings (incoming forwards from hooks + api)
   // are configured via the Cloudflare dashboard once those Workers exist.
@@ -110,15 +143,16 @@
   //   TRIGGER_SECRET_KEY          — Trigger.dev v3 server-side key
   //   TRIGGER_PROJECT_REF         — Trigger.dev project ID
   //   CLOUDFLARE_API_TOKEN, STRIPE_API_KEY, MAILGUN_API_KEY — phase-2
+  // Preview secrets are separate: `wrangler preview secret put <NAME>` —
+  // they never copy from production (beta docs /configuration/).
 
   // Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,
   // kv_namespaces, send_email, durable_objects) from top-level into env
   // blocks — every env redeclares the full set. Migrations stay top-level.
   // See: https://developers.cloudflare.com/workers/wrangler/configuration/#environments
   //
-  // env.staging / env.production are placeholders today — they'll get full
-  // redeclarations under the follow-up openspec change covering staging+prod
-  // service-binding wiring.
+  // env.staging was removed 2026-08-25: staging is Worker Previews now
+  // (shared-worker-previews); a baseout-server-staging script never existed.
   "env": {
     "dev": {
       "name": "baseout-server-dev",
@@ -158,9 +192,6 @@
     },
     "production": {
       "name": "baseout-server"
-    },
-    "staging": {
-      "name": "baseout-server-staging"
     }
   }
 }
