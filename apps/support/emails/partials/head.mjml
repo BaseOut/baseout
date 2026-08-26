@@ -1,0 +1,388 @@
+<!--
+  THE ONE HEAD. Every template includes this file and declares no type, colour or spacing of its own.
+
+  WHY A PARTIAL AND NOT THREE COPIES: three templates that each carry their own <mj-attributes> agree
+  on the day they are written and disagree on the second edit, because the edit lands in the file
+  someone had open. There is one set of decisions here and three documents that consume it.
+
+  IT CARRIES NO <mj-head> WRAPPER OF ITS OWN. MJML 5 refuses a nested head, so this file is the head's
+  CHILDREN and each template includes it inside its own `<mj-head>` — which is also where the one head
+  element that cannot be shared lives: `mj-preview`, the inbox-list line, which is per-template by
+  definition.
+
+  ══ THE SHAPE ═══════════════════════════════════════════════════════════════════════════════════
+  A letter on a near-white ground, and the letter is one padded card:
+
+      ACCENT     a 3px rule in the accent across the very top of the card
+      MASTHEAD   #03111d in BOTH themes, the logo left and the desk chip right
+      CARD       #ffffff, 1px hairline, 12px corner, 32px of padding
+      FOOTBAND   #edeef2, attached under the letter, who sent this and why
+      GROUND     #f6f7fb, and the card floats on it
+
+  The ground is `--bo-root-bg`, which the bridge derives as `oklch(from --bo-base-200 0.9765 c h)`
+  and which resolves to `#f6f7fb`. It was NOT picked to look like the reference; it is the portal's
+  own page floor, and it happening to land on the same value is why this shape costs nothing.
+
+  A near-white ground means the card clears it by 1.07:1, so the CARD'S EDGE IS THE HAIRLINE and not
+  the fill. That is DESIGN.md's own sentence about depth ("a 1px hairline and a change of surface
+  tone") in the one situation where the tone alone cannot carry it. Remove the border and the card
+  stops existing; that is the thing to check first if this ever looks wrong.
+
+  ══ THE PALETTE, APPLIED FROM `brand/baseout-bridge.css` ════════════════════════════════════════
+
+      role                    light      dark       token
+      ground                  #f6f7fb    #0a0a0a    --bo-root-bg / --bo-floor
+      masthead                #03111d    #03111d    --bo-primary-content (dark)
+      masthead label          #a7acb0    #a7acb0    --bo-muted over the masthead
+      chip border             #1f4d65    #1f4d65    --bo-primary (dark) at 32% over it
+      reference box border    #89b6ca    #32647a    --bo-primary over the soft fill
+      quoted block fill       #f6f7fb    #1f1f1f    --bo-root-bg / white at 6% over the card
+      footer band             #edeef2    #1a1a1a    --bo-base-200
+      card                    #ffffff    #111111    --bo-base-100
+      hairline                #d5d7de    #27272a    --bo-base-300
+      ink                     #111111    #ffffff    --bo-base-content
+      muted                   #646464    #acacac    --bo-muted (65%)
+      accent                  #156e97    #5cceff    --bo-primary
+      accent label            #ffffff    #03111d    --bo-primary-content
+      band, "copy this"       #d0e2ea    #203741    --bo-soft-primary-bg
+      its label               #1a5f81    #7bd6ff    --bo-soft-primary-fg
+      band, neutral           #edeef2    #1a1a1a    --bo-base-200
+
+  EVERY VALUE IN THE LAST FOUR ROWS WAS MEASURED, NOT DERIVED BY HAND. `--bo-muted` and the soft
+  pairs are `oklch()` and `color-mix()` expressions, and a mail client resolves neither, so each was
+  composited in a browser over its real ground and read back as a byte. Do not recompute them in your
+  head: a linear-sRGB guess lands close enough to look right and far enough to fail contrast. Every
+  pair clears 4.5:1 on its own ground — light 5.25 · 5.66 · 5.92 · 13.7, dark 7.66 · 7.93 · 8.32 ·
+  10.55 · 18.88.
+
+  ══ BOTH THEMES, AND WHAT THAT CLAIM IS WORTH ══════════════════════════════════════════════════
+  DESIGN.md: both themes first-class and solved separately, neither a filter over the other. So the
+  dark block below is a second SOLVED palette in the product's own dark tokens, not the light one
+  inverted. What it is worth depends entirely on the client, and there are three kinds:
+
+    1. HONOURS `prefers-color-scheme` — Apple Mail on macOS and iOS, Outlook for Mac and iOS,
+       Superhuman, Hey, Fastmail, Thunderbird. These get exactly what is written below.
+    2. INVERTS ON ITS OWN TERMS — Gmail's web client and its Android and iOS apps, Outlook.com.
+       They do not read the media query. They apply their own transform, partially and
+       inconsistently, and its results cannot be predicted from source. Declaring
+       `color-scheme: light dark` (below, and in two `<meta>` tags) is the one lever that reaches
+       them: it tells the client the message handles dark mode itself, which reduces how much
+       Gmail rewrites. REDUCES. Not prevents.
+    3. IGNORES ALL OF IT — Outlook on Windows, which renders through Word and reads no media query
+       at all. It gets the light palette, permanently, which is correct rather than degraded.
+
+  WHAT IS DELIBERATELY NOT HANDLED: Outlook.com stamps `data-ogsc` / `data-ogsb` attributes onto
+  elements whose colours it has rewritten, and a third copy of every rule under `[data-ogsc]` would
+  reach it. It is not here. A third copy of thirty declarations drifts from the other two, and it
+  would be a claim about a client nobody in this repo can open. The readme names it as a known gap.
+
+  ══ THE STRUCTURE IS THE POINT, AND IT CAME FROM A REFERENCE ═══════════════════════════════════
+  A reference design was brought in 2026-08-24 for its STRUCTURE, explicitly not its palette. What it
+  contributed, and why each piece earns its place:
+
+    - A LEDE UNDER THE TITLE that says what the reference is FOR. The block below it used to arrive
+      unexplained, and a labelled value with no sentence attached is a form field, not a receipt.
+    - THE REFERENCE AS AN INSET BLOCK rather than a full-bleed band, with its caption INSIDE it. The
+      band and its explanation used to be two things separated by 24px of white; one block is one
+      idea. It is a CALLOUT, which the system already sanctions (Starlight's asides are a tint plus a
+      border), not a card inside a card: no shadow, no elevation, and it sits in the text column
+      rather than on the page floor.
+    - "WHAT HAPPENS NEXT" AS THREE NUMBERED STEPS. This is the one that mattered. The same three
+      facts were a single muted paragraph, which is the shape a reader skips; ordered and numbered
+      they answer "what do I do now" at a glance. The words are unchanged, and steps 01 and 02 are
+      still verbatim `ANSWERED_BY_EMAIL` from `lib/submit.ts` — the lockstep with the on-screen
+      receipt is now word-level rather than paragraph-level, and it still has to be kept.
+    - THE QUOTED BLOCK AS A FILL rather than an indent, so what the customer sent reads as an
+      artefact rather than as more of our prose.
+    - A REAL FOOTER BAND. See below.
+
+  WHAT THE REFERENCE HAD AND THESE DELIBERATELY DO NOT: a thick coloured stripe down the left of both
+  inset blocks, which DESIGN.md bans by name; a status badge in the masthead, because a status
+  printed into a mailbox is a snapshot that goes stale and would still read CASE OPEN a month after
+  the case closed; and a "check case status" button, because the acknowledgement reaches people with
+  no account and no anonymous portal view exists, so the button would be a dead end for most of the
+  people it is shown to. The text link stays; it is an offer rather than a promise.
+
+  NO ICONS, AND NOT FOR WANT OF A SET. Lucide is the product's one icon set and an email cannot use
+  it: an icon is an image, images are blocked by default in exactly the clients this audience reads
+  mail in, and an icon that carries meaning would carry it only for some readers. Everything a glyph
+  would have done is done by a numeral, a label or a rule.
+
+  ══ THE FOOTER IS TRANSACTIONAL, WHICH DECIDES WHAT IS IN IT ═══════════════════════════════════
+  All three of these are transactional: a receipt, a human's answer, and a credential. That is not a
+  style question, it is what the footer is allowed to say.
+
+    - NO UNSUBSCRIBE LINK, and adding one would be worse than leaving it out. Nobody can unsubscribe
+      from the answer to their own support request; the control would either lie or break the case.
+      CAN-SPAM exempts transactional and relationship messages from the opt-out requirement, and the
+      `List-Unsubscribe` header must NOT be set on these either.
+    - NO POSTAL ADDRESS. The address requirement is on COMMERCIAL messages; these are exempt, and an
+      address invented to look complete is worse than an honest absence. If Baseout wants one it is a
+      real decision with a real string, not a placeholder.
+    - WHAT IS THERE INSTEAD IS "WHY YOU ARE RECEIVING THIS", naming the address and the case. That
+      single line is the strongest thing a transactional footer can do: it is what stops a reader who
+      does not recognise the mail from reporting it as spam, which is the outcome that actually costs
+      us the channel.
+
+  THE MOMENT BASEOUT SENDS ANYTHING NON-TRANSACTIONAL — a digest, a product update, a newsletter —
+  that message needs both the unsubscribe and the address, and these three still do not. Do not
+  "harmonise" the footers when that day comes.
+
+  ══ DESIGN.md IS NOT THE AUTHORITY IN THIS DIRECTORY, AND THAT IS A RULING ═════════════════════
+  Oleh, 2026-08-24, asked directly about the conflict: **ignore it**. Two reasons, both his. The
+  email design is not approved yet, and it does not connect to the product UI in the first place.
+
+  SO DO NOT "FIX" THE 4px BAR ON THE QUOTED BLOCKS. `DESIGN.md` says "don't use `border-left` or
+  `border-right` greater than 1px as a coloured accent stripe", the quoted blocks here carry a 4px
+  bar, and that is not a violation to be tidied up: it is a deliberate mark in a medium that document
+  does not govern. The 1px version was built twice and rejected twice. This paragraph exists because
+  the next person to open this file will see 4px, remember the rule, and helpfully undo it.
+
+  WHY THE SCOPE SPLIT IS REAL AND NOT AN EXCUSE. Email is a different medium with different
+  primitives: no icon set (an icon is an image and images are blocked), no webfont, no custom
+  properties, no flexbox, no reliable `display`, and tables as the only dependable layout. A rule
+  written for a browser surface cannot be assumed to transfer, and where it does not, the email wins
+  here and the product wins there. What DOES carry across is the PALETTE, which is why every colour
+  in this file is named beside the bridge token it comes from: the tokens are shared, the layout
+  rules are not.
+
+  THE CONFLICT IS STILL REAL IN THE PRODUCT'S OWN DOCUMENTATION, where the callouts ship 4px on a
+  browser surface that DESIGN.md unambiguously governs. That one is not settled by this ruling and
+  is logged in `audit/` as an unresolved conflict. It is not this directory's problem.
+
+  ══ RESTRAINED, AND THE ORDER IS THE DESIGN ═════════════════════════════════════════════════════
+  Colour marks three things and no fourth: IDENTITY (the logo), what can be ACTED ON (the button,
+  every link), and THE ONE STRING THE READER COPIES (a full-bleed band). The four semantic hues are
+  absent because none of these three emails reports a state; when one does, it takes the soft pair
+  from the bridge rather than a new colour.
+
+  THE BAND MARKS WHAT GETS COPIED, and which band says how much it matters. The acknowledgement's
+  reference is the payload, so it gets the soft-primary band. The login link's URL is the FALLBACK
+  for its button, so it gets the neutral band and does not argue with it. The reply has nothing to
+  copy and gets no band at all, which is also why it is the quietest of the three: a person wrote its
+  payload, and an email that decorates a human's sentences reads as though they were generated.
+
+  A BAND IS NOT A NESTED CARD. The wireframe's receipt was a filled box with a corner radius floating
+  inside the white card, which DESIGN.md prohibits by name. A band has no border and no radius and
+  runs edge to edge: it divides the document, the way a rule does.
+
+  ══ THE LOGO IS ONE REAL FILE, BECAUSE ITS GROUND NEVER CHANGES ═══════════════════════════════
+  `public/email/baseout-logo-cyan@2x.png`, rasterised from the brand kit's own
+  `apps/web/public/images/logo/logo-dark.svg` at 240x64 and shown at 120x32.
+
+  THE MASTHEAD IS `#03111d` IN BOTH THEMES, and that single decision deletes the hardest problem in
+  dark-mode email. A logo drawn for a white card is wrong on a dark one, so a card-coloured masthead
+  forces two files, a `display` swap, and an Outlook conditional to stop both showing at once. Pin
+  the masthead to one dark value and the logo has one ground, one colourway and one file. The value
+  is `--bo-primary-content` from the dark theme: a real token, brand-tinted rather than neutral
+  black, and it carries the cyan lockup at 10.64:1.
+
+    - PNG, NOT SVG. Gmail strips SVG; Word cannot draw it. No format works everywhere, so the choice
+      is which one fails, and PNG fails only where images are blocked.
+    - TRANSPARENT. Its ground is a solid `#03111d` band in every theme, so even a client that
+      composites transparency onto black produces the intended picture.
+    - AND THE ALT TEXT IS STYLED, which is the part people skip. Where images are blocked the alt
+      renders as the wordmark in cyan at 20px on the dark band, so the masthead degrades to a typeset
+      wordmark rather than to a broken-image box. Without this, an image masthead would be a defect
+      for the reader most likely to be reading it.
+
+  IN DARK, THE BAND NEEDS A HAIRLINE. `#03111d` against the dark card `#111111` measures 1.01:1, so
+  the band is invisible on its own; a `#27272a` rule under it is what draws the edge. That is not a
+  workaround, it is DESIGN.md's model of depth in dark ("a 1px hairline and a change of surface
+  tone") in the case where the tone alone cannot carry it. In light the step is 19:1 and needs nothing.
+
+  ══ NO WEBFONT ═════════════════════════════════════════════════════════════════════════════════
+  Urbanist is the brand face and it is deliberately absent: a downloaded face fails silently in
+  Outlook, so half the readership would see a different email from the other half, and neither half
+  would know. The type ladder below is the brand's own rung set (12 · 13 · 14 · 16 · 20 · 24), which
+  is what actually carries the hierarchy; the face carries less of it than it feels like it does.
+
+  ══ LITERALS, NOT VARIABLES ════════════════════════════════════════════════════════════════════
+  Mail clients do not run custom properties — Outlook on Windows renders through Word, which resolves
+  nothing — so a `var()` here is an unstyled email. Every value above is written out twice, once per
+  theme, and that duplication is the price of the second palette.
+-->
+<mj-raw>
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+</mj-raw>
+
+<mj-attributes>
+  <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
+
+  <mj-body background-color="#f6f7fb" css-class="bo-ground" />
+
+  <mj-text color="#111111" font-size="16px" line-height="1.6" padding="0" css-class="bo-ink" />
+
+  <!-- Sections carry no ground of their own unless they are a BAND, because the card is painted once
+       by the wrapper each template opens. A section that painted itself white here would square off
+       the corners it sits behind. -->
+  <mj-section background-color="transparent" padding="0" />
+  <mj-column padding="0" />
+  <mj-wrapper background-color="#ffffff" border="1px solid #d5d7de" border-radius="12px" padding="0" css-class="bo-card" />
+
+  <mj-divider border-width="1px" border-style="solid" border-color="#d5d7de" padding="0" css-class="bo-rule" />
+  <mj-image padding="0" />
+
+  <!-- --bo-r-8 is DESIGN.md's button shape: gently rounded, never a pill outside a filter chip.
+       The inner padding is 14px rather than the product's 10px because a finger is not a cursor and
+       this is the one control in the whole set; 14 + 16 + 14 clears 44px and stays on the 4px grid.
+       Word drops the corner entirely and the button degrades to a teal rectangle, which is fine. -->
+  <mj-button background-color="#156e97" color="#ffffff" font-size="16px" font-weight="600"
+             border-radius="8px" inner-padding="14px 24px" padding="0" css-class="bo-btn" />
+
+  <!-- The one page title. --bo-t-24, a 1.5 step over body. It deliberately does NOT go to the 32px
+       display rung: the brand's density target is Linear and Vercel. -->
+  <mj-class name="h1" font-size="24px" font-weight="600" line-height="1.3" letter-spacing="-0.01em" color="#111111" />
+
+  <!-- Secondary text. --bo-t-13. -->
+  <mj-class name="muted" font-size="13px" color="#646464" line-height="1.6" />
+
+  <!-- The label rung, uppercase. The brand sets it at 11px; these use 12 because a mail client picks
+       its own hinting and a rung that is legible in a browser at 11 is not reliably legible in Word.
+       12 is a rung, and it is the twelve-pixel floor rather than a value below it. -->
+  <mj-class name="label" font-size="12px" font-weight="700" letter-spacing="0.04em" color="#646464" line-height="1.4" />
+
+
+  <!-- THE REFERENCE. The one string a person retypes, so it leads at --bo-t-20 in a monospaced face
+       and is printed exactly once per email. Monospace is not decoration here: it is what makes the
+       difference between an O and a 0 visible to someone copying it into a subject line by hand. -->
+  <mj-class name="ref" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20px" letter-spacing="0.02em" color="#111111" line-height="1.4" />
+
+  <!-- The reference again, at the reply's rank rather than the acknowledgement's. Same monospaced
+       face for the same reason: whatever size it is set at, this string gets retyped, and an O that
+       cannot be told from a 0 is a case number that threads to nothing. -->
+  <mj-class name="refsm" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13px" letter-spacing="0.02em" color="#646464" line-height="1.4" />
+
+  <!-- Quoted material: what the sender wrote, and the thread so far. Muted and one rung down, set
+       apart by a rule and an indent rather than by going fainter still — history a reader cannot
+       make out is not included, it is decoration. -->
+  <mj-class name="quote" font-size="13px" color="#646464" line-height="1.6" />
+
+  <!-- THE EYEBROW. The label rung in the accent, above the title. It is not the title restated: it
+       names the KIND of mail, which a reader scanning three Baseout messages in one thread needs and
+       the sentence below it does not give. Where a real identifier exists the eyebrow carries that
+       instead of a category, because a case reference tells the reader more than the word "reply". -->
+  <mj-class name="eyebrow" font-size="12px" font-weight="700" letter-spacing="0.08em" color="#156e97" line-height="1.4" />
+
+  <!-- The desk name, right of the logo on the masthead. Baseout will send product mail too, and this
+       says which desk this one came from. --bo-muted resolved against the masthead, 8.32:1. -->
+  <mj-class name="mastlabel" font-size="12px" font-weight="700" letter-spacing="0.08em" color="#a7acb0" line-height="1.4" />
+
+  <!-- THE STEP NUMERAL. Monospaced so 01 · 02 · 03 hold one column width without a table trick, and
+       in the accent because the numeral is the only thing marking the list as ordered: an email
+       cannot use a Lucide glyph (an icon is an image, and images are blocked exactly where this
+       matters most), so the numeral carries what a glyph would carry in the product. -->
+  <mj-class name="step" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13px" font-weight="700" letter-spacing="0.04em" color="#156e97" line-height="1.6" />
+
+  <!-- The footer, which lives OUTSIDE the card on the ground. Same muted rung; it reads as the
+       envelope's own small print rather than as the last paragraph of the letter. -->
+  <mj-class name="foot" font-size="13px" color="#646464" line-height="1.6" />
+</mj-attributes>
+
+<mj-style>
+  /* Declared in CSS as well as in the two meta tags above, because clients read one or the other and
+     no client reads both reliably. This is what tells a client the message handles dark mode itself. */
+  :root { color-scheme: light dark; supported-color-schemes: light dark; }
+
+  /* Links take the accent AND keep the underline. The underline is not a wireframe leftover: an
+     email is read in a client whose palette we do not control, and colour must never be the sole
+     carrier of an affordance. That is the product's Never-Alone rule, and it applies hardest here.
+
+     EVERY ANCHOR ALSO CARRIES THE COLOUR INLINE, and this rule is not redundant with that: Outlook
+     renders through Word, which applies its own hyperlink style and does not reliably let a head
+     stylesheet beat it, so a link styled only here comes out Word-blue on the client this audience
+     is most likely to be reading in. The rule covers everything else; the inline attribute covers
+     Word; the dark block below has to beat the inline attribute, which is what its !important is
+     for. Three layers, and each one is there because the layer under it has a hole. */
+  a { color: #156e97; text-decoration: underline; }
+
+  /* THE LOGO SWAP IS BACK, and it is the direct cost of removing the dark masthead from style one.
+     While the masthead was pinned to one dark value the logo had one ground and one file; with the
+     logo on the card, the ground is white in light and #111111 in dark, and the ink lockup measures
+     2.6:1 on the dark one. The light file is the default, so a client that reads no media query gets
+     the correct image for the light card it is also going to render, and the dark one is hidden from
+     Word by a conditional rather than by CSS because Word's support for `display: none` from a head
+     stylesheet is not something to bet a masthead on. */
+  .bo-logo-dark { display: none; }
+
+  /* A `<td>` WITH A RADIUS DRAWS SQUARE UNDER `border-collapse: collapse`, WHICH IS WHAT MJML EMITS.
+     Measured 2026-08-24: style two's boxes carried `border-radius: 8px` on the cell, the rule
+     reported as applied, and every corner rendered sharp. The spec is explicit — a collapsed table
+     ignores cell radii — so the radius was never wrong, the table around it was. `!important` because
+     MJML writes the collapse inline, and `border-spacing: 0` because `separate` would otherwise open
+     a gap between the bar and the fill it is meant to touch. */
+  table.bo-round, .bo-round table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+
+  /* Long references, ids and URLs must wrap rather than force a horizontal scroll on a phone. */
+  .bo-break { word-break: break-word; }
+
+  /* ─────────────────────────────────────────────────────────────────────────────────────────────
+     THE DARK PALETTE. Solved separately in the product's own dark tokens, never the light palette
+     inverted. Every declaration is !important because MJML writes the light value inline on the same
+     element, and an inline style beats a head rule at every specificity a stylesheet can reach.
+
+     The selector lists are doubled (`.x` and `.x div`, `.x td`) on purpose: MJML puts `css-class` on
+     the outermost element it emits for a component, and which element that is differs by component.
+     Naming both is cheaper than being wrong on one of them and finding out in somebody's inbox.
+     ───────────────────────────────────────────────────────────────────────────────────────────── */
+  @media (prefers-color-scheme: dark) {
+    body, .bo-ground, .bo-ground > div { background-color: #0a0a0a !important; }
+
+    .bo-card, .bo-card > table, .bo-card > div { background-color: #111111 !important; }
+    /* THE CARD'S BORDER IS NOT ON THE ELEMENT CARRYING THE CLASS. MJML emits the wrapper as
+       `div.bo-card > table > tbody > tr > td` and puts the border AND the radius on that innermost
+       td, so a rule on `.bo-card` alone measures as applied and leaves a light hairline drawn round
+       a dark card. Measured before this line existed: `#d5d7de` on a `#111111` card. */
+    .bo-card > table > tbody > tr > td { border-color: #27272a !important; }
+
+    .bo-ink, .bo-ink div, .bo-ink td { color: #ffffff !important; }
+    .bo-muted, .bo-muted div, .bo-muted td,
+    .bo-foot, .bo-foot div, .bo-foot td { color: #acacac !important; }
+
+    .bo-rule p, p.bo-rule { border-top-color: #27272a !important; }
+
+    .bo-indent, .bo-indent td, .bo-indent > div { border-left-color: #27272a !important; }
+
+    .bo-kv th { color: #acacac !important; border-bottom-color: #27272a !important; }
+    .bo-kv td { color: #ffffff !important; border-bottom-color: #27272a !important; }
+
+    .bo-eyebrow, .bo-eyebrow div, .bo-eyebrow td { color: #7bd6ff !important; }
+
+    .bo-step, .bo-step div, .bo-step td { color: #5cceff !important; }
+
+    /* STYLE TWO ONLY. The corner brackets around the reference, the pale header strip on a labelled
+       box, and the dotted rule. Each is the dark half of the token the light rule uses; none of them
+       exists in style one, and a class that matches nothing costs nothing. */
+    .bo-bracket, .bo-bracket td { border-color: #5cceff !important; }
+    .bo-stripe, .bo-stripe td { background-color: #1a1a1a !important; }
+    .bo-dots p, p.bo-dots { border-top-color: #27272a !important; }
+    .bo-node-done, .bo-node-done td, .bo-node-done div { color: #5cceff !important; }
+    .bo-node-todo, .bo-node-todo td, .bo-node-todo div { color: #acacac !important; }
+    .bo-connector { background-color: #27272a !important; }
+
+    /* THE QUOTE BLOCK: a 4px bar and a fill. See the ruling in the header comment. */
+    .bo-qbar, td.bo-qbar { background-color: #32647a !important; }
+    .bo-qbody, td.bo-qbody { background-color: #1f1f1f !important; }
+
+    /* Style one has no masthead any more, so its logo sits on the card and the card changes colour
+       with the theme. That is the swap the pinned masthead used to make unnecessary. */
+    .bo-logo-light { display: none !important; }
+    .bo-logo-dark { display: block !important; }
+
+    .bo-quotebox, .bo-quotebox td, .bo-quotebox > div { background-color: #1f1f1f !important; border-color: #27272a !important; }
+
+    .bo-footband, .bo-footband > table, .bo-footband > div { background-color: #1a1a1a !important; }
+
+    .bo-band-ref, .bo-band-ref > table, .bo-band-ref > div { background-color: #203741 !important; }
+    .bo-band-neutral, .bo-band-neutral > table, .bo-band-neutral > div { background-color: #1a1a1a !important; }
+
+    a, .bo-ink a, .bo-muted a, .bo-foot a { color: #5cceff !important; }
+
+    .bo-btn a, .bo-btn table, a.bo-btn { background-color: #5cceff !important; color: #03111d !important; }
+
+  }
+</mj-style>

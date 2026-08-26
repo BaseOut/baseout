@@ -3,10 +3,10 @@ title: How Baseout is organized
 description: Organization, Space, Source, Destination and Base, the containers everything else sits inside.
 ---
 
-Four containers, nested. An **Organization** is the top-level customer entity, and billing lives
-there. An Organization holds one or more **Spaces**. A Space is bound to exactly one platform and is
+Four containers, nested. An *Organization* is the top-level customer entity, and billing lives
+there. An Organization holds one or more *Spaces*. A Space is bound to exactly one platform and is
 where a backup is configured, with its own scope, schedule, destination and settings. A Space reads
-through a **Source** and writes to a **Destination**. Everything below that belongs to the platform.
+through a *Source* and writes to a *Destination*. Everything below that belongs to the platform.
 
 ## What the platform changes, and what it does not
 
@@ -56,7 +56,7 @@ more than one. See [Connecting Airtable](/platforms/airtable/connecting/).
 
 ## Sources and Destinations belong to the account
 
-A **Source** is the connection Baseout reads through. A **Destination** is the storage it writes to.
+A Source is the connection Baseout reads through. A Destination is the storage it writes to.
 Both belong to your account rather than to a single Space, so you set one up once and reuse it
 wherever you need it.
 
@@ -71,7 +71,7 @@ A Space is bound to one platform, so a second platform means a second Space. Pas
 the unit that carries a scope and a schedule, so a second one is what you reach for when one set of
 bases needs a different cadence, a different depth, or a different Destination from another.
 
-## Next
+## Next steps
 
 - [Glossary](/reference/glossary/): every settled term in one table
 - [Sources](/connections/sources/): what a Source can see, and how it is authorized

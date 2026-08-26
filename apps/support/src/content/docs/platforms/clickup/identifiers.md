@@ -56,7 +56,7 @@ knew a task by is in the backup rather than on the restored task. If that identi
 team quotes in conversation, keeping it in an ordinary Custom Field is what makes it survive: a
 stored value comes back exactly as it was.
 
-## Next
+## Next steps
 
 - [Restoring ClickUp data](/platforms/clickup/restoring/): what comes back, and what cannot
 - [Restoring a base](/restore/restoring-a-base/): the flow, and the outcome report

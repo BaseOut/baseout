@@ -1,0 +1,429 @@
+---
+/**
+ * `My requests` — every support case this person has written, newest movement first.
+ *
+ * ── THE LABEL ──────────────────────────────────────────────────────────────────────────────────
+ * `My requests`, and it is measured rather than preferred: zero of the fifteen customer portals
+ * surveyed said "My tickets". A ticket is our word for it. A request is theirs.
+ *
+ * ── SORTED BY LAST ACTIVITY, NEVER BY CREATION ─────────────────────────────────────────────────
+ * That is the page's whole reason for existing. A customer opens it to find the one that MOVED, and
+ * ordering by creation puts a case somebody answered this morning below one nobody has touched since
+ * last month. The fixture is deliberately unsorted in the source so a sort that never ran would show.
+ *
+ * ── SIGNED OUT IS A LOCKED CAPABILITY IN PLACE, NOT A REDIRECT ─────────────────────────────────
+ * The industry sends a 302 to a sign-in — Zapier's portal and Figma's both do, verified live. We
+ * render `pattern-locked-tab` instead: the calm lock mark, what the page does, one line on why it is
+ * locked, and the way in. A redirect answers a question the person did not ask and throws away the
+ * explanation. And the way in is not only the sign-in: this portal is EMAIL-FIRST and the portal is
+ * the mirror, so the locked state also names the channel that reaches everyone the portal cannot.
+ *
+ * THERE IS NO AUTH IN THIS APP, so neither state is the real one and both are drawn. The default is
+ * SIGNED IN (2026-08-21) and `?session=out` is the declared variant showing the locked half —
+ * `lib/portal-session.ts` carries the argument, and both are in the smoke table so neither can fail
+ * silently. There is nothing here to log into: the session is the Baseout app's, read across
+ * origins, never minted by the portal, which is why this site has no account surface of its own.
+ *
+ * ── NO HEADER NAV SLOT, AND THAT IS A DECISION ─────────────────────────────────────────────────
+ * The header is three items and that is a MEASURED budget at 390px. A fourth item leading to a locked
+ * page is a fourth item that fails for every visitor — "a menu item that leads to a locked door is
+ * worse than no menu item" (`contact.astro:473-475`). This page is reached from the receipt and from
+ * the case emails until there is a session to put behind it. When the slot is finally added it
+ * touches TWO places: the `NAV` array in `components/Header.astro` and the mobile top-level sidebar
+ * entries in `astro.config.mjs`, which are declared separately.
+ *
+ * ── PER-TAB EMPTY STATES, BECAUSE THEY ARE DIFFERENT SENTENCES ─────────────────────────────────
+ * "No open requests" is a fact about a lane. "You have never written to us" is a fact about the
+ * account, and only the second one has anywhere useful to point — the documentation and the chat,
+ * which are free and already shipped. Every empty title below names the MECHANISM rather than the
+ * absence, which `pattern-empty-state` requires and which "Nothing here!" fails.
+ *
+ * ── A STATIC BUILD CANNOT BRANCH ON A QUERY PARAMETER ──────────────────────────────────────────
+ * No `output`, no adapter. So every state is rendered into this page and an attribute selects it,
+ * exactly as `lib/shot-switch.ts` does on the landing. `lib/tickets-view.ts` moves the attributes.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Icon from '../../components/Icon.astro';
+import LockedCapability from '../../components/LockedCapability.astro';
+import TicketRow from '../../components/TicketRow.astro';
+import { TICKETS, byLastActivity } from '../../data/tickets';
+import { TABS, inTab } from '../../lib/ticket-status';
+
+/* `returnTo` points back at this page, so signing in lands where the reader was standing rather than
+   on a dashboard they then have to navigate out of. */
+const SIGN_IN_URL = 'https://app.baseout.com/login?returnTo=https://support.baseout.com/requests';
+
+const tickets = byLastActivity(TICKETS);
+
+/* Printed for the full fixture; `lib/tickets-view.ts` rewrites them from the rows actually present,
+   so `?tickets=none` cannot leave "Open 3" standing above "you have not written to us yet". */
+const counts = Object.fromEntries(
+  TABS.map(({ key }) => [key, tickets.filter((t) => inTab(t.status, key)).length]),
+) as Record<string, number>;
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'My requests',
+    description: 'Every support request you have sent, and where each one stands.',
+    tableOfContents: false,
+    /* Starlight derives prev/next from the SIDEBAR, and a service is not a page of the manual. Same
+       two lines `/contact` and `/roadmap` carry, for the same reason. */
+    prev: false,
+    next: false,
+  }}
+>
+  <div class="rq" data-requests data-session="in" data-tab="open" data-tickets="some" data-empty="no">
+    {/* ── SIGNED OUT ─────────────────────────────────────────────────────────────────────────── */}
+    <div class="rq-locked">
+      <LockedCapability
+        title="Your requests are behind sign-in"
+        does="This page lists every request you have sent us — the subject, where it stands, and the reply that moved it last."
+        why="A request is keyed to an email address. Without a session there is no way to tell which requests are yours, so this page shows none rather than somebody else's."
+        actionLabel="Sign in to Baseout"
+        actionHref={SIGN_IN_URL}
+      >
+        <p class="rq-alt" slot="alternative">
+          You do not need this page to reach us. Every request is also an email thread: replying to
+          the message we sent about it goes to the same place. <a href="/contact/">Start a new
+          request</a>.
+        </p>
+      </LockedCapability>
+    </div>
+
+    {/* ── SIGNED IN ──────────────────────────────────────────────────────────────────────────── */}
+    <div class="rq-list">
+      <p class="rq-lede">
+        Everything you have written to us, most recently active first.
+        {/* STRAIGHT TO THE FORM, NOT THE FORK. `/contact/` opens on five tiles asking what kind of
+          thing you are about to write — a question this reader answered by pressing a button in a
+          list of their own support requests. Landing them on the chooser reads as nothing having
+          happened. `?kind=ticket` is the deep link `submit.ts` already guards, so the door is named,
+          the form is open, and Back still reaches the other four.
+
+          NOT A PANEL, deliberately: the form is 1,068 lines of step machine, validation, attachment
+          handling and article suggestions. A second copy of it here would be two implementations of
+          one form — the drift removed from three other places today. */}
+        <a class="rq-new" href="/contact/?kind=ticket">
+          <Icon name="plus" size={14} />
+          Start a new request
+        </a>
+      </p>
+
+      {/* THE COUNTS ARE ON THE TABS, INCLUDING ZEROS. A zero pre-empts "why is this empty" before
+           the reader has to click to find out. */}
+      <div class="rq-tabs" role="tablist" aria-label="Request status">
+        {
+          TABS.map(({ key, label }) => (
+            <button
+              class="rq-tab"
+              type="button"
+              role="tab"
+              data-tab-btn={key}
+              aria-selected={key === 'open' ? 'true' : 'false'}
+            >
+              {label}
+              <span class="rq-tab-n" data-count={key}>{counts[key]}</span>
+            </button>
+          ))
+        }
+      </div>
+
+      <ul class="rq-items">
+        {
+          tickets.map((t) => (
+            <li class="rq-item" data-ticket-row data-ticket-status={t.status} hidden={t.status === 'closed'}>
+              <TicketRow ticket={t} />
+            </li>
+          ))
+        }
+      </ul>
+
+      {/* ── THE EMPTY STATES. Three, and they are three different facts. ───────────────────────── */}
+      <div class="rq-empty rq-empty-open">
+        <span class="rq-empty-tile"><Icon name="ticket" size={22} /></span>
+        <h2 class="rq-empty-title">An open request stays here until it is closed</h2>
+        <p class="rq-empty-line">
+          You have none open. Anything finished is on the Closed tab, and a reply reopens it.
+        </p>
+      </div>
+
+      <div class="rq-empty rq-empty-closed">
+        <span class="rq-empty-tile"><Icon name="circle-check" size={22} /></span>
+        <h2 class="rq-empty-title">A request lands here once it is closed</h2>
+        <p class="rq-empty-line">
+          You have none closed yet. Either you or support closes a request when it is done.
+        </p>
+      </div>
+
+      <div class="rq-empty rq-empty-never">
+        <span class="rq-empty-tile"><Icon name="life-buoy" size={22} /></span>
+        <h2 class="rq-empty-title">Your requests appear here once you write to us</h2>
+        <p class="rq-empty-line">
+          You have not written yet. The documentation and the chat answer most questions without a
+          request — and when they do not, a request keeps the whole thread in one place.
+        </p>
+        <p class="rq-empty-exits">
+          <a class="rq-empty-cta" href="/start/what-baseout-is/">
+            <Icon name="book-open" size={16} />
+            Read the documentation
+          </a>
+          <a class="rq-empty-alt" href="/contact/">Start a request</a>
+        </p>
+      </div>
+
+      {/* The line that prevents a request about the request. It names no duration: a clock we do
+           not control is a promise we cannot keep. */}
+      <p class="rq-foot">
+        A request you have just sent may not be listed yet. The acknowledgement email is the receipt
+        until it is.
+      </p>
+    </div>
+  </div>
+</StarlightPage>
+
+<script>
+  import { wireRequestsList } from '../../lib/tickets-view';
+  wireRequestsList();
+</script>
+
+<style>
+  .rq {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Which half is on screen ───────────────────────────────────────────────────────────────────
+     Both halves are rendered and the attribute picks one. `display: none` on the loser rather than
+     the `hidden` attribute, because an author `display` beats `[hidden]` and this file is where the
+     author `display` would be. */
+  .rq-locked,
+  .rq-list {
+    display: none;
+  }
+
+  .rq[data-session='out'] .rq-locked {
+    display: block;
+  }
+
+  .rq[data-session='in'] .rq-list {
+    display: flex;
+    flex-direction: column;
+    /* 12px, down from 20px. Each row is already a bordered card with its own padding, so the gap is
+       separating things that are separated; at 20px four cases read as four sections. */
+    gap: 12px;
+  }
+
+  /* Slotted into `LockedCapability`, so it is authored HERE and carries this file's scope — which is
+     why this rule reaches it and a rule written inside that component would not. */
+  .rq-alt {
+    max-width: 46ch;
+    margin: 16px 0 0;
+    font-size: var(--bo-t-13);
+    line-height: 1.55;
+    color: var(--bo-muted);
+  }
+
+  .rq-lede {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted);
+  }
+
+  /* THE SAME PRIMARY BUTTON THE ROADMAP USES, declaration for declaration (`roadmap.astro`'s
+     `.rb-add`). It was a text link — transparent, no padding, 22.8px tall next to a 40.5px button
+     on the sibling page — so the one action on this screen was the quietest thing on it. Two pages
+     of one portal offering the same kind of action should not disagree about what an action looks
+     like. */
+  .rq-new {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* ds-ok: 6px optical icon↔label gap. */
+    flex: none;
+    padding: 8px 16px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content) !important;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .rq-new:hover { background: var(--bo-secondary); }
+
+  /* STARLIGHT'S PROSE RHYTHM IS A GENERAL-SIBLING RULE and it reaches inside any nested flex box:
+     the first tab keeps `margin-top: 0` and every one after it takes the prose margin, so `Open`
+     sat 8px above `Closed` and `All` at an identical 34.8px height, and the row measured 59.8px
+     instead of 43. `align-items: center` cannot save it — the margin is inside the flex item's own
+     box. `:global(*)` on the child half is required: a bare `> *` takes this page's scope hash and
+     the buttons carry it, but the pattern is the one `PlatformPicker` documents, and matching it is
+     what stops the next person re-deriving this. Bit here on 2026-08-21, and on the status icons on
+     2026-08-19 before that. */
+  .rq-tabs > :global(*) {
+    margin-top: 0;
+  }
+
+  .rq-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  .rq-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: var(--bo-r-8);
+    background: transparent;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .rq-tab:hover {
+    color: var(--bo-base-content);
+  }
+
+  .rq-tab:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  .rq-tab[aria-selected='true'] {
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+  }
+
+  .rq-tab-n {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+
+  /* THE GAP WAS NEVER THE GAP. `.rq-items` declares 12px and the cards sat 36px apart: 4px of prose
+     margin on every `li` after the first, plus 20px of prose margin on the card INSIDE each one —
+     Starlight's general-sibling rhythm reaching two levels down into a flex list. Both are reset
+     here, so the declared 12px is what a reader actually sees. Measured before: li-to-li 16px, card
+     bottom to card top 36px. `:global()` on the child half is required — a bare `> *` takes this
+     page's hash, and `.tr` is a child component that carries its own. */
+  .rq-items > :global(li) {
+    margin: 0;
+  }
+
+  .rq-items > :global(li) > :global(*) {
+    margin-block: 0;
+  }
+
+  .rq-items {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* THE GUARD. `.rq-item` has no author `display`, but a Starlight prose rule reaching a bare `li`
+     would be enough to beat `[hidden]` on its own, and this list sits inside `.sl-markdown-content`.
+     Stated here so the controller's `row.hidden = true` cannot be silently ignored. */
+  .rq-item[hidden] {
+    display: none;
+  }
+
+  /* ── The three empty states ────────────────────────────────────────────────────────────────── */
+  .rq-empty {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 40px 24px;
+    border: 1px dashed var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+  }
+
+  .rq[data-empty='lane'][data-tab='open'] .rq-empty-open,
+  .rq[data-empty='lane'][data-tab='closed'] .rq-empty-closed,
+  .rq[data-empty='never'] .rq-empty-never {
+    display: flex;
+  }
+
+  /* 48px / 12px radius / `base-200` / no border — the bound tile. */
+  .rq-empty-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-200);
+    color: var(--bo-muted-strong);
+  }
+
+  .rq-empty-title {
+    margin: 16px 0 0;
+    font-size: var(--bo-t-16);
+    font-weight: 650;
+    line-height: 1.35;
+    color: var(--bo-base-content);
+  }
+
+  .rq-empty-line {
+    max-width: 46ch;
+    margin: 8px 0 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.55;
+    color: var(--bo-muted);
+  }
+
+  .rq-empty-exits {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+    margin: 20px 0 0;
+  }
+
+  /* ONE primary, and it is the free thing that already exists. `btn-sm` in spirit: an empty state is
+     the opposite of a hero — it is a page reporting that it has nothing. */
+  .rq-empty-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content);
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .rq-empty-cta:hover {
+    color: var(--bo-primary-content);
+    text-decoration: none;
+  }
+
+  .rq-empty-alt {
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+  }
+
+  .rq-foot {
+    max-width: 60ch;
+    margin: 0;
+    font-size: var(--bo-t-12);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+</style>

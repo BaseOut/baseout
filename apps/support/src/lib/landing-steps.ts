@@ -24,6 +24,7 @@
  * each for everybody. A step that re-pointed at a per-platform page that does not exist would be
  * the same dead-link defect this app shipped once already.
  */
+import { DOCUMENTED_PLATFORM_IDS } from './documented-platforms';
 import { platform, type Platform, type PlatformId } from './platforms';
 
 /** Which word of a platform's furniture a sentence wants. `name` is the platform itself. */
@@ -129,7 +130,15 @@ export function nounFor(noun: StepNoun, p: Platform | null): string {
 export function nounReadings(step: Step): { key: string; text: string }[] {
   return [
     { key: 'neutral', text: nounFor(step.noun, null) },
-    ...(['airtable', 'clickup', 'notion'] as PlatformId[]).map((id) => ({
+    /* DERIVED, NEVER LISTED. This was a hand-typed `['airtable', 'clickup', 'notion']`, and on the
+       day `platforms.ts` grew Smartsheet and Monday it silently produced three readings out of
+       five: the two new platforms got the neutral wording on the landing page, forever, with every
+       gate green. The whole argument of this module is that a noun is resolved from the catalogue
+       rather than written out — a list of ids in the resolver is the same defect one level up.
+       `PlatformTabs.astro:45` keeps its identical-looking list and genuinely cannot do this:
+       `slot[name]` must be a static string, so its panels cannot be produced by a map. It guards
+       itself with a build-time throw instead. */
+    ...DOCUMENTED_PLATFORM_IDS.map((id) => ({
       key: id,
       text: nounFor(step.noun, platform(id)),
     })),

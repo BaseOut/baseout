@@ -1,0 +1,34 @@
+BASEOUT SUPPORT
+
+SUPPORT REQUEST
+
+We have your message.
+
+Everything about this conversation lives under one reference.
+
+REFERENCE
+{{ case_ref }}
+Quote it in anything you send us about this.
+
+  About          {{ space_label }}
+  Replies go to  {{ reply_to_address }}
+
+WHAT HAPPENS NEXT
+
+  01  A person answers by replying to this email.
+  02  We do not publish response times; you get an email when there is an update.
+  03  No account needed. Your reply joins the same case.
+
+WHAT YOU SENT
+
+{{ submitted_subject }}
+
+{{ submitted_body }}
+
+---
+
+You are receiving this because you wrote to {{ support_address }}. If the answer
+never arrives, check your spam folder.
+
+See this case in the support portal:
+{{ case_url }}

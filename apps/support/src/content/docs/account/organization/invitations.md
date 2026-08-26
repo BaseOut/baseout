@@ -24,10 +24,12 @@ somebody whose email is at a different domain, or who has not signed up yet.
 Worth being exact about, because it is the thing people worry about and the answer is reassuring in
 a way that is easy to miss.
 
+:::note
 Joining an organization gives somebody the organization's Spaces and history. It does not give them
 anything in Airtable, Notion or ClickUp: a Source carries the access of the person who authorized
 it, and that person is not the new member. Nor does it reach into your Destination, which
 authenticates against your storage under its own credentials.
+:::
 
 So the blast radius of an invitation is the Baseout side of things, and the platform side is
 unchanged. See [Sources](/connections/sources/).
@@ -46,7 +48,7 @@ to describe rather than a plausible one made up here.
 
 If you need somebody added today, [contact us](/contact/?kind=ticket).
 
-## Next
+## Next steps
 
 - [Members and roles](/account/organization/members-and-roles/): what they can do once in
 - [Transferring ownership](/account/organization/transferring-ownership/): the one handover that matters

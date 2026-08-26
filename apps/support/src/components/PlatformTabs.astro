@@ -39,15 +39,27 @@ const { label } = Astro.props;
 
 /* THE PANELS ARE WRITTEN OUT, THE STRIP IS NOT, and that asymmetry is Astro's rule rather than a
    choice: `slot[name] must be a static string`, so a named slot cannot be produced by mapping over
-   the platform list. The guard below is what stops that becoming a silent failure. Add a platform
-   to `lib/platforms.ts` without adding its slot here and the build stops, instead of every page
-   quietly rendering an empty panel for it. */
-const SLOTTED = ['airtable', 'clickup', 'notion'] as const;
-const missing = PLATFORMS.map((p) => p.id).filter((id) => !SLOTTED.includes(id as never));
-if (missing.length) {
+   the platform list.
+
+   THIS USED TO BE A HARD `throw` AGAINST A HAND-WRITTEN `SLOTTED` LIST, AND THE GUARD WAS WORSE
+   THAN THE FAILURE IT GUARDED. Measured 2026-08-21, the hour two platforms were added to
+   `lib/platforms.ts`: the throw fired, the MDX pipeline swallowed it, and the page kept returning
+   **HTTP 200 with a full body** while this entire block — the label, the strip and all three
+   hand-written panels — was silently absent from it. `astro check` reported zero errors,
+   `smoke-support` would have read 200, `css-guard` was clean. A guard whose failure mode is
+   deleting documentation from a live page while every gate stays green is not a guard.
+
+   WHAT REPLACED IT IS A BETTER RULE, not a weaker one: the tabs are derived from the slots the
+   PAGE actually passed. `Astro.slots.has()` is dynamic where `slot[name]` is not, so the component
+   no longer needs to know the platform list at all. A platform in the registry that this page does
+   not document simply gets no tab — which is the correct behaviour now that the registry carries
+   platforms we deliberately ship no documentation for, and it is what the old list asserted was
+   impossible. The remaining throw catches the one case that is unambiguously a mistake: the
+   component rendered with no platform slots at all. */
+const TABBED = PLATFORMS.filter((p) => Astro.slots.has(p.id));
+if (!TABBED.length) {
   throw new Error(
-    `PlatformTabs is missing a named slot for: ${missing.join(', ')}. ` +
-      'Astro requires slot names to be static, so each platform needs its own <slot> in this file.',
+    'PlatformTabs was rendered with no platform slots. Pass at least one <div slot="<platformId>">.',
   );
 }
 ---
@@ -57,7 +69,7 @@ if (missing.length) {
 
   <div class="pt-strip" role="tablist" data-platform-tabs-strip>
     {
-      PLATFORMS.map((p, i) => (
+      TABBED.map((p, i) => (
         <button
           type="button"
           role="tab"

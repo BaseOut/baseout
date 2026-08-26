@@ -6,6 +6,12 @@ description: What being signed in means when there is no password, and what a tr
 A session is one signed-in browser. Because Baseout has no password, a session is created by
 following a magic link or by Continue with Airtable, and there is nothing else that creates one.
 
+In this guide, you will:
+
+- See what creates a session when there is no password
+- Tell a trusted device apart from a signed-in session
+- Know what to do when you lose a device
+
 ## Signing in does not sign anything out
 
 Signing in on a second device leaves the first one signed in. That is deliberate: people work from a
@@ -19,8 +25,12 @@ If you have two-factor authentication on, the code step can be skipped on a devi
 already proved it had your second factor, and it expires on its own after thirty days.
 
 Two consequences follow. A trusted device still needs a magic link to start a new session, so trust
-alone does not get anybody in. And clearing your browser data clears the trust, which is why the
-code comes back after a cleanup that appeared unrelated.
+alone does not get anybody in.
+
+:::note
+Clearing your browser data clears the trust, which is why the code comes back after a cleanup that
+appeared unrelated.
+:::
 
 ## Signing out
 
@@ -44,7 +54,7 @@ A list of active sessions, with the ability to end one remotely, is the obvious 
 and it is not built. This page will say where it lives once it is, rather than describing a screen
 that does not exist.
 
-## Next
+## Next steps
 
 - [Sign-in methods](/account/sign-in-methods/): the two doors, and what each implies
 - [Two-factor authentication](/account/two-factor/): enrollment and backup codes

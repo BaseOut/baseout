@@ -1,0 +1,123 @@
+---
+/**
+ * A capability the reader cannot reach yet, rendered IN PLACE.
+ *
+ * `pattern-locked-tab` — "render the feature in place as a locked state… never hide it", with the
+ * anatomy `pattern-empty-state` condition 4 binds: a 48px rounded `base-200` tile with no border, a
+ * title naming the capability, one sentence on what it does, one on WHY it is locked as a capability
+ * reason rather than a bare upgrade, and one affordance.
+ *
+ * A LOCK, NOT A WARNING TRIANGLE. Nothing is wrong. The register is calm and factual; no hue, no
+ * alarm, no error colour.
+ *
+ * WHY THIS IS NOT A 302 TO A SIGN-IN. That is the industry answer and it is verifiably what Zapier
+ * and Figma do. We diverge deliberately: the portal is a separate origin, a redirect throws away the
+ * explanation, and it answers a question the person did not ask — they came to read their cases, and
+ * the honest reply is "here is where they are, and here is why you cannot see them yet".
+ *
+ * A NOTE ON THE TITLE. `pattern-empty-state` bans absence-naming titles — "Nothing here", "No
+ * access". The title names the MECHANISM: where the thing is, and what stands between.
+ */
+import Icon from './Icon.astro';
+
+interface Props {
+  title: string;
+  /** What the locked feature does, when it is reachable. */
+  does: string;
+  /** WHY it is locked. A capability reason — never a price tier, never a bare "upgrade". */
+  why: string;
+  actionLabel: string;
+  actionHref: string;
+}
+
+const { title, does, why, actionLabel, actionHref } = Astro.props;
+---
+
+<div class="lc">
+  <span class="lc-tile"><Icon name="lock" size={22} /></span>
+  <h2 class="lc-title">{title}</h2>
+  <p class="lc-line">{does}</p>
+  <p class="lc-line lc-why">{why}</p>
+  <a class="lc-cta" href={actionHref}>
+    <Icon name="log-in" size={16} />
+    {actionLabel}
+  </a>
+  {/* The second door, and on this app it is the primary one. Email-first is the whole model: the
+       portal is the mirror, and the mail reaches everyone the portal cannot. A locked page that
+       mentions only the lock would leave a person with no channel at all. */}
+  <slot name="alternative" />
+</div>
+
+<style>
+  .lc {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 40px 24px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+  }
+
+  /* 48px / 12px radius / `base-200` / no border — the bound tile. */
+  .lc-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-200);
+    color: var(--bo-muted-strong);
+  }
+
+  .lc-title {
+    margin: 16px 0 0;
+    font-size: var(--bo-t-16);
+    font-weight: 650;
+    line-height: 1.35;
+    color: var(--bo-base-content);
+  }
+
+  /* 46ch, the bound sentence cap. It binds at a desktop width and never at 390, where the
+     container binds first — it is variance reduction, not a visual change. Do not go looking for
+     the improvement, fail to find one, and re-fix the cap. */
+  .lc-line {
+    max-width: 46ch;
+    margin: 8px 0 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.55;
+    color: var(--bo-muted);
+  }
+
+  .lc-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 20px;
+    padding: 8px 16px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content);
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .lc-cta:hover {
+    color: var(--bo-primary-content);
+    text-decoration: none;
+  }
+
+  .lc-cta:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+  .lc-why {
+    color: var(--bo-muted);
+    font-size: var(--bo-t-13);
+    line-height: 1.55;
+    margin: 0 0 16px;
+  }
+</style>

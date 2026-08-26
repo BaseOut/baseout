@@ -1,0 +1,162 @@
+<!--
+  SUPPORT REPLY — a human's answer, arriving in the thread.
+
+  ── VARIABLES ────────────────────────────────────────────────────────────────────────────────────
+  `{{ name }}`, the same convention as every template here; the reasoning is in
+  `acknowledgement.mjml` and the readme.
+
+    {{ case_ref }}        The reference. In the subject, and again as the first line of the body.
+    {{ case_subject }}    The customer's own subject, echoed HERE and not in the acknowledgement.
+    {{ author_name }}     A REAL person's name, or the literal `Baseout Support`. Never an invented
+                          person — where no agent name is captured, the label is the desk. This is
+                          the product's standing ruling on unattributed authorship, ported.
+    {{ reply_body }}      The answer. Whatever renders this must escape it; it is authored text.
+    {{ quoted_history }}  The thread so far, already quoted (`> ` prefixed in the text part).
+    {{ case_url }}        The case in the portal. An offer, last, never the payload.
+
+  ── THIS IS THE QUIETEST OF THE THREE, ON PURPOSE ───────────────────────────────────────────────
+  A person wrote the payload, so the design's whole job is to stay out of its way. There is no
+  button, and Signal Teal appears exactly once, on the portal link at the bottom. The three moments
+  of structure are the masthead, one rule under the answer, and one rule above the history; every
+  other separation is space. An email that decorates a human's sentences reads as though the sentences
+  were generated, which is the one impression this particular message cannot afford.
+
+  ── THE REFERENCE TRAVELS IN THE SUBJECT, AND THAT IS A REQUIREMENT ─────────────────────────────
+  `Re: [{{ case_ref }}] {{ case_subject }}`. Threading normally rides on `References` / `In-Reply-To`,
+  but that header data is retained for about thirty days by the systems we are copying; after that a
+  reply threads wrongly or opens a new case. A durable id in the subject is what survives header
+  expiry, and it is also the only handle the customer can quote back at us. It is decoration in
+  neither direction. Subject-line MATCHING is a different thing and stays out: matching on the human
+  half is what makes three customers' `Re: your invoice` collapse into one case.
+
+  Echoing `{{ case_subject }}` is safe HERE and was refused on the acknowledgement, for one reason:
+  by the time a human replies, the address has already engaged. The acknowledgement is the mail an
+  attacker can aim at a stranger; this one is not.
+
+  ── NO "REPLY ABOVE THIS LINE" DELIMITER — RULED ────────────────────────────────────────────────
+  Zendesk ships that delimiter OFF BY DEFAULT, and its failure mode is silent truncation: text typed
+  below the marker is excluded from the rendered comment while the full mail sits in storage, so the
+  customer sees their paragraph vanish and support believes nothing was received. We ship no
+  delimiter and we accept the cost, which is that our stripping will sometimes leave quoted junk in a
+  thread. Visible junk beats an invisible loss in a product whose pitch is that you can see what
+  happened. The rule the asymmetry gives us, and it is the one to build to: NEVER DISCARD, ONLY
+  COLLAPSE — and keep the full MIME source of every inbound message.
+
+  ── THE HISTORY IS LABELLED AND INDENTED, NOT STRIPED ───────────────────────────────────────────
+  It carried a 2px left border. Two pixels of coloured edge is a side stripe, which DESIGN.md bans by
+  name and which the wireframe reached for because it had no other way to say "this is older". The
+  replacement says it in words: an uppercase label, then the quote behind a ONE-pixel rule, which is
+  the quoting idiom every mail client already draws and every reader already knows. One pixel is
+  inside the rule rather than an exception to it.
+
+  ── NO CLOCK ────────────────────────────────────────────────────────────────────────────────────
+  Same rule as the acknowledgement and for the same reason; it is stated there in full.
+
+  ── THIS ONE IS NOT AUTO-GENERATED ──────────────────────────────────────────────────────────────
+  A person wrote it, so it must NOT carry the auto-generated header the acknowledgement carries.
+  Marking a human reply as automatic is how it lands in a bulk folder and how a well-behaved
+  correspondent's client decides not to answer it.
+-->
+<mjml>
+  <mj-head>
+    <mj-include path="./partials/head.mjml" />
+    <mj-preview>{{ author_name }} replied to {{ case_ref }}.</mj-preview>
+  </mj-head>
+
+  <mj-body>
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+
+    <mj-wrapper>
+      <!-- NO BAND. The logo stands on the card with air around it, which is the classic letterhead.
+           The black masthead is gone from all three real emails and survives only in style two, which
+           is now the variable that pair tests. Removing it here as well was not asked for and is not
+           taste: three transactional messages from one sender that do not look like one sender is a
+           defect, and consistency across the set outranks the reason any single one changed.
+
+           THE COST IS THE LOGO SWAP. With no pinned band the logo sits on the card, and the card is
+           white in one theme and #111111 in the other, so there are two files again and a conditional
+           to keep Word from showing both. The argument is in `partials/head.mjml`. -->
+      <mj-section border-radius="12px 12px 0 0" css-class="bo-band-top" padding="52px 32px 0">
+        <mj-column>
+          <mj-raw>
+            <img src="https://support.baseout.com/email/baseout-logo-ink@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-light" style="display: block; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #156e97; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--[if !mso]><!-->
+            <img src="https://support.baseout.com/email/baseout-logo-cyan@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-dark" style="display: none; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #5cceff; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--<![endif]-->
+          </mj-raw>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="28px 32px 0">
+        <mj-column>
+          <!-- THE REFERENCE IS THE FIRST LINE OF THE BODY AND IT IS NOT A LINK. A reference that
+               exists only inside an anchor is unquotable from a plain-text client, unreadable in a
+               preview pane and gone the moment an image-blocking client strips the styling. It takes
+               the eyebrow slot here rather than a category word, because a case number tells the
+               reader more than "reply" does, and it gets no callout: in THIS email the reference is
+               context and the person's answer is the payload. -->
+          <mj-text mj-class="refsm" css-class="bo-eyebrow bo-break" color="#156e97">{{ case_ref }}</mj-text>
+          <mj-spacer height="10px" />
+          <mj-text mj-class="h1">{{ author_name }} replied</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="24px 32px 0">
+        <mj-column>
+          <mj-text>{{ reply_body }}</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="40px 32px 0">
+        <mj-column><mj-divider /></mj-column>
+      </mj-section>
+      <mj-section padding="16px 32px 0">
+        <mj-column>
+          <mj-text mj-class="muted" css-class="bo-muted">
+            Reply to this email to continue. Your reply joins {{ case_ref }}, and there is nothing to
+            log in to and nothing to fill in.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+
+      <!-- THE BUTTON IS OPTIONAL AND MUST BE OMITTED, NOT DISABLED — `{{ case_url }}` exists only for
+           a signed-in reader, and the sentence above it is the path that always works. Both columns
+           carry a percentage summing to 100; the two wrong ways to size them are written up in
+           `acknowledgement.mjml`. -->
+      <mj-section padding="28px 32px 0">
+        <mj-column width="35%" vertical-align="middle">
+          <mj-button href="{{ case_url }}" align="left">Open this case</mj-button>
+        </mj-column>
+        <mj-column width="65%" vertical-align="middle">
+          <mj-text mj-class="muted" css-class="bo-muted">or just hit reply</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <!-- THE HISTORY TAKES THE SAME QUOTATION BLOCK AS THE ACKNOWLEDGEMENT'S ECHO, because they are
+           the same kind of thing: material that is quoted rather than written. -->
+      <mj-section padding="40px 32px 0">
+        <mj-column>
+          <mj-text mj-class="label" css-class="bo-muted">EARLIER IN THIS CASE</mj-text>
+        </mj-column>
+      </mj-section>
+      <!-- A QUOTATION, DRAWN AS ONE. A 4px bar and a fill, which is the banned shape and a ruled
+           exception; the ruling is in `partials/head.mjml`. It is the oldest mark for "these are not
+           my words", and it is what every mail client draws when it quotes a thread. -->
+      <mj-section padding="14px 32px 40px">
+        <mj-column>
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-round">
+            <tr>
+              <td width="4" style="width: 4px; background-color: #89b6ca; border-radius: 8px 0 0 8px; font-size: 0; line-height: 0;" class="bo-qbar">&#160;</td>
+              <td style="background-color: #f6f7fb; border-radius: 0 8px 8px 0; padding: 16px 20px;" class="bo-qbody">
+                <div style="font-size: 13px; line-height: 1.6; color: #646464;" class="bo-muted">{{ quoted_history }}</div>
+              </td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+    </mj-wrapper>
+
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+  </mj-body>
+</mjml>

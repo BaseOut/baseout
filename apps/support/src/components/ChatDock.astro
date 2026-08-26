@@ -51,9 +51,9 @@
  * `overflow-x: clip` instead, for exactly this reason.
  */
 import { CHAT_STARTERS } from '../lib/questions';
+import Icon from './Icon.astro';
 
-import { PLATFORMS } from '../lib/platforms';
-import PlatformMark from './PlatformMark.astro';
+import PlatformPicker from './PlatformPicker.astro';
 
 const FREE_BUDGET = 5;
 const route = Astro.locals.starlightRoute;
@@ -109,24 +109,22 @@ const pageTitle = route.entry.data.template === 'splash' ? '' : route.entry.data
     </div>
   )}
 
-  {/* THE SAME SCOPE THE DOCS AND THE SEARCH USE (Oleh, 2026-08-20). The assistant answers OUT of
-      these pages, so a reader who has narrowed the documentation to Notion and then gets an answer
-      built from Airtable's pages has been given a wrong answer, not an inconsistent one. The
-      control belongs beside the page chip because that row is already where this conversation's
-      scope is declared and taken away.
+  {/* THE SAME SCOPE THE DOCS AND THE SEARCH USE (Oleh, 2026-08-20), and now the same control.
+      The assistant answers OUT of these pages, so a reader who has narrowed the documentation to
+      Notion and then gets an answer built from Airtable's pages has been given a wrong answer, not
+      an inconsistent one. It belongs beside the page chip because that row is already where this
+      conversation's scope is declared and taken away.
 
-      Three chips rather than a menu: the rail is 368px and three named chips measure ~268px, so
-      the whole state is readable without opening anything — and it is the same row the sidebar and
-      the search modal show, which makes it one pattern a reader learns once. */}
-  <div class="cd-plat" role="group" aria-label="Platforms this assistant answers from">
-    {
-      PLATFORMS.map((p) => (
-        <button type="button" class="cd-plat-chip" data-chat-platform={p.id} aria-pressed="true">
-          <PlatformMark id={p.id} size={13} />
-          {p.name}
-        </button>
-      ))
-    }
+      NO `chipsUpTo`, AND THIS SURFACE IS WHY THE PROP WAS NEVER RIGHT. The rail opens at 368px and
+      the drag handle takes it to 320px, so the room here MOVES while a build-time count cannot. It
+      declared 2 and collapsed at every width, which was the correct answer arrived at by guessing
+      the layout. Since 2026-08-21 the disclosure is the only presentation, so nothing here is
+      decided by a number anybody has to keep true.
+
+      `drop="up"` — this sits one row above the composer at the foot of a full-height drawer, and a
+      list opening downwards would run off the bottom of the viewport with its last options on it. */}
+  <div class="cd-plat">
+    <PlatformPicker label="Answers from" drop="up" />
   </div>
 
   <form class="cd-composer" data-chat-form>
@@ -136,10 +134,62 @@ const pageTitle = route.entry.data.template === 'splash' ? '' : route.entry.data
     </button>
   </form>
 
-  <p class="cd-left" data-chat-left aria-live="polite"></p>
+  {/* ── `Ask a person` → `Email support` (Oleh, from Dan's ruling, 2026-08-26) ────────────────────
+      Dan: a reader will never be able to talk to a real person in real time. The CONTROL already
+      obeyed that — it writes the transcript to `sessionStorage` and navigates to
+      `/contact/?kind=ticket&from=chat`, so what happens is a ticket and an email, never a live
+      conversation. The LABEL did not. "Ask a person" is present tense and reads as "start talking to
+      someone now", which is exactly the promise that will not be kept, and PRODUCT.md's own voice
+      rule is to state the limit before the reader hits it.
 
+      `Email support` names the channel, so the wait is in the label rather than discovered after the
+      click. It cannot be read as real-time by anyone. It is also the same 13 characters, so the foot
+      row it shares with the message count does not move.
+
+      THE BUTTON STAYS, and that is not a softening of the ruling — it is a different question from
+      the one Dan answered. PRODUCT.md:26 makes reaching a human in one step half of what success
+      means here, and principle 6 requires the path to be reachable from every page. Removing it
+      would leave a reader whose answer was not in the documentation, or who has spent five messages,
+      with no exit but to find `/contact/` themselves. Async is the limit; a dead end is not. */}
   <div class="cd-gate" data-chat-gate hidden>
-    You have used your free messages. <a href="/contact/">Write to us instead</a>.
+    You have used your free messages. Email support below — it carries this conversation to the
+    contact form, and a person replies by email.
+  </div>
+
+  <div class="cd-foot" data-chat-foot>
+    {/* ── IT NAMES THE NEXT STEP, NOT THE COUNTER (Oleh, 2026-08-26) ────────────────────────────
+        It read "Two answers in a row found nothing in the documentation.", and the question asked of
+        it was the right one: what is this for, and how does it help. Three faults, and none of them
+        is the mechanic.
+
+        IT REPORTED THE SYSTEM'S BOOKKEEPING. "Two answers in a row" is `noCiteStreak` read aloud.
+        The reader does not have a streak; the reader has a question nobody has answered. A count of
+        the assistant's failures is the assistant's business.
+
+        IT NAMED NO NEXT STEP. This line exists because the control beside it changes appearance at
+        the same instant — ghost to soft teal — and a control that restyles itself in silence is
+        worse than one that never moves. A status where a next step belongs leaves the reader to
+        infer the connection.
+
+        AND IT CLAIMED MORE THAN WE KNOW. "found nothing in the documentation" reads two ways: the
+        documentation does not cover this, or the assistant failed to find it. Only the second is
+        something this app can observe. PRODUCT.md is explicit that a limit is stated, not implied,
+        and stating the wrong limit is not better than stating none.
+
+        The wording now says what is true and what to do with it, in that order. `A person` rather
+        than a repeat of the button's own label: the button says how, this says who. */}
+    <p class="cd-why" data-chat-why hidden>
+      The documentation has not answered this. A person can take it from here.
+    </p>
+    <div class="cd-foot-row">
+      <p class="cd-left" data-chat-left aria-live="polite"></p>
+      {/* The glyph carries the same half of the message as the word, for the reader who scans the
+          row rather than reads it — the mail mark says "this ends in an inbox" before the label is
+          read at all. Same Lucide set and the same 14px as every other inline glyph in this app. */}
+      <button type="button" class="cd-esc" data-chat-escalate>
+        <span class="cd-esc-ic" aria-hidden="true"><Icon name="mail" size={14} /></span>Email support
+      </button>
+    </div>
   </div>
 </aside>
 
@@ -355,51 +405,20 @@ const pageTitle = route.entry.data.template === 'splash' ? '' : route.entry.data
 
   .cd-messages :global(.msg-sources svg) { flex: none; opacity: 0.7; }
 
-  /* ── The platform scope ── */
+  /* ── The platform scope ──
+     The control is `PlatformPicker`; all that is left here is where it sits. `align-self` keeps it
+     from stretching to the drawer's full width, and the margin reset is Starlight's prose rhythm,
+     which margins every sibling after the first inside any flex box it can reach. `:global(*)` on
+     the child half deliberately: the picker is another component and carries no scope hash of
+     ours, so a bare `> *` would ship as valid CSS that selects nothing. */
   .cd-plat {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
     align-self: flex-start;
     max-width: 100%;
+    min-width: 0;
   }
 
-  .cd-plat-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border: 1px solid var(--bo-base-300);
-    border-radius: 999px;
-    background: none;
-    color: var(--bo-muted);
-    font: inherit;
-    font-size: var(--bo-t-12);
-    line-height: 1.4;
-    cursor: pointer;
-    transition:
-      background-color 150ms ease-out,
-      border-color 150ms ease-out;
-  }
-
-  .cd-plat-chip[aria-pressed='true'] {
-    background: var(--bo-base-200);
-    color: var(--sl-color-white);
-    font-weight: 600;
-  }
-
-  /* Desaturated, never faded away: 0.55 opacity is what made the ClickUp mark vanish outright on
-     the roadmap, and a logo that disappears reads as a rendering fault rather than an off state. */
-  .cd-plat-chip[aria-pressed='false'] :global(.bo-mark) {
-    filter: grayscale(1);
-    opacity: 0.8;
-  }
-
-  .cd-plat-chip:hover { border-color: var(--bo-primary); }
-
-  .cd-plat-chip:focus-visible {
-    outline: 2px solid var(--bo-primary);
-    outline-offset: 1px;
+  .cd-plat > :global(*) {
+    margin-top: 0;
   }
 
   /* ── The page chip ── */
@@ -497,6 +516,80 @@ const pageTitle = route.entry.data.template === 'splash' ? '' : route.entry.data
 
   .cd-left { margin: 0; font-size: var(--sl-text-xs); color: var(--bo-muted); }
 
+  /* ── The exit to a person ──
+     THE PLACEMENT IS THE DECISION. It is one row under the input, beside the count, which is where
+     Base44 pins its escalate and where this drawer already says the one other thing that is true
+     of the conversation rather than of a message. Inside the composer it would have sat next to
+     Send at the same weight and competed with it; on its own line it is present from the first
+     turn without ever being the thing you reach for first.
+
+     AND IT IS OUTSIDE THE FORM, so the spent-budget gate — which hides the composer — cannot take
+     the escape hatch with it. That is also why the gate no longer prints a link of its own: two
+     doors out, eight pixels apart, is one door too many. */
+  .cd-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .cd-foot-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    /* Starlight's prose rhythm margins every sibling after the first inside any flex box it can
+       reach, and the count paragraph is one. */
+    margin-top: 0;
+  }
+
+  .cd-foot-row > .cd-left { flex: 1; min-width: 0; }
+
+  /* Tertiary at rest: the label carries it, and a glyph beside two plain words would be the third
+     icon in a 368px column saying nothing the words do not. */
+  .cd-esc {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-8);
+    background: transparent;
+    color: var(--sl-color-text-accent);
+    font: inherit;
+    font-size: var(--sl-text-xs);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  .cd-esc-ic { display: inline-flex; flex: none; opacity: 0.8; }
+
+  .cd-esc:hover { background: var(--bo-base-200); }
+  .cd-esc:hover .cd-esc-ic { opacity: 1; }
+
+  .cd-esc:focus-visible { outline: 2px solid var(--bo-primary); outline-offset: 1px; }
+
+  /* PROMOTED IN PLACE — the same control, more weight. Two consecutive answers that cited nothing
+     is the evidence the documentation does not hold this, and the soft primary pair is the loudest
+     step this app takes without becoming a call to action. No popup: the moment somebody has been
+     failed twice is the worst moment to put a layer over what they were reading. */
+  .cd-foot[data-promoted='1'] .cd-esc {
+    border-color: var(--bo-soft-primary-bg);
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+  }
+
+  .cd-foot[data-promoted='1'] .cd-esc:hover { border-color: var(--bo-primary); }
+
+  .cd-why {
+    margin-top: 0;
+    font-size: var(--sl-text-xs);
+    color: var(--bo-muted);
+  }
+
+  /* An author `display` beats the `hidden` attribute, and this file has been bitten by that. */
+  .cd-why[hidden] { display: none; }
+
   .cd-gate {
     padding: 12px;
     border-radius: var(--bo-r-8);
@@ -507,8 +600,102 @@ const pageTitle = route.entry.data.template === 'splash' ? '' : route.entry.data
 
   .cd-gate[hidden] { display: none; }
 
-  /* On a phone the drawer is the screen; there is nothing to sit beside. */
+  /* ── ON A PHONE THE DRAWER IS THE SCREEN, AND NOW IT ACTUALLY IS (2026-08-25) ─────────────────
+     This block's comment already said "there is nothing to sit beside" and then moved only the top
+     edge. Measured at an emulated 390x844: the panel opened at **x=22, 368 wide** — 94% of the
+     screen, with a 22px ribbon of the page still showing down the left, carrying the left half of
+     whatever letters the article had there. It read as a rendering fault rather than as a panel.
+
+     The 368 was never a phone number. `.cd`'s own comment derives 23rem from the gap to the right
+     of the reading column at 1440, which is the correct desktop value and meaningless here; the
+     `min(…, 100vw)` cap could only ever have produced a full-bleed sheet at widths under 368, i.e.
+     never on a real phone.
+
+     `--cd-w` IS OVERRIDDEN, NOT JUST DEFAULTED. It is written by the drag handle and restored from
+     storage, so a reader who widened the drawer on a desktop arrives here carrying that number —
+     and a stored 600px would have painted 600px of drawer into a 390px screen. `width: 100%` in the
+     declaration rather than a wider fallback is what makes the stored value unreachable at this
+     width instead of merely unlikely.
+
+     THE HEIGHT IS `dvh`, NOT `vh`. `inset-block: 0 0` resolves against the LARGE viewport on mobile
+     Safari — the one that assumes the address bar is retracted — so with the bar showing, the
+     composer sits below the fold on the one screen where it is the only thing you came for. */
   @media (max-width: 30rem) {
-    .cd { inset-block-start: 0; }
+    .cd {
+      inset-block-start: 0;
+      inset-inline: 0;
+      width: 100%;
+      height: 100dvh;
+      border-inline-start: 0;
+    }
+
+    /* A col-resize handle is a pointer control, and it is 10px of `touch-action: none` pinned to the
+       leading edge of a full-width sheet — which is exactly where a back-swipe starts. */
+    .cd-grip { display: none; }
+  }
+
+  /* THE SCRIM IS NOT HERE, AND IT CANNOT BE. It was written as `.cd::before { position: fixed;
+     inset: 0 }` and it painted nothing in either theme. `.cd` carries a `transform` for its entry
+     animation, and a transformed element becomes the CONTAINING BLOCK for `position: fixed`
+     descendants — so `inset: 0` resolved against the drawer's own 368px box and the scrim sat
+     behind the drawer's opaque background, exactly its size. Same shape as the `.ph-panels` defect
+     in `specs/16-responsive.md` §8: a length that looks absolute and is measured against the thing
+     that just sized itself. It lives on `body::before` in `styles/support.css` instead, where
+     nothing between it and the viewport is transformed. */
+
+  @media (max-width: 30rem) {
+    .cd {
+      inset-block-start: 0;
+      inset-inline: 0;
+      width: 100%;
+      height: 100dvh;
+      border-inline-start: 0;
+    }
+
+    /* A col-resize handle is a pointer control, and it is 10px of `touch-action: none` pinned to the
+       leading edge of a full-width sheet — which is exactly where a back-swipe starts. */
+    .cd-grip { display: none; }
+  }
+
+  /* ── THE SCRIM, AND WHY IT CAME BACK (2026-08-26) ──────────────────────────────────────────────
+     It was written for the full-bleed sheet, measured, and deleted: at 100% width there is no page
+     visible to dim, so it was a black rectangle behind an opaque one.
+
+     The band it belongs in is the one that did not exist yet. `styles/support.css` now stops
+     reserving the drawer's width below 1280 — pushing the article aside left the manual 40
+     characters a line at 1024 and 25 at 900 — so between 30rem and the boundary the drawer FLOATS
+     over the page instead. And a 368px panel floating over a 692px reading column covers 352px of
+     it: every line of prose is cut vertically at 340px. Measured on `/backups/how-backups-work/` at
+     1024 — column 316…1008, drawer edge at 656.
+
+     Half a line is not a readable line, so the honest statement is "this is on top of the page and
+     the page is coming back", which is a scrim. It also matches what the drawer already claims
+     structurally: below the boundary `lib/chat-panel.ts` marks it `aria-modal` and inerts the page,
+     and a modal with nothing dimmed behind it says one thing to a screen reader and another to an
+     eye.
+
+     Above 1280 there is no scrim and no modality: the drawer docks, the page keeps its measure, and
+     both are live at once — which is the whole reason to dock.
+
+     A pseudo-element rather than a second node, so it cannot outlive the panel, and it fades on the
+     panel's own curve. */
+  @media (max-width: 1279.98px) {
+    .cd::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      /* Behind the drawer's own surface, in front of everything outside it. `.cd` is the stacking
+         context (z-index 1000), so a negative index here cannot fall behind the page. */
+      z-index: -1;
+      background: rgb(0 0 0 / 0.4);
+      opacity: 0;
+      transition: opacity 180ms ease;
+    }
+
+    :global(html[data-chat='open']) .cd::before { opacity: 1; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .cd::before { transition-duration: 0s; }
+    }
   }
 </style>

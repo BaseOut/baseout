@@ -1,0 +1,569 @@
+---
+/**
+ * ONE control for "which platforms am I looking at", on every surface that asks it.
+ *
+ * WHY IT EXISTS. Dan, 2026-08-20: "My concern is what if we have more than 3 — this layout starts
+ * to break. How would a multiselect dropdown work?" He is right, and it was not one break but four.
+ * The same question was drawn four ways, each with its own class family, its own grayscale rule and
+ * its own pressed state: `.pf-chip` in the docs sidebar, `.sm-plat-chip` in the search modal,
+ * `.cd-plat-chip` in the chat, `.rb-seg` on the roadmap. At six platforms all four fail separately,
+ * and three of them were already failing at three: the sidebar has roughly 190px and one chip is a
+ * 13px mark plus a 6px gap plus a 12px name plus 20px of padding, so "Airtable" alone is 88px and
+ * the row has wrapped to two lines since the day it shipped. That wrap is the thing Dan has now
+ * asked about twice.
+ *
+ * ONE SEMANTICS, ONE PRESENTATION, AND BOTH SECOND ANSWERS WERE DELETED ON 2026-08-21.
+ *
+ * This control shipped with two behaviours (`narrow` and `scope`) and two presentations (a row of
+ * inline chips, and a disclosure over checkboxes). Oleh, 2026-08-21, looking at the board: now that
+ * the documentation covers two platforms we always use the pattern with this dropdown and select,
+ * because it works more flexibly — it lets you turn them all on, turn them all off, and we do not
+ * need two extra states; for the user it is as clear as it can be. We apply that pattern
+ * everywhere.
+ *
+ * So: the disclosure is the whole control. `chipsUpTo`, the `collapsed` comparison and the entire
+ * `.pk-chip` family are gone, and with them the argument they carried — that a build-time count
+ * could stand in for a measurement of how wide a NAME is. What that argument bought was a slightly
+ * airier control on the two widest surfaces; what it cost was a reader meeting two different
+ * shapes of one question depending on which surface they were standing on, and four per-surface
+ * numbers that had to be re-measured every time a layout moved. A reader learns this control once.
+ *
+ * THE ONLY THING THAT VARIES NOW IS SIZE, and it varies on one axis with two values — see `size`.
+ *
+ * ZERO TICKED IS NO FILTER, AND THAT REPLACED A LOCK. Until this pass the last surviving platform
+ * refused to switch off ("One platform always stays on."), because an empty set meant a manual
+ * filtered to nothing. It now means the opposite, which is what a checkbox filter means everywhere
+ * else: nothing ticked is nothing narrowed, so everything shows. That is Oleh's "turn them all on,
+ * turn them all off" and it DELETES a special case instead of explaining one — the lock needed an
+ * inert row, a hint sentence, an `aria-disabled` state and a guard in the commit path, four pieces
+ * of machinery to describe a state the reader is now simply allowed to be in. `All` and `None`
+ * buttons put both ends one click away.
+ *
+ * The trigger says `All platforms` at both ends, because both ends ARE the same view. What the
+ * ticks preserve is the reader's own position: someone who pressed `None` finds their boxes empty
+ * when they come back, and someone who has never touched the control finds them full. Nothing on
+ * the site filters differently between those two.
+ *
+ * WHERE THE ANSWER LIVES IS A SEPARATE QUESTION FROM WHAT THE ANSWER MEANS, and it is its own
+ * prop. `state="shared"` reads and writes the one stored preference, so setting it in the sidebar
+ * repaints the search modal and the chat live. `state="local"` keeps the set on this element and
+ * announces it with `pk:change`. The roadmap is local; the argument is in `lib/platform-picker.ts`.
+ *
+ * WHAT THE ROADMAP GAINED AND WHAT IT GAVE UP is argued in `pages/roadmap.astro` where the old
+ * control's reasoning lived, and in `lib/board.ts` at the item loop. The short version: an untagged
+ * request is one that applies to EVERY platform, so hiding it while filtering to Airtable dropped
+ * precisely the rows an Airtable user most needed to see.
+ *
+ * THE COLLAPSED STATE IS LEGIBLE WITHOUT OPENING IT. A trigger reading "Platforms" tells a reader
+ * nothing about what is being kept from them, and this control is only ever interesting when it is
+ * narrowed. So the trigger carries the marks of what is ON plus a count, and falls back to a plain
+ * "All platforms" at rest. That is the ONLY statement of the filter's state on the sidebar, the
+ * search modal and the chat: the sidebar's amber sentence was removed on 2026-08-21 and the other
+ * two never had one. The marks are load bearing, not decoration. The roadmap is the exception and
+ * deliberately so — its board keeps an amber notice, because there a filter removes ROWS from a
+ * list the reader is counting, and an absence in a list of requests is a conclusion about us.
+ *
+ * THE WHOLE ROW IS THE TARGET, and until 2026-08-21 it demonstrably was not. `<label>` wraps the
+ * input, so the markup was always right; what broke it was this component's own `focusout` guard.
+ * A mousedown on the name or the glyph moves focus off the focused checkbox to `<body>`, because a
+ * label is not focusable, and the guard read that null `relatedTarget` as "the reader tabbed away"
+ * and closed the list between mousedown and mouseup. The click then landed on whatever the popover
+ * had been covering. Only the checkbox itself worked, because it is the one focusable thing in the
+ * row. The fix is in `lib/platform-picker.ts`: a mousedown on anything in the list that is not the
+ * input has its default prevented, so focus never leaves and the label forwards its click normally.
+ * That is also what stops a drag across the names selecting text inside a menu, and it is what lets
+ * `All` and `None` act without the list closing under the pointer that pressed them.
+ *
+ * THE MARKS ARE THE RECOGNITION, and they are the one sanctioned exception to Lucide-only. They
+ * come from `PlatformMark.astro` and nowhere else. An OFF mark is DESATURATED and never faded away:
+ * at 0.55 opacity the ClickUp mark — two gradients that grayscale to a mid tone — composited into
+ * the dark ground and vanished outright, which reads as a rendering fault rather than an off state.
+ *
+ * ACCESSIBILITY IS THE BUILD, NOT A PASS AFTERWARDS. The control is a disclosure over real
+ * `<input type="checkbox">`, so checked state, keyboard operation and the announcement of both come
+ * from the platform instead of from us. The trigger carries `aria-expanded` and an `aria-label`
+ * that names what is currently chosen, so a screen-reader user gets the state the sighted reader
+ * gets from the marks.
+ *
+ * THE STYLES LIVE HERE, AND THEY HAVE TO. An Astro scoped `<style>` in a PARENT never reaches a
+ * child component's markup, and this component is exactly that extraction, so every rule the
+ * control needs is in this file. The one form that looks safe and is not is `.parent > *`: Astro
+ * appends the OWNING file's scope hash to the trailing `*`, the child carries its own, and the
+ * selector ships as valid CSS that matches zero elements. Where a rule has to reach a child's
+ * element (the brand marks) it says `:global()` on that half deliberately.
+ */
+import { PLATFORMS } from '../lib/platforms';
+import PlatformMark from './PlatformMark.astro';
+/* DOCUMENTED SUBSET, NOT THE IDENTITY CATALOGUE — see `lib/documented-platforms.ts`. A row for a
+   platform with no pages is a filter that hides everything and offers nothing back. */
+import { DOCUMENTED_PLATFORMS } from '../lib/documented-platforms';
+import { nextPickerToken } from '../lib/platform-picker';
+
+interface Props {
+  /**
+   * THE RUNG THIS CONTROL SITS ON, and it is per-surface because the neighbours differ.
+   *
+   * `sm` (default) is the documentation rung: 6px/12px padding on a 13px face with a 36px floor,
+   * which is the size of the things it stands among in a sidebar, a dialog row and a chat rail.
+   * `md` is the roadmap rung. Measured on the live board at 1440: a status chip is 36.8px and
+   * `Add a request` is 40.5px, and a control asking the question that governs every count below it
+   * should not be the shortest thing in the bar. `md` keeps `.rb-chip`'s padding and type exactly —
+   * so the two rows read as one system — and raises only the FLOOR to 40px, which puts the trigger
+   * one rung above the chips with the primary action still loudest by colour and weight rather than
+   * by height.
+   *
+   * Sized per surface rather than globally BECAUSE THE DOCS ROWS WERE NOT WRONG — Oleh, 2026-08-21:
+   * the rest of that design is the part he likes. A global bump would have fixed one row by breaking
+   * the one that was already right.
+   */
+  size?: 'sm' | 'md';
+  /**
+   * WHERE THE ANSWER LIVES. `shared` is the one stored preference every documentation surface reads,
+   * so a choice made in the sidebar is the same choice in search and in the chat. `local` keeps the
+   * set on this element and announces it with `pk:change`; nothing else on the site moves.
+   *
+   * THE ROADMAP IS `local`, AND THE REASON IS NOT THE OLD ONE. `board.ts` used to argue page-local
+   * because its facet hid untagged rows and the docs filter must not; adopting the multi-select
+   * dissolved that. What replaces it is a VOCABULARY mismatch. This board draws all five platform
+   * IDENTITIES, and the documentation surfaces draw only the platforms that have pages. Writing a
+   * board choice into the shared preference would let one click on Smartsheet — a platform with no
+   * documentation tree — set a preference whose row does not exist in the sidebar's own picker, so
+   * the reader could reach a state they had no control left to leave.
+   */
+  state?: 'shared' | 'local';
+  /**
+   * WHICH PLATFORMS GET A ROW. `documented` is the subset with a documentation tree and is right
+   * for anything that filters PAGES: a row for a platform we have written nothing about is a
+   * filter that hides everything and offers nothing back. `all` is the identity catalogue, and the
+   * roadmap needs it because there a platform is the SUBJECT of a request rather than a promise of
+   * support — "back up Smartsheet" is the most votable row on the board precisely because it is not
+   * built yet.
+   */
+  catalogue?: 'documented' | 'all';
+  /**
+   * The accessible name for the control. The surfaces keep drawing their own visible labels — the
+   * sidebar's "Show docs for" heading, the modal's "Search in" — because that chrome is theirs and
+   * only the control is shared. This is what a screen reader hears in their place.
+   */
+  label: string;
+  /**
+   * Which way the list opens. The chat's picker sits just above the composer at the foot of a
+   * full-height drawer, so a downward list would run off the bottom of the viewport and take its
+   * last options with it.
+   */
+  drop?: 'down' | 'up';
+  class?: string;
+}
+
+const {
+  label,
+  state = 'shared',
+  catalogue = 'documented',
+  drop = 'down',
+  class: cls,
+  size = 'sm',
+} = Astro.props;
+
+/** The rows this instance draws. See the `catalogue` prop for why the two lists differ. */
+const ITEMS = catalogue === 'all' ? PLATFORMS : DOCUMENTED_PLATFORMS;
+
+/* The token has to come from a real module: an `.astro` frontmatter block re-runs for every
+   instance, so a counter declared beside this line would hand out `1` forever. Same reason
+   `nextMarkToken` lives in `lib/platforms.ts`. */
+const popId = `pk${nextPickerToken()}-list`;
+
+/* The server-rendered state is "everything on", which is what a reader who has never chosen gets
+   and what the markup must say before any script runs. A stored preference corrects it at
+   hydration; rendering the stored value is not an option on a statically built site.
+
+   EVERYTHING ON AND NOTHING ON ARE THE SAME VIEW, so this first paint is never WRONG about what is
+   filtered — at worst it is wrong about where a returning reader left their ticks, and only for the
+   frame before the controller runs. */
+const restLabel = 'All platforms';
+---
+
+<div
+  data-pk-size={size}
+  class:list={['pk', cls]}
+  data-platform-picker
+  data-pk-state={state}
+  data-pk-drop={drop}
+  data-pk-label={label}
+>
+  <div class="pk-dis">
+    <button
+      type="button"
+      class="pk-trigger"
+      data-pk-trigger
+      aria-expanded="false"
+      aria-haspopup="true"
+      aria-controls={popId}
+      aria-label={`${label}: ${restLabel.toLowerCase()}`}
+    >
+      <span class="pk-marks" data-pk-marks aria-hidden="true">
+        {ITEMS.map((p) => (
+          <span class="pk-mark" data-pk-mark={p.id} hidden>
+            <PlatformMark id={p.id} size={14} />
+          </span>
+        ))}
+      </span>
+      <span class="pk-state" data-pk-state>
+        {restLabel}
+      </span>
+      <svg
+        class="pk-caret"
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    </button>
+
+    <div class="pk-pop" id={popId} data-pk-pop hidden>
+      {/* BOTH ENDS, ONE CLICK, which is the flexibility Oleh named. They are buttons rather than a
+          third and fourth checkbox because they are not platforms: they SET the platforms. They sit
+          above the list so the reader meets "all or none" before the rows they would otherwise
+          tick one at a time, and each is disabled-by-appearance only through its own repaint —
+          `All` while everything is on, `None` while nothing is. */}
+      <div class="pk-bulk">
+        <button type="button" class="pk-bulk-btn" data-pk-all>All</button>
+        <button type="button" class="pk-bulk-btn" data-pk-none>None</button>
+      </div>
+
+      <div class="pk-opts" role="group" aria-label={label}>
+        {ITEMS.map((p) => (
+          <label class="pk-opt">
+            <input type="checkbox" value={p.id} data-pk-opt={p.id} checked />
+            <span class="pk-opt-glyph" aria-hidden="true">
+              <PlatformMark id={p.id} size={14} />
+            </span>
+            <span class="pk-opt-name">{p.name}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { mountPlatformPickers } from '../lib/platform-picker';
+  mountPlatformPickers();
+</script>
+
+<style>
+  /* Starlight's prose rhythm is a GENERAL-SIBLING rule and it reaches inside any flex or grid box
+     it can see: first child keeps `margin-top: 0`, every sibling after it takes 16px, and a row of
+     controls turns into a staircase. Every flex container here resets its own children. The reset
+     uses `:global(*)` on the child half on purpose — a bare `> *` would have Astro's scope hash
+     appended to it, and the brand marks come from `PlatformMark.astro` and carry no hash of ours,
+     so the rule would ship as valid CSS matching nothing. */
+  .pk > :global(*),
+  .pk-dis > :global(*),
+  .pk-trigger > :global(*),
+  .pk-marks > :global(*),
+  .pk-bulk > :global(*),
+  .pk-opt > :global(*),
+  .pk-opts > :global(*) {
+    margin-top: 0;
+  }
+
+  .pk {
+    min-width: 0;
+  }
+
+  /* ── The control ──────────────────────────────────────────────────────────────────────────
+     `display: flex` AND NOT THE BLOCK THIS WAS. A block wraps its inline-flex trigger in a LINE
+     box, and a line box is sized by the strut of the containing block's own font plus wherever the
+     trigger's baseline happens to fall. The trigger's baseline moves when the brand marks appear,
+     so the box around it measured 33.4px at rest and 28px the moment the filter narrowed: a 5.4px
+     step in the docs rail every time the reader changed the filter, from a control that had not
+     changed size. The same fault as `7bfc27f` in the product, and the same fix. Flex has no line
+     boxes, so the box is the trigger's own height in every state. The list is absolutely positioned
+     and out of flow, so it is not a flex item and nothing here reaches it. */
+  .pk-dis {
+    display: flex;
+    position: relative;
+    min-width: 0;
+  }
+
+  /* THE TRIGGER IS A CONTROL, AND IT WAS DRAWN LIKE A FOOTNOTE. Oleh, 2026-08-21: a narrow thin
+     little button rather than something the size of the elements around it. Measured from the
+     source it was: 4px + 4px padding, a 1px border either side, and a 12px face at line-height 1.4
+     — a 16.8px line box inside a 26.8px box. Everything it stands beside is a third taller.
+
+     WHAT IT IS NOW: 6px/12px padding, a 13px face, a 14px mark, and `min-height: 36px`. That is the
+     roadmap status chips' padding and type exactly, one rung under the primary button.
+
+     THE `min-height` IS ALSO A CORRECTNESS FIX, not only a size. The content of this box is an
+     18.2px line box beside a 14px mark, so 6 + 18.2 + 6 + 2 = 32.2px of intrinsic height in every
+     state — under the floor, which means the floor is what is measured and the box is its declared
+     height whether marks are showing or not. The 5.4px step the `display: flex` note above
+     describes cannot recur through any other route either. It is also what makes `size` a one-line
+     change: the floor is the only thing that has to move.
+
+     EVERY VALUE IS ON THE 4px GRID except the two 1px borders, which is what borders are allowed. */
+  .pk-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 6px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    color: var(--bo-base-content);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+
+  /* THE ROADMAP RUNG, AND ONLY THE FLOOR MOVES. `.rb-chip` is `6px 12px` on a 13px face with a 14px
+     glyph and measures 36.8px; the base rule above is already that padding and that type, so
+     matching it takes no declaration at all. What `md` buys is four pixels of box: 40px puts this
+     just above the chip rung and level with `Add a request` (40.5px), which is where the control
+     that governs every count on the board belongs. The action stays loudest because it is filled
+     and this is not — height was never what made it the primary. */
+  [data-pk-size='md'] .pk-trigger {
+    min-height: 40px;
+  }
+
+  .pk-trigger:hover {
+    border-color: var(--bo-primary);
+  }
+
+  .pk-trigger:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* Open reads as raised: the ground lifts and the border takes the accent. */
+  .pk-trigger[aria-expanded='true'] {
+    border-color: var(--bo-primary);
+    background: var(--bo-base-200);
+  }
+
+  .pk-marks {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+  }
+
+  .pk-mark {
+    display: flex;
+  }
+
+  .pk-mark[hidden] {
+    display: none;
+  }
+
+  .pk-state {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pk-caret {
+    flex: none;
+    color: var(--bo-muted);
+    transition: transform 150ms ease-out;
+  }
+
+  .pk-trigger[aria-expanded='true'] .pk-caret {
+    transform: rotate(180deg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pk-caret,
+    .pk-trigger {
+      transition-duration: 0s;
+    }
+  }
+
+  /* ── The list ───────────────────────────────────────────────────────────────────────────────
+     `position: absolute` and NOT `fixed`, deliberately. Fixed would escape the docs sidebar's
+     scrolling pane, but the chat drawer animates with `transform: translateX(…)` and a transformed
+     ancestor becomes the containing block for a fixed descendant, so the viewport coordinates
+     would silently be measured against the wrong box. Absolute has one requirement instead — that
+     no ancestor clips it — and all three surfaces satisfy it: the sidebar pane scrolls rather than
+     clips, the chat drawer sets no overflow, and the search dialog's `overflow: hidden` is 512px
+     tall with this row near its top.
+
+     NO SHADOW. There is no elevation token in the bridge and a shadow mixed from `--bo-base-content`
+     would be black in light and WHITE in dark, which is worse than none. An opaque ground and a
+     hairline is what the rest of this portal uses to say "above". */
+  .pk-pop {
+    position: absolute;
+    z-index: 20;
+    inset-block-start: calc(100% + 4px);
+    inset-inline-start: 0;
+    min-width: 11rem;
+    width: max-content;
+    max-width: min(100%, 16rem);
+    padding: 4px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+  }
+
+  .pk[data-pk-drop='up'] .pk-pop {
+    inset-block-start: auto;
+    inset-block-end: calc(100% + 4px);
+  }
+
+  .pk-pop[hidden] {
+    display: none;
+  }
+
+  /* BOTH ENDS OF THE RANGE, SET APART FROM THE ROWS THEY SET. A hairline under them rather than a
+     heading: they are two words, and a label over two words is more chrome than content. They read
+     one rung quieter than the platform rows because they are the less common act — 12px is the
+     floor and they sit on it. */
+  .pk-bulk {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  .pk-bulk-btn {
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--bo-r-6);
+    background: none;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-12);
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+
+  .pk-bulk-btn:hover {
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-base-content);
+  }
+
+  .pk-bulk-btn:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* THE END YOU ARE ALREADY AT IS NOT AN ACTION. It keeps `aria-disabled` rather than `disabled`,
+     so it stays in the tab order and stays announced — a control that vanishes from the keyboard
+     because of what is ticked elsewhere is harder to understand than one that says it has nothing
+     to do — and it is drawn inert so a pointer is not invited to press it. */
+  .pk-bulk-btn[aria-disabled='true'] {
+    color: var(--bo-muted);
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .pk-bulk-btn[aria-disabled='true']:hover {
+    background: none;
+    color: var(--bo-muted);
+  }
+
+  .pk-opts {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .pk-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--bo-r-6);
+    color: var(--bo-base-content);
+    font-size: var(--bo-t-13);
+    line-height: 1.4;
+    cursor: pointer;
+    /* The padding is part of the target, so the highlight has to reach it. Selecting the words
+       inside a menu row is never what the pointer meant. */
+    user-select: none;
+    transition: background-color 150ms ease-out;
+  }
+
+  /* THE ROW IS THE TARGET AND IT HAS TO LOOK LIKE ONE. The hover was `--bo-base-200`, which is the
+     product's interaction grey — but this portal overrides that token to `#f4f5f7` in light so the
+     docs floor could be white, and #f4f5f7 on the popover's #ffffff is a three-percent step that a
+     reader does not see. The soft-primary pair is the portal's own "this one" paint, it is solved
+     separately in each theme so it does not fade out on white, and it is two documented rungs of
+     one recipe rather than a new colour: 20% for hover, 26% for the press. */
+  .pk-opt:hover {
+    background: var(--bo-soft-primary-bg);
+  }
+
+  .pk-opt:active {
+    background: var(--bo-soft-primary-bg-hover);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pk-opt,
+    .pk-bulk-btn {
+      transition-duration: 0s;
+    }
+  }
+
+  /* The native control keeps its own shape, its own keyboard behaviour and its own announcement.
+     `accent-color` is the whole of the theming a checkbox needs, and reinventing one for flavour is
+     a standard affordance broken for nothing. */
+  .pk-opt input {
+    flex: none;
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    accent-color: var(--bo-primary);
+    cursor: pointer;
+  }
+
+  .pk-opt:has(input:focus-visible) {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .pk-opt-glyph {
+    display: flex;
+    flex: none;
+    color: var(--bo-muted);
+  }
+
+  /* OFF IS DESATURATED, NEVER FADED AWAY. A list where one logo disappears reads as a rendering
+     fault, and the silhouette is what makes the rows scannable without reading them. 0.8 and not
+     the 0.55 the chips shipped with: at 0.55 the ClickUp mark composited into the dark ground and
+     vanished entirely, which is the exact failure this rule exists to prevent. Measured, not
+     guessed. */
+  .pk-opt:not(:has(input:checked)) .pk-opt-glyph :global(.bo-mark) {
+    filter: grayscale(1);
+    opacity: 0.8;
+  }
+
+  .pk-opt-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

@@ -1,0 +1,216 @@
+---
+/**
+ * Who you are, in the header, and the two things that belong to you rather than to the site.
+ *
+ * Dan, 2026-08-24: "can we display the logged in user name or email in upper right if logged in, or
+ * login button if not". Oleh, 2026-08-25: make it a real panel, move `My requests` into it, and put
+ * the theme choice there too.
+ *
+ * ── WHY `My requests` LEFT THE NAV ROW ─────────────────────────────────────────────────────────
+ * It is the only item in that row that answers "what is MINE" rather than "what is on this site",
+ * and it was the item pushing the row past its width. Both reasons point the same way and the width
+ * one is measurable: at 390 the strip scrolled 170px with it and 69px without.
+ *
+ * THE COST, NAMED: a signed-out visitor no longer sees that a requests area exists. Nothing is lost
+ * functionally — the page was behind sign-in anyway and the button beside this leads to the same
+ * place — but the discovery is. What partly covers it is that `/contact/` links the case after a
+ * submission and the acknowledgement email carries it too, so the people who have a request to read
+ * have been told twice where it lives.
+ *
+ * ── BOTH HALVES SHIP AND CSS CHOOSES ───────────────────────────────────────────────────────────
+ * A static build with no auth cannot resolve this on the server, so both states render and
+ * `html[data-portal-session]` decides. Same mechanism, same `lib/portal-session.ts`, as
+ * `/requests/` and `/contact/`: one answer to "is somebody here", not a second copy that can drift.
+ * The stamp is pre-paint, in `astro.config.mjs`, because a header that paints "Sign in" at somebody
+ * who is signed in has already told them the wrong thing.
+ *
+ * ── THE THEME CONTROL IS IN TWO PLACES, AND THAT IS THE ONE INCONSISTENCY HERE ─────────────────
+ * Signed in it is a row in this panel; signed out it is the icon beside the Sign in button. It
+ * cannot be in one place: Dan asked for a BUTTON when signed out, so the signed-out state has no
+ * panel to hold it, and a theme control that only exists for people with accounts would be worse
+ * than one that moves. `apps/web` has the same control in the same kind of panel and never faces
+ * this, because it has no signed-out state at all.
+ *
+ * The alternative was to leave the icon in the header in both states and not put it in the panel.
+ * That is more consistent and it is what was built first; it was overruled on 2026-08-25, and the
+ * reason is sound — signed in is the state this portal is read in, and there the panel is where a
+ * preference belongs.
+ *
+ * ── NO `SIGN OUT`, AND THAT IS DELIBERATE ──────────────────────────────────────────────────────
+ * The portal shares the app's session; there is nothing here to end, and the URL that would end it
+ * lives in a product this repo does not contain. Inventing `app.baseout.com/logout` would be
+ * inventing product surface to make a menu look complete. One line when the URL is known.
+ */
+import { VIEWER } from '../data/viewer';
+import Icon from './Icon.astro';
+import ThemeToggle from './ThemeToggle.astro';
+
+const returnTo = `https://support.baseout.com${Astro.url.pathname}`;
+const signInHref = `https://app.baseout.com/login?returnTo=${returnTo}`;
+---
+
+<div class="bo-session">
+  <div class="bo-session-in" data-account-menu>
+    <button type="button" class="bo-acct-trigger" data-account-trigger aria-expanded="false" aria-haspopup="true">
+      <Icon name="circle-user" size={16} />
+      <span class="bo-acct-name">{VIEWER.name}</span>
+      <Icon name="chevron-down" size={14} />
+    </button>
+
+    <div class="bo-acct-pop" data-account-pop hidden>
+      <a class="bo-acct-item" href="/requests/">
+        <Icon name="ticket" size={16} />
+        <span>My requests</span>
+      </a>
+
+      <p class="bo-acct-mail">{VIEWER.email}</p>
+
+      <hr class="bo-acct-rule" />
+
+      {/* A BUTTON, NEVER A LABEL AND A CHECKBOX. `apps/web` draws this control as a daisyUI switch,
+          which is a `<label>` — and a label is not focusable, so a real mousedown on it moves focus
+          to `<body>` and the panel's guard closes it between mousedown and mouseup. The whole trap
+          is written up in `lib/account-menu.ts`. Same two glyphs, same two states, different
+          element, and the reason is the container rather than taste. */}
+      <div class="bo-acct-row">
+        <span>Theme</span>
+        <ThemeToggle />
+      </div>
+    </div>
+  </div>
+
+  <span class="bo-session-out">
+    <ThemeToggle />
+    <a class="bo-acct-signin" href={signInHref}>
+      <Icon name="log-in" size={16} />
+      <span>Sign in</span>
+    </a>
+  </span>
+</div>
+
+<script>
+  import { wireAccountMenu } from '../lib/account-menu';
+  wireAccountMenu();
+</script>
+
+<style>
+  .bo-session {
+    display: flex;
+    align-items: center;
+  }
+
+  .bo-session-in,
+  .bo-session-out {
+    display: none;
+    align-items: center;
+    gap: 4px;
+  }
+  /* THE ATTRIBUTE IS THE SWITCH, and its absence reads as signed in — the default
+     `lib/portal-session.ts` argues for, so a page the stamp has not reached shows what the rest of
+     the portal shows rather than momentarily claiming nobody is here. */
+  :global(html:not([data-portal-session='out'])) .bo-session-in {
+    display: flex;
+  }
+  :global(html[data-portal-session='out']) .bo-session-out {
+    display: flex;
+  }
+
+  .bo-session-in {
+    position: relative;
+  }
+
+  .bo-acct-trigger,
+  .bo-acct-signin {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-8);
+    background: transparent;
+    font: inherit;
+    font-size: var(--bo-t-13);
+    line-height: 1.4;
+    color: var(--bo-muted);
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .bo-acct-signin {
+    border-color: var(--bo-base-300);
+    color: var(--bo-base-content);
+  }
+  .bo-acct-trigger:hover,
+  .bo-acct-signin:hover,
+  .bo-session-in[data-open] .bo-acct-trigger {
+    border-color: var(--bo-base-300);
+    color: var(--bo-base-content);
+  }
+  .bo-acct-trigger:focus-visible,
+  .bo-acct-signin:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* THE PANEL IS ANCHORED TO THE TRIGGER AND HANGS LEFT, because the trigger is the last thing in
+     the row: anchored the other way it would open past the right edge of the viewport. */
+  .bo-acct-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 40;
+    min-width: 220px;
+    padding: 6px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+  }
+  .bo-acct-pop[hidden] {
+    display: none;
+  }
+
+  .bo-acct-item,
+  .bo-acct-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: var(--bo-r-8);
+    font-size: var(--bo-t-13);
+    line-height: 1.4;
+    color: var(--bo-base-content);
+    text-decoration: none;
+  }
+  .bo-acct-item:hover {
+    background: var(--bo-base-200);
+  }
+  .bo-acct-row {
+    justify-content: space-between;
+  }
+
+  .bo-acct-mail {
+    margin: 0;
+    padding: 2px 10px 8px;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    color: var(--bo-muted);
+    word-break: break-word;
+  }
+
+  .bo-acct-rule {
+    height: 0;
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  /* The name goes first when the row runs out of width: the glyph still says a person is signed in,
+     which is the half of the message that survives losing the other. */
+  @media (max-width: 72rem) {
+    .bo-acct-name {
+      display: none;
+    }
+  }
+</style>

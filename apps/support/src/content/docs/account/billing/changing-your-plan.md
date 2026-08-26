@@ -20,9 +20,13 @@ existing Spaces, schedules or history changes, and no backup is re-run.
 Moving down is the case with a real question in it, because a Space can be above the limit of the
 plan you are moving to.
 
-Baseout's position, which follows from everything else in the product, is that **a downgrade does
-not delete your data**. Backups already taken are files in your own Destination and are not ours to
-remove. The backup history is a permanent record and is not pruned by a billing change. See
+:::note
+A downgrade does not delete your data. Backups already taken are files in your own Destination and
+are not ours to remove, and the backup history is a permanent record that a billing change does not
+prune.
+:::
+
+That position follows from everything else in the product. See
 [How backups work](/backups/how-backups-work/) and
 [Retention and cleanup](/backups/retention-and-cleanup/).
 

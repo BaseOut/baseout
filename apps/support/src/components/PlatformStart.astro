@@ -14,29 +14,39 @@
  * THE MARK CARRIES THE RECOGNITION and the vocabulary line carries the proof: a reader who works in
  * Bases and Tables knows instantly which card is theirs, before reading a word of the name.
  *
- * ── TWO VARIANTS SHIP TOGETHER, AND THE DIFFERENCE IS WHAT A CLICK DOES ──────────────────────
+ * ── A CARD IS A DOOR, AND THAT IS NOW THE ONLY THING IT IS (Oleh, 2026-08-21) ────────────────
  *
- * `reactive` — the card is a DOOR. It is a real `<a href>` to that platform's connecting page; the
- *   click handler only writes the preference on the way out. So it works with the script blocked,
- *   opens in a new tab on a middle click, and shows its target in the status bar.
- * `filter` — the card is a SELECTOR. It is a `<button>`, the page stays put, and everything below
- *   re-reads the preference it just wrote: the steps take that platform's nouns and its own pages
- *   join the documentation directory. The client's ask, in his words: "this card should in fact be
- *   a filter that switches everything under it".
+ * It is a real `<a href>` to that platform's connecting page; the click handler only writes the
+ * preference on the way out. So it works with the script blocked, opens in a new tab on a middle
+ * click, and shows its target in the status bar.
  *
- * BOTH ARE SERVER-RENDERED AND THE STYLESHEET PICKS ONE, which is the same mechanism the rest of
- * this page uses. It is not an optimisation: a variant chosen by script paints the loser first and
- * visibly swaps it, and an `<a>` cannot be turned into a non-navigating toggle by CSS at all. The
- * two lists therefore hold the same four lines of card markup twice, deliberately, and that
- * duplication dies with the losing variant.
+ * THE SECOND TREATMENT IS DELETED. Until today a `filter` variant drew the same three cards as
+ * `<button>` selectors that narrowed in place, behind the switch at the foot of `LandingBody`. Dan
+ * called it on the live portal — it will not work at three-plus platforms — and the measured reason
+ * is stated once, in `landing/LandingBody.astro`: it was a SINGLE-SELECT control writing a
+ * MULTI-SELECT preference, so at three-plus platforms the front page could say less than the
+ * sidebar, the search modal, the chat and the roadmap, all of which are checkbox lists.
  *
- * A CARD THAT SELECTS MUST NOT SAY "START HERE". The doors keep that label because it is what they
- * do; the selectors carry a state line instead (a glyph, a word and a colour, so removing any one
- * of the three still leaves the state readable). The way on to that platform's own documentation
- * moves to the foot of the block, where it names its destination exactly.
+ * WHAT THAT VARIANT WAS FOR — scoping without leaving the page — is now the shared `PlatformPicker`
+ * in the hero above, which is that same multi-select. The two controls are DIFFERENT ACTS and both
+ * are wanted: the picker answers "which platforms do I care about" and scopes; a card answers "take
+ * me there now" and narrows only as the side effect of walking through it. What went with the
+ * variant, deliberately: the `Show all three` widening control (the picker's own `None`/`All` is
+ * that control now, and it is reachable from every page rather than only from this one) and the
+ * `What we back up in X` foot link (step 1 of the path below already re-points itself at that
+ * platform, and its other pages arrive in the documentation directory further down).
  */
-import { PLATFORMS, FILTER_KEY } from '../lib/platforms';
+import { FILTER_KEY } from '../lib/platforms';
 import PlatformMark from './PlatformMark.astro';
+/* Visitor-clickable surfaces use the DOCUMENTED subset, never the identity catalogue — an identity
+   without a `connecting` page produces a card that 404s. See `lib/documented-platforms.ts`. */
+import { DOCUMENTED_PLATFORMS, DOCUMENTED_PLATFORM_IDS } from '../lib/documented-platforms';
+/* THE IDENTITY CATALOGUE IS READ HERE FOR ONE REASON AND IT IS NOT A VISITOR-FACING ONE: the two
+   platforms that have no documentation tree are what the `?cards=` review parameter pads the strip
+   with, so the layout above three can be looked at without writing documentation for a platform
+   nobody has built. They render INERT and `hidden`, and nothing but that parameter reveals them. */
+import { PLATFORMS } from '../lib/platforms';
+import { CARDS_MAX, stacks } from '../lib/card-count';
 import Icon from './Icon.astro';
 
 /* NO AVAILABILITY ON THESE CARDS, and the flags that used to be here are gone (Oleh, 2026-08-20).
@@ -49,25 +59,94 @@ import Icon from './Icon.astro';
    What that costs, said plainly so nobody has to rediscover it: a visitor can now pick ClickUp and
    read a complete set of ClickUp pages for a thing they cannot buy yet. That is the demo, and the
    roadmap is still one click away from the header on every page. */
+
+/* ── THE COUNT THE STRIP IS DRAWN AT ────────────────────────────────────────────────────────────
+ * `N` is the truth: one card per platform that has a `connecting` page, three today, and no URL
+ * moves it. It is stamped on the section as `--ps-n` and as `data-ps-layout`, so the layout rule is
+ * a function of the count rather than of the number three appearing in a stylesheet — which is the
+ * bug this whole change exists to prevent, and the one the `Show all three` string already hit.
+ *
+ * `PAD` and `SLOTS` are the review padding, drawn `hidden` and never reachable by a visitor. PAD is
+ * the real identities with no pages (Smartsheet, monday.com — real marks, real vocabularies, real
+ * names). SLOTS are what is left to reach eight, and they are deliberately anonymous: inventing a
+ * sixth brand to fill a row would put a product that does not exist on the front page of the
+ * portal, which is the one thing no layout study is worth. They are numbered by POSITION.
+ */
+const N = DOCUMENTED_PLATFORMS.length;
+const PAD = PLATFORMS.filter((p) => !DOCUMENTED_PLATFORM_IDS.includes(p.id));
+const ORDINALS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+const SLOTS = Array.from({ length: Math.max(0, CARDS_MAX - N - PAD.length) }, (_, i) => N + PAD.length + i + 1);
+
+/* ── THE BLOCK FOLLOWS THE READER'S CHOICE, AND IT DOES IT IN CSS ────────────────────────────────
+ * Oleh, 2026-08-21: once somebody has chosen their platforms in the hero picker, a card for a
+ * platform they excluded has nothing to offer them. Nothing chosen draws every card (the newcomer's
+ * first action, and the block carries the page there); one chosen draws that one; several draw
+ * those. The block stopped being a QUESTION when the picker took that job — it is the way IN to the
+ * platforms that are already yours, which is Dan's "quick access to filtered documentation for a
+ * specific platform" exactly.
+ *
+ * IN CSS, KEYED TO ONE ROOT ATTRIBUTE, for the same reason everything else on this page is: the
+ * pre-paint script in `LandingBody.astro` stamps `data-bo-platforms` BEFORE this markup is parsed,
+ * so a returning reader never sees three cards collapse to one. A script that hid `<li>`s after
+ * hydration would do exactly that, on this page's most important fold.
+ *
+ * THE RULES ARE GENERATED FROM `DOCUMENTED_PLATFORM_IDS`, not typed out. A hand-written triple is
+ * how a fourth platform gets a card in the DOM that no rule can ever reveal — the defect this file
+ * already carries a repaired instance of (E266). `is:global` because a scoped style block cannot
+ * be built from a string, and the selectors below name only classes this file owns.
+ *
+ * `data-ps-plat` IS ON THE THREE REAL CARDS ONLY. The `?cards=` padding cards carry no such
+ * attribute, so neither rule below can see them and the review parameter's `[hidden]` is never
+ * fought over. Which is the tie-break, stated once: THE REVIEW PARAMETER WINS. `?cards=` exists to
+ * compare LAYOUTS at N cards, so while it is in the address the narrowing is suspended entirely —
+ * `LandingBody.astro`'s pre-paint script and `lib/landing-strip.ts` both bail on the PRESENCE of the
+ * parameter, whatever its value, so the two readers cannot disagree about what suspends what.
+ */
+const NARROW_CSS = [
+  ':root[data-bo-platforms] .ps-grid > li[data-ps-plat]{display:none}',
+  ...DOCUMENTED_PLATFORM_IDS.map(
+    (id) =>
+      `:root[data-bo-platforms~="${id}"] .ps-grid > li[data-ps-plat="${id}"]{display:flex}`,
+  ),
+].join('\n');
 ---
 
-<section class="ps not-content" aria-labelledby="ps-h" data-platform-start data-storage-key={FILTER_KEY}>
+<style set:html={NARROW_CSS}></style>
+
+<section
+  class="ps not-content"
+  aria-labelledby="ps-h"
+  data-platform-start
+  data-storage-key={FILTER_KEY}
+  data-ps-layout={stacks(N) ? 'stack' : 'row'}
+  style={`--ps-n: ${N};`}
+>
+  {/* NOT THE SAME QUESTION AS THE HERO'S, and the wording has to earn that. The picker above asks
+      which platforms you work in and scopes the portal to them; this asks where you want to GO
+      next, and every card is a link that goes there. Two controls phrased as one question would
+      read as the page asking twice and forgetting the answer.
+
+      TWO PARAGRAPHS, ONE OF WHICH IS TRUE AT A TIME, and the second exists because the first became
+      a lie the moment this block started following the choice: "nothing below is hidden until you
+      do" describes a state a reader with a platform picked has already left — the filter is why
+      they are looking at one card. Server-rendered and selected by the same root attribute as
+      everything else here, so the correct sentence is the one that paints. */}
   <div class="ps-head">
-    <h2 class="ps-h" id="ps-h">Which platform are you backing up?</h2>
-    <p class="ps-sub ps-sub-nav">
-      Pick one and the documentation follows it. You can change it any time, and nothing below is
-      hidden until you do.
+    <h2 class="ps-h" id="ps-h">Start with your platform</h2>
+    <p class="ps-sub ps-sub-open">
+      Each card opens that platform's connecting guide and narrows the documentation to it. You can
+      change it any time, and nothing below is hidden until you do.
     </p>
-    <p class="ps-sub ps-sub-pick">
-      Pick one and this page follows it: the steps take its words, and its own pages join the
-      documentation below. Every page you open next is narrowed to match.
+    <p class="ps-sub ps-sub-narrowed">
+      Showing the platforms you picked. The documentation below follows the same choice — widen it
+      any time with the picker above.
     </p>
   </div>
 
-  <ul class="ps-grid ps-grid-nav">
+  <ul class="ps-grid">
     {
-      PLATFORMS.map((p) => (
-        <li>
+      DOCUMENTED_PLATFORMS.map((p) => (
+        <li data-ps-plat={p.id}>
           <a
             class="ps-card"
             href={`/platforms/${p.id}/connecting/`}
@@ -76,9 +155,11 @@ import Icon from './Icon.astro';
             <span class="ps-mark">
               <PlatformMark id={p.id} size={28} />
             </span>
-            <span class="ps-name">{p.name}</span>
-            <span class="ps-vocab">
-              {p.vocab.top}s, {p.vocab.mid}s, {p.vocab.row}s
+            <span class="ps-text">
+              <span class="ps-name">{p.name}</span>
+              <span class="ps-vocab">
+                {p.vocab.top}s, {p.vocab.mid}s, {p.vocab.row}s
+              </span>
             </span>
             <span class="ps-go">
               Start here
@@ -88,68 +169,56 @@ import Icon from './Icon.astro';
         </li>
       ))
     }
-  </ul>
-
-  <ul class="ps-grid ps-grid-pick">
     {
-      PLATFORMS.map((p) => (
-        <li>
-          <button
-            type="button"
-            class="ps-card ps-pick"
-            data-platform-start-select={p.id}
-            aria-pressed="false"
-          >
+      PAD.map((p) => (
+        <li hidden data-ps-pad>
+          <span class="ps-card ps-inert">
             <span class="ps-mark">
               <PlatformMark id={p.id} size={28} />
             </span>
-            <span class="ps-name">{p.name}</span>
-            <span class="ps-vocab">
-              {p.vocab.top}s, {p.vocab.mid}s, {p.vocab.row}s
-            </span>
-            <span class="ps-state">
-              <span class="ps-state-off">
-                <Icon name="circle-dashed" size={14} />
-                Select
-              </span>
-              <span class="ps-state-on">
-                <Icon name="circle-check" size={14} />
-                Selected
+            <span class="ps-text">
+              <span class="ps-name">{p.name}</span>
+              <span class="ps-vocab">
+                {p.vocab.top}s, {p.vocab.mid}s, {p.vocab.row}s
               </span>
             </span>
-          </button>
+            <span class="ps-note">
+              <Icon name="circle-dashed" size={14} />
+              No pages yet
+            </span>
+          </span>
+        </li>
+      ))
+    }
+    {
+      SLOTS.map((n) => (
+        <li hidden data-ps-pad>
+          <span class="ps-card ps-inert">
+            <span class="ps-mark ps-mark-blank">
+              <Icon name="circle-dashed" size={28} />
+            </span>
+            <span class="ps-text">
+              <span class="ps-name">Platform {ORDINALS[n - 1]}</span>
+              <span class="ps-vocab">Its own nouns, not yet known</span>
+            </span>
+            <span class="ps-note">
+              <Icon name="circle-dashed" size={14} />
+              Not a real product
+            </span>
+          </span>
         </li>
       ))
     }
   </ul>
-
-  {/* THE DOOR, and the reason it exists: a selector does not take you anywhere, so without this the
-      reader is left holding a filter and no way through it. It points at "What we back up in X"
-      rather than at the connecting page ON PURPOSE — step 1 of the path directly below already
-      re-points itself at `/platforms/<id>/connecting/`, and two links to one page inside one screen
-      is the page arguing with itself about what to do next. The nine other pages of that platform
-      arrive in the documentation directory further down.
-
-      IT IS NOT THERE UNTIL THERE IS A PLATFORM. A door to nowhere and a "show all three" for a page
-      that is already showing all three are both controls that cannot act; and reserving their line
-      would charge the filter variant 40px of blank page the reactive variant does not pay, which
-      would leave the two differing by their spacing as well as by their behaviour. */}
-  <div class="ps-foot">
-    {
-      PLATFORMS.map((p) => (
-        <a class="ps-door" data-plat={p.id} href={`/platforms/${p.id}/what-we-back-up/`}>
-          What we back up in {p.name}
-          <Icon name="arrow-right" size={14} />
-        </a>
-      ))
-    }
-    <button type="button" class="ps-clear" data-platform-start-clear>Show all three</button>
-  </div>
 </section>
 
 <script>
   import { mountPlatformStart } from '../lib/platform-start';
+  import { mountCardCount } from '../lib/card-count';
   mountPlatformStart();
+  /* REVIEW ONLY. It returns immediately unless `?cards=` is in the address, writes no preference
+     and touches nothing outside this section. See the header of `lib/card-count.ts`. */
+  mountCardCount();
 </script>
 
 <style>
@@ -181,17 +250,71 @@ import Icon from './Icon.astro';
     color: var(--bo-muted);
   }
 
+  /* ── THE ROW, SIZED BY A FLOOR RATHER THAN BY A NUMBER OF PLATFORMS ─────────────────────────
+   * `repeat(3, …)` was here until 2026-08-21 and it was a fact about today typed into a stylesheet.
+   * There are three documented platforms; there will be one before there are five, and five before
+   * there are eight. The rule below is written in terms of the only two numbers that do not change:
+   * the measure this block is laid out in, and the narrowest a card may be.
+   *
+   *   the measure   `LandingBody.astro` `.vb { max-width: 72rem }`  = 1152px
+   *   the gap                                                       =   12px
+   *   `--ps-card-min`, the floor                                    =  220px
+   *
+   * `auto-fit` makes as many tracks as fit at that floor, collapses the ones no card lands in, and
+   * `1fr` then spreads the cards across the full measure — so N cards give N equal columns for every
+   * N the row can hold, with no per-count rule and no breakpoint written down. At the measure that
+   * is floor((1152 + 12) / (220 + 12)) = 5 columns, which is the arithmetic behind `ROW_MAX` in
+   * `lib/card-count.ts` and the reason six cards STACK instead (see `[data-ps-layout='stack']`).
+   *
+   * THE `max-width` IS WHAT STOPS ONE CARD BECOMING A BANNER. Without it a single documented
+   * platform would draw one 1152px-wide card with a 28px mark in the corner of it. The cap holds a
+   * card at 376px — exactly the width it has at three, which is the width this block shipped with —
+   * so one, two and three platforms all draw the SAME card and only the row gets longer. From four
+   * the cap is bigger than the measure and the measure wins, so the cards divide it: 279px at four,
+   * 220px at five.
+   *
+   * IT ALSO REPLACES THE 60rem BREAKPOINT that used to drop this grid to one column. The floor does
+   * that job at any count and at any width — three cards need 3 x 220 + 24 = 684px of measure, so
+   * they collapse to two columns and then to one on the way down to 390 without anything here
+   * naming a device. NOTE, because it is a real change to a shipped surface: between roughly 700px
+   * and 960px of measure the three cards now stay in a row where they used to be stacked.
+   */
+  .ps {
+    --ps-card-min: 220px;
+    --ps-card-max: 376px;
+    --ps-gap: 12px;
+  }
+
   .ps-grid {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--ps-card-min), 100%), 1fr));
+    gap: var(--ps-gap);
+    /* `--ps-shown` IS THE NARROWED COUNT, and the cap has to follow it or the whole point of the
+       cap is lost: `auto-fit` collapses the tracks the hidden cards left behind, so one visible
+       card inside a three-card cap would stretch to the full 1152px measure and become the banner
+       the `max-width` was written to prevent. `--ps-shown` is set on `<html>` by the pre-paint
+       script and maintained by `lib/landing-strip.ts`; it is absent whenever the block is drawing
+       everything, and `var(--ps-n)` — the true count, or the reviewed one `?cards=` wrote — is the
+       fallback for that case. */
+    max-width: calc(
+      var(--ps-shown, var(--ps-n)) * var(--ps-card-max) +
+        (var(--ps-shown, var(--ps-n)) - 1) * var(--ps-gap)
+    );
   }
 
   .ps-grid > li {
     display: flex;
+    min-width: 0;
+  }
+
+  /* AN AUTHOR `display` BEATS THE `hidden` ATTRIBUTE, and this app has already shipped one variant
+     that stayed on screen because of exactly that. The rule above sets `display: flex` on every
+     `li`, so the padding cards would be visible to every visitor without this line. */
+  .ps-grid > li[hidden] {
+    display: none;
   }
 
   /* A card rather than a chip, because this is the one place the choice is the subject of the
@@ -221,10 +344,6 @@ import Icon from './Icon.astro';
       background-color 150ms ease-out;
   }
 
-  .ps-pick {
-    cursor: pointer;
-  }
-
   .ps-card:hover {
     border-color: var(--bo-primary);
     background: var(--bo-base-200);
@@ -238,6 +357,16 @@ import Icon from './Icon.astro';
   .ps-mark {
     display: flex;
     margin-bottom: 8px;
+  }
+
+  /* The stack form needs the mark beside the words rather than above them, which means the words
+     have to be one object. In the row form this column reproduces the spacing it replaces exactly:
+     the card's own 4px gap used to separate the name from the nouns, and now this does. */
+  .ps-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
   }
 
   /* A plain block since the availability chip beside it was removed; there is nothing left to lay
@@ -256,8 +385,7 @@ import Icon from './Icon.astro';
     color: var(--bo-muted);
   }
 
-  .ps-go,
-  .ps-state {
+  .ps-go {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -265,70 +393,7 @@ import Icon from './Icon.astro';
     font-size: var(--bo-t-13);
     font-weight: 600;
     line-height: 1.45;
-  }
-
-  .ps-go {
     color: var(--bo-primary);
-  }
-
-  .ps-state-off,
-  .ps-state-on {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .ps-state-off {
-    color: var(--bo-muted);
-  }
-
-  /* `--bo-soft-primary-fg`, NOT `--bo-primary`, and this was measured rather than reasoned. This
-     label is the only teal on the page that sits INSIDE a 20% teal tint, and that is the exact case
-     DESIGN.md's Two Soft Pairs rule exists for: the plain hue on its own tint measured 4.25:1 in
-     light theme, under the 4.5 floor. The darkened pair is what the tint is tuned against, and it
-     measures 5.25:1 on the same ground (8.35:1 in dark). The door in the foot keeps the plain hue, because it sits
-     on the page and not in a tint. */
-  .ps-state-on {
-    display: none;
-    color: var(--bo-soft-primary-fg);
-  }
-
-  /* ── Which variant is on screen ───────────────────────────────────────────────────────────────
-   * Keyed to `html[data-shots]`, which a pre-paint inline script in `LandingBody.astro` stamps
-   * BEFORE this markup is parsed, so the page cannot flash the losing variant. `display: none` and
-   * not `visibility` or `content-visibility`: those two leave the box in the layout, and the loser
-   * would go on charging the page its full height.
-   */
-  .ps-sub-pick,
-  .ps-grid-pick,
-  .ps-foot {
-    display: none;
-  }
-
-  :root[data-shots='filter'] .ps-sub-nav,
-  :root[data-shots='filter'] .ps-grid-nav {
-    display: none;
-  }
-
-  :root[data-shots='filter'] .ps-sub-pick {
-    display: block;
-  }
-
-  :root[data-shots='filter'] .ps-grid-pick {
-    display: grid;
-  }
-
-  /* BOTH ATTRIBUTES, and the second is the point: with no platform named there is no door to draw
-     and no narrowing to undo, so the row is not there at all. Reserving its height instead would
-     have cost the filter variant 40px of blank page that the reactive variant does not pay, and the
-     two would then have differed by their spacing as well as by their behaviour — which is exactly
-     what a one-variable comparison must not do. */
-  :root[data-shots='filter'][data-shot-platform] .ps-foot {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px 16px;
   }
 
   /* Starlight's prose rhythm is a general-sibling rule and it reaches inside any nested flex or
@@ -339,112 +404,140 @@ import Icon from './Icon.astro';
   .ps-head > *,
   .ps-grid > li > *,
   .ps-card > *,
-  .ps-state > *,
-  .ps-foot > * {
+  .ps-text > *,
+  .ps-note > * {
     margin-top: 0;
   }
 
-  /* ── The selected card ────────────────────────────────────────────────────────────────────────
-   * DRIVEN BY THE ROOT ATTRIBUTE, NOT BY `aria-pressed`, for the reason `ShotSwitch.astro` gives:
-   * the attribute is stamped by the pre-paint script and `aria-pressed` is not corrected until the
-   * module runs, so keying to it would light the wrong card for a frame. `aria-pressed` is still
-   * maintained by `lib/platform-start.ts` — it is what a screen reader reads.
+  /* ── ABOVE FIVE, THE ROW BECOMES A LIST ──────────────────────────────────────────────────────
+   * WHY NOT A HORIZONTAL SCROLLER, which was the other candidate. This is the one control on the
+   * portal whose entire job is to show every platform that exists; a scroller answers "which
+   * platforms are there?" with "some of them, swipe", and it does it at the exact moment a reader
+   * whose platform is NOT on the list needs to be able to conclude that. It also puts the answer
+   * behind a gesture on the page's most important fold.
    *
-   * THE PAINT IS THE DOCUMENTED FILTER-CHIP SELECTED STATE (DESIGN.md §5: teal border, 20% teal
-   * tint, teal label), not the roadmap's raised-tile-in-a-recessed-track. The roadmap's scope
-   * control can afford a track because its segments are small; wrapping three 12px-radius cards in
-   * one would be a card inside a card, which this system prohibits by name.
+   * WHAT STACKING COSTS, and it is real: height, on that same fold. The compact row form is the
+   * answer — mark, name and nouns on one line at ~48px instead of a ~150px card — so eight rows are
+   * about 8 x 48 + 7 x 12 = 468px against 312px for two rows of eight cards. 156px, in exchange for
+   * never hiding an option. That is the trade, stated so it can be overruled with a number.
    *
-   * `data-shot-platform` is only ever set when the preference names EXACTLY ONE platform, which is
-   * `lib/landing-strip.ts`'s rule: a reader with two on has not told us whose page this is, and no
-   * card should claim they did.
+   * SIX IS THE THRESHOLD, and it is `ROW_MAX + 1` from `lib/card-count.ts` rather than a number
+   * chosen here: at six the measure gives (1152 - 60) / 6 = 182px cards, 142px inside the padding,
+   * where the longest vocabulary line breaks to three lines and the card stops reading as one
+   * object. The switch is stamped as `data-ps-layout` by the server for the true count and by
+   * `card-count.ts` for a reviewed one, so the stylesheet never counts anything itself.
    */
-  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable'],
-  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup'],
-  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion'] {
-    border-color: var(--bo-primary);
-    background: var(--bo-soft-primary-bg);
+  /* ── AND AT EXACTLY ONE PLATFORM, THE SAME COMPACT ROW ───────────────────────────────────────
+   * Oleh, 2026-08-21, looking at the one-card state: at one platform the block stops being a block
+   * and becomes a single row — mark, name, nouns, `Start here →` — with no heading and no
+   * paragraph above it. The heading answered itself ("Start with your platform", directly under a
+   * hero that has just been told Airtable) and the paragraph described a filter the reader had
+   * already applied. Three layers of packaging around one destination.
+   *
+   * IT IS LITERALLY THE STACK FORM, not a second visual language: the same four declarations,
+   * reached by a second selector rather than copied. Eight platforms and one platform want the same
+   * object for opposite reasons — eight because a card each would not fit, one because a card alone
+   * is a poster — and the day that shape changes it must change for both.
+   *
+   * THE TRIGGER IS BOTH ATTRIBUTES TOGETHER. `data-bo-platform` alone means the reader named
+   * exactly one platform, which is also true while `?cards=` is padding the strip for review;
+   * `data-bo-platforms` is set only when the strip is actually narrowed. Together they mean "one
+   * card is being drawn, and it is being drawn because of a choice". Both are stamped pre-paint by
+   * `LandingBody.astro`, so the row is the first thing painted rather than a card that collapses.
+   */
+  .ps[data-ps-layout='stack'] .ps-grid,
+  :root[data-bo-platform][data-bo-platforms] .ps-grid {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
   }
 
-  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable'] .ps-state-on,
-  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup'] .ps-state-on,
-  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion'] .ps-state-on {
+  .ps[data-ps-layout='stack'] .ps-card,
+  :root[data-bo-platform][data-bo-platforms] .ps-card {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+
+  .ps[data-ps-layout='stack'] .ps-mark,
+  :root[data-bo-platform][data-bo-platforms] .ps-mark {
+    margin-bottom: 0;
+  }
+
+  .ps[data-ps-layout='stack'] .ps-go,
+  .ps[data-ps-layout='stack'] .ps-note,
+  :root[data-bo-platform][data-bo-platforms] .ps-go {
+    margin-top: 0;
+    margin-left: auto;
+    flex: none;
+  }
+
+  /* THE HEAD GOES WITH IT. `display: none` and not a collapse: `.ps` is a 20px-gap flex column and
+     a hidden child creates no gap, so the row sits where the heading was rather than 20px below a
+     hole. The `aria-labelledby` on the section still names the heading, which is allowed to be
+     hidden — a name is read from the referenced element's text, and losing it would leave a bare
+     link in the document outline with nothing saying what it starts. */
+  :root[data-bo-platform][data-bo-platforms] .ps-head {
+    display: none;
+  }
+
+  /* ── WHICH SENTENCE IS TRUE ────────────────────────────────────────────────────────────────── */
+  .ps-sub-narrowed {
+    display: none;
+  }
+
+  :root[data-bo-platforms] .ps-sub-open {
+    display: none;
+  }
+
+  :root[data-bo-platforms] .ps-sub-narrowed {
+    display: block;
+  }
+
+  /* ── REVIEW-ONLY PADDING ─────────────────────────────────────────────────────────────────────
+   * Everything below paints the cards that only `?cards=` can reveal, and it goes out with
+   * `lib/card-count.ts`. They are `<span>`s, not links or buttons, because neither has anywhere
+   * honest to go: Smartsheet and monday.com have no documentation tree, so a door would 404 and a
+   * selector would write a preference the sidebar renders no row to switch back off.
+   */
+  .ps-inert {
+    cursor: default;
+  }
+
+  .ps-inert:hover {
+    border-color: var(--bo-base-300);
+    background: var(--bo-base-100);
+  }
+
+  .ps-mark-blank {
+    color: var(--bo-muted);
+  }
+
+  .ps-note {
     display: inline-flex;
-  }
-
-  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable'] .ps-state-off,
-  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup'] .ps-state-off,
-  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion'] .ps-state-off {
-    display: none;
-  }
-
-  /* The hover would otherwise repaint the selected card back to the unselected grey, which reads as
-     the selection being cancelled by the pointer resting on it. */
-  :root[data-shot-platform='airtable'] .ps-pick[data-platform-start-select='airtable']:hover,
-  :root[data-shot-platform='clickup'] .ps-pick[data-platform-start-select='clickup']:hover,
-  :root[data-shot-platform='notion'] .ps-pick[data-platform-start-select='notion']:hover {
-    background: var(--bo-soft-primary-bg-hover);
-  }
-
-  /* ── The foot ─────────────────────────────────────────────────────────────────────────────── */
-  .ps-door {
-    display: none;
     align-items: center;
     gap: 8px;
+    margin-top: 12px;
     font-size: var(--bo-t-13);
     font-weight: 600;
     line-height: 1.45;
-    color: var(--bo-primary);
-    text-decoration: none;
-    border-radius: var(--bo-r-4);
-  }
-
-  :root[data-shot-platform='airtable'] .ps-door[data-plat='airtable'],
-  :root[data-shot-platform='clickup'] .ps-door[data-plat='clickup'],
-  :root[data-shot-platform='notion'] .ps-door[data-plat='notion'] {
-    display: inline-flex;
-  }
-
-  .ps-door:hover {
-    text-decoration: underline;
-  }
-
-  .ps-door:focus-visible,
-  .ps-clear:focus-visible {
-    outline: 2px solid var(--bo-primary);
-    outline-offset: 2px;
-  }
-
-  /* THE WAY BACK, and it is the only one. A card that is already selected does not deselect on a
-     second click: three cards narrowing to one is a radio group, and a radio that turns itself off
-     when you press it again is how someone loses their choice by double-clicking. So the widening
-     is an explicit control, quiet, and shown only while there is something to widen — which is the
-     same offer the sidebar's narrowing notice makes on every documentation page. */
-  .ps-clear {
-    display: none;
-    padding: 0;
-    border: 0;
-    background: none;
-    font: inherit;
-    font-size: var(--bo-t-13);
-    line-height: 1.45;
     color: var(--bo-muted);
-    cursor: pointer;
-    border-radius: var(--bo-r-4);
-    transition: color 150ms ease-out;
   }
 
-  :root[data-shot-platform] .ps-clear {
-    display: inline-block;
+  /* ── A CARD'S INNER PADDING AT NARROW IS 16 (2026-08-25) ──────────────────────────────────────
+     `specs/16-responsive.md` §3, stated for the product and applied here: below the fold the card
+     families converge on 16px inline and block. Measured at 390 before this rule, on the landing
+     alone: `.ps-card` 20px put its label's left edge at 37 (12 gutter + 4 page pad + 1 border + 20)
+     while `.ja-card`, `.vb-way` and the request rows right under it put theirs at 33. Two left edges
+     four pixels apart on one scroll read as a mistake rather than as a step — which is the same
+     sentence §3 uses, because it is the same defect.
+
+     20 is right at the three-across reading, where the card is a poster. It is not right stacked.
+
+     AT THE FOOT, after every base and stacked declaration of `.ps-card` — §10.1. The stacked layout
+     already says `padding: 12px 16px`, which is a ROW rather than a card and is left alone. */
+  @media (max-width: 50rem) {
+    .ps-card { padding: 16px; }
   }
 
-  .ps-clear:hover {
-    color: var(--bo-base-content);
-  }
-
-  @media (max-width: 60rem) {
-    .ps-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
 </style>

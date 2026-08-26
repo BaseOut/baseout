@@ -1,0 +1,397 @@
+---
+/**
+ * /handoff/emails — the viewer. One email, centred, on a neutral grey, with the controls above it.
+ *
+ * WHAT IT IS FOR, AND WHY IT IS NOT THE SECTION ON `/handoff/`. That section is the OVERVIEW: three
+ * emails at once, each beside its subject line, its variable list and its plain-text part, so a
+ * reader can compare them and see what the deliverable contains. This page is the opposite job —
+ * look at ONE of them properly, at a chosen width, with nothing else on screen. Both exist because
+ * neither can do the other's job without becoming worse at its own: an overview that hands one email
+ * the whole viewport stops being an overview, and a viewer carrying three variable lists stops being
+ * a viewer.
+ *
+ * ── THE SURROUND IS NEUTRAL NO MATTER WHAT THEME THE PORTAL IS IN, AND THAT IS DELIBERATE ───────
+ * Every other page in this app follows `data-theme`. This one must not. A mail client's chrome is
+ * not ours, and a dark backdrop behind a white email tints the judgement being made about the email:
+ * the same greys read heavier, the card edge reads as a glow, and the reviewer decides something
+ * about a design that only the backdrop was doing. So the page imports NO stylesheet — not the brand
+ * bridge, not the portal sheet — and declares its own literal greys. That is a stronger guarantee
+ * than omitting the theme-stamping script would be: with no `--bo-*` token anywhere on the page,
+ * there is nothing for a theme to reach.
+ *
+ * ── EVERY EMAIL SHIPS AND THE QUERY PICKS ONE ──────────────────────────────────────────────────
+ * A static build cannot vary on a query parameter, so all three frames are in the HTML and
+ * `lib/email-viewer.ts` reveals one. The URL carries both the email and the width, and every toggle
+ * writes it back, so the address bar always names what is on screen — the portal's own rule. What
+ * that costs is stated in the controller: `smoke-support` requesting a variant proves the ROUTE
+ * serves, never that the variant renders.
+ *
+ * ── THE FOUR EXCLUSIONS, EACH CLOSED THE WAY `/handoff/` CLOSES IT ─────────────────────────────
+ *   header nav      never added to `components/Header.astro`'s NAV list
+ *   docs sidebar    not a content-collection entry, so it never appears
+ *   search          `lib/search-modal.ts` NOT_DOCS carries `handoff`, and its predicate matches the
+ *                   FIRST SEGMENT — `/handoff/emails/` is already excluded by that one entry. Adding
+ *                   `handoff/emails` would be a second rule for one fact.
+ *   sitemap         `pruneSitemap` takes exact paths, so this one is named in `astro.config.mjs`
+ *                   beside `/handoff/`, plus the `noindex` below. `noindex` asks a crawler not to
+ *                   keep the page; a sitemap entry asks it to come and look. One without the other
+ *                   says both.
+ * And it is in `smoke-support.mjs` REQUIRED_ROUTES with its six variants: only `/handoff/` links
+ * here, so a derived route list would lose it in silence if it ever stopped generating.
+ *
+ * ── NO PLAIN-TEXT PART ON THIS PAGE, AND THAT IS A DECISION ────────────────────────────────────
+ * It is half the deliverable and it is not half of THIS page's job. A plain-text part has no width,
+ * so neither control above it applies to it; putting it here would mean a block that ignores both
+ * toggles, sitting under the one thing the page exists to show. It already has a home on `/handoff/`
+ * beside each email's variables, and the footer here links back to it by name rather than leaving a
+ * reader to wonder where it went.
+ *
+ * NO ASTRO COMMENT MAY GO INSIDE A TEMPLATE EXPRESSION BELOW — six SSR 500s with empty bodies are on
+ * record from exactly that, and every gate passes them.
+ */
+import Icon from '../../components/Icon.astro';
+import { EMAIL_PREVIEWS, EMAILS_NOT_BUILT } from '../../lib/email-previews';
+import { WIDTHS } from '../../lib/email-viewer';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Email viewer · Baseout Support</title>
+  </head>
+
+  <body>
+    <div class="ev" data-viewer data-email={EMAIL_PREVIEWS[0]?.slug} data-style="one" data-width="desktop" data-scheme="light">
+      <header class="ev-bar">
+        <a class="ev-back" href="/handoff/#surface-emails">
+          <Icon name="arrow-left" size={14} />
+          <span>Handoff</span>
+        </a>
+
+        <div class="ev-picks" role="group" aria-label="Which email">
+          {EMAIL_PREVIEWS.map((mail) => (
+            <button type="button" class="ev-pick" data-email-pick={mail.slug} aria-current="false">
+              {mail.title}
+            </button>
+          ))}
+        </div>
+
+        <div class="ev-styles" role="group" aria-label="Style">
+          <button type="button" class="ev-w" data-style-pick="one" aria-pressed="true">Style 1</button>
+          <button type="button" class="ev-w" data-style-pick="two" aria-pressed="false">Style 2</button>
+        </div>
+
+        <div class="ev-schemes" role="group" aria-label="Palette">
+          <button type="button" class="ev-w" data-scheme-pick="light" aria-pressed="true">
+            <Icon name="sun" size={14} />
+            <span>Light</span>
+          </button>
+          <button type="button" class="ev-w" data-scheme-pick="dark" aria-pressed="false">
+            <Icon name="moon" size={14} />
+            <span>Dark</span>
+          </button>
+        </div>
+
+        <div class="ev-widths" role="group" aria-label="Width">
+          <button type="button" class="ev-w" data-width-pick="desktop" aria-pressed="true">
+            <Icon name="monitor" size={14} />
+            <span>Desktop</span>
+          </button>
+          <button type="button" class="ev-w" data-width-pick="mobile" aria-pressed="false">
+            <Icon name="smartphone" size={14} />
+            <span>Mobile</span>
+          </button>
+          <span class="ev-px" data-width-px>{WIDTHS.desktop}px</span>
+        </div>
+      </header>
+
+      {EMAILS_NOT_BUILT && (
+        <p class="ev-warn">
+          <strong>The templates have not been compiled.</strong> Run
+          <code>pnpm --filter @baseout/support emails</code> and build again.
+        </p>
+      )}
+
+      <main class="ev-stage">
+        {EMAIL_PREVIEWS.map((mail, i) =>
+          (['one', 'two'] as const).map((style) => (
+            <div class="ev-paper" data-hidden={String(i !== 0 || style !== 'one')}>
+              {mail.styles[style].html ? (
+                <iframe
+                  class="ev-frame"
+                  title={`${mail.title}, style ${style === 'one' ? '1' : '2'} — the rendered email`}
+                  srcdoc={mail.styles[style].html}
+                  sandbox="allow-same-origin"
+                  data-em-frame={`${mail.slug}|${style}`}
+                />
+              ) : (
+                <p class="ev-empty">Not compiled — run the build script.</p>
+              )}
+            </div>
+          )),
+        )}
+      </main>
+
+    </div>
+
+    <script>
+      import { wireEmailViewer } from '../../lib/email-viewer';
+      wireEmailViewer();
+    </script>
+
+    <style is:global>
+      /* ── LITERAL GREYS, NO TOKENS, NO THEME ────────────────────────────────────────────────────
+         Read the frontmatter before changing any of these to a `var(--bo-*)`: the point of the page
+         is that the surround cannot be tinted by the portal's theme. There is no brand colour here
+         because there is no brand surface here — the only designed object on screen is inside the
+         frame, and everything else is the table it is lying on. */
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #e6e6e6;
+        color: #111111;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+
+      /* THE STAGE IS THE WHOLE PAGE UNDER THE TOOLBAR. There was an explanatory footer here and it
+         has moved to `/handoff/`, where the rest of the writing about these emails lives: this page
+         is for looking at one artefact, and a page that ends in three paragraphs of ours is a page
+         that ends in ours rather than in the email. With it gone the stage takes the remaining
+         height, so the email's own ground runs to the bottom of the window at any size. */
+      .ev {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* The controls sit ABOVE the email and stay there while it scrolls — a toolbar you have to
+         scroll back up to reach is a toolbar you stop using on a 2,000px email. */
+      .ev-bar {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        background: #f2f2f2;
+        border-bottom: 1px solid #cccccc;
+      }
+      .ev-bar > * {
+        margin-top: 0;
+      }
+      .ev-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: #555555;
+        font-size: 13px;
+        text-decoration: none;
+      }
+      .ev-back:hover {
+        color: #111111;
+      }
+
+      /* THE EMAIL PICKER IS FIRST AND THE WIDTH IS LAST, in that order, because they answer
+         different questions: which document am I looking at, then how am I looking at it. The width
+         pushes to the right edge so the two groups cannot be mistaken for one row of six. */
+      .ev-picks {
+        display: flex;
+        gap: 4px;
+      }
+      /* THE PALETTE AND THE WIDTH ARE ONE CLUSTER, pushed right, because both answer "how am I
+         looking at it" while the picker on the left answers "at what". The auto margin moved from
+         the width group to the palette group when the palette arrived; leaving it on both is how a
+         toolbar ends up with a gap nobody chose. */
+      /* THE PICKER ANSWERS "WHICH EMAIL"; THE THREE GROUPS ON THE RIGHT ANSWER "DRAWN WHICH WAY,
+         IN WHICH PALETTE, AT WHICH WIDTH". The auto margin lives on the first of the right-hand
+         groups and nowhere else; putting it on more than one is how a toolbar ends up with a gap
+         nobody chose. */
+      .ev-styles {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+      }
+      .ev-schemes {
+        display: flex;
+        gap: 4px;
+      }
+      .ev-widths {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .ev-pick,
+      .ev-w {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 12px;
+        border: 1px solid #cccccc;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #333333;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .ev-pick:hover,
+      .ev-w:hover {
+        border-color: #999999;
+        color: #111111;
+      }
+      /* THE SELECTED STATE IS THE ARIA STATE. `aria-current` for the email — one of three is the
+         document you are on — and `aria-pressed` for the width, which is a mode being held. Carrying
+         either as a class as well is how the two facts drift apart. */
+      .ev-pick[aria-current='true'],
+      .ev-w[aria-pressed='true'] {
+        background: #111111;
+        border-color: #111111;
+        color: #ffffff;
+      }
+      .ev-px {
+        min-width: 48px;
+        font-size: 12px;
+        color: #666666;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .ev-warn {
+        margin: 16px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #ffffff;
+        border: 1px solid #cccccc;
+        font-size: 13px;
+      }
+      .ev-warn code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      /* Grey around, the email in the middle. The stage is what makes the email an object on a
+         surface rather than a page that happens to start at the left margin.
+
+         AND THE STAGE FOLLOWS THE EMAIL'S PALETTE, which reverses what this file used to say. The
+         old rule was that the surround stays a fixed neutral so the portal's theme cannot tint the
+         judgement, and that was right while the email had one palette. It has two now, and a light
+         stage behind a `#0a0a0a` email is not neutral: it is a 15:1 frame around the artefact, which
+         tints the judgement harder than the portal ever did. A real client paints its chrome and its
+         message from the same theme, so the stage does too. The TOOLBAR deliberately does not — it
+         is an instrument, not part of the picture, and a control that restyles itself while you are
+         comparing two renderings is one more variable in the comparison. */
+      .ev-stage {
+        flex: 1 1 auto;
+        display: flex;
+        justify-content: center;
+        /* NO HORIZONTAL PADDING AT DESKTOP, and no cap on the pane. Both were leaving a strip of
+           stage down each side, which put a second frame around an email whose own ground is the
+           frame. The pane runs the full width of the window, exactly as a reading pane does; the
+           mobile rule below puts the padding back, because there the frame is an object and needs
+           room around it. */
+        padding: 0;
+        background: #e6e6e6;
+        /* The stage colour is now only ever seen AROUND the 375px frame. At desktop the email's own
+           ground covers the pane, which is the point of the change above. */
+        /* The 375px frame must not be squeezed below its own width on a narrow screen: the width IS
+           the thing being shown, so the surround scrolls instead. */
+        overflow-x: auto;
+      }
+      /* ── THE FRAME IS A READING PANE, NOT A PICTURE FRAME ────────────────────────────────────
+         This used to be a bordered 600px card with `overflow: hidden`, and it cut the email off at
+         exactly the width of its own body. That is not what any mail client does: a client gives the
+         message a pane as wide as the window, the email's `mj-body` background fills the whole pane,
+         and MJML's 600px container sits centred inside it. Cropping to 600 hid the one thing the
+         ground is for, which is being the surround.
+
+         So DESKTOP is now full width and the email supplies its own background edge to edge, exactly
+         as it will in the pane. MOBILE stays pinned to 375px, because there the number IS the point:
+         375 is what fires the breakpoints, and a full-width mobile frame would test nothing. */
+      .ev-paper {
+        flex: 1 1 auto;
+        align-self: flex-start;
+        width: 100%;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      .ev[data-width='mobile'] .ev-stage {
+        padding: 32px 16px 48px;
+      }
+      .ev[data-width='mobile'] .ev-paper {
+        flex: 0 0 auto;
+        width: 375px;
+        max-width: 375px;
+        border-radius: 8px;
+        /* Only the phone gets an edge: at 375 the frame is an object sitting on the stage, and
+           without a border it would float with no indication of where the screen stops. */
+        border: 1px solid #cccccc;
+      }
+      .ev[data-scheme='dark'][data-width='mobile'] .ev-paper {
+        border-color: #3a3a3a;
+      }
+      /* A DATA ATTRIBUTE, NOT `hidden`: an author `display` beats that attribute, and `.ev-paper`
+         sets one. This app has already shipped that defect once. */
+      .ev-paper[data-hidden='true'] {
+        display: none;
+      }
+      .ev[data-scheme='dark'] .ev-stage {
+        background: #2b2b2b;
+      }
+      .ev[data-scheme='dark'] .ev-paper {
+        border-color: #3a3a3a;
+        background: #0a0a0a;
+        box-shadow: none;
+      }
+      /* ── THE GROUND RUNS TO THE BOTTOM OF THE WINDOW, AND THE EMAIL PAINTS IT ─────────────────
+         A short email used to end partway down and leave the stage's grey under it, which read as
+         the email being cropped a second time. The fix is NOT to paint the stage the email's colour:
+         that would hide the case where an email fails to set its own background, which is a real
+         defect this page exists to catch. Instead the frame is given a floor of one viewport minus
+         the 50px toolbar, and an iframe taller than its content has its canvas painted by the
+         DOCUMENT'S OWN background. So the ground filling the window is the email's ground, proving
+         itself, and `fitEmailFrame` still grows the frame past this for anything longer. */
+      .ev-frame {
+        display: block;
+        width: 100%;
+        height: 640px;
+        min-height: calc(100vh - 50px);
+        border: 0;
+      }
+      /* Not at 375: there the frame is a phone-shaped object on a stage, and stretching it to the
+         window would draw a 375-wide column of email down a desktop screen, which is no device. */
+      .ev[data-width='mobile'] .ev-frame {
+        min-height: 0;
+      }
+      .ev-empty {
+        margin: 0;
+        padding: 24px;
+        width: 100%;
+        font-size: 13px;
+        color: #666666;
+      }
+
+
+
+      @media (max-width: 640px) {
+        .ev-bar {
+          gap: 8px;
+        }
+        .ev-widths {
+          margin-left: 0;
+        }
+        .ev-stage {
+          padding: 16px 8px 32px;
+        }
+      }
+    </style>
+  </body>
+</html>

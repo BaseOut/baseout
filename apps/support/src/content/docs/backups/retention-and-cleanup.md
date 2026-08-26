@@ -10,6 +10,12 @@ action on a run — runs cannot be deleted at all.
 It exists because a backup that never thins grows without limit, and storage you pay for is storage
 that should hold something worth keeping.
 
+In this guide, you will:
+
+- Read the tiered ladder that decides how many versions cover a period
+- Set the one knob that is yours: how far back the record goes at all
+- See what cleanup does to a cancelled run and to a base you removed from scope
+
 ## How thinning works
 
 The schedule is a rolling, tiered policy in the grandfather-father-son tradition. Rather than
@@ -28,10 +34,10 @@ data it is thinning:
 
 | Backup frequency | What is kept |
 |---|---|
-| **Monthly** | Monthly versions |
-| **Weekly** | 3 months of weekly, then monthly |
-| **Daily** | 30 days of daily, then 2 months of weekly, then monthly |
-| **Continuous** | 3 days of continuous, then 27 days of daily, then 2 months of weekly, then monthly |
+| `monthly` | Monthly versions |
+| `weekly` | 3 months of weekly, then monthly |
+| `daily` | 30 days of daily, then 2 months of weekly, then monthly |
+| `continuous` | 3 days of continuous, then 27 days of daily, then 2 months of weekly, then monthly |
 
 Change the backup frequency and the retention ladder updates to match it. You do not configure the
 tiers themselves — they are fixed.
@@ -63,14 +69,19 @@ halves.
 
 ## What this means in practice
 
-**A run you cancelled still leaves data behind.** Cancelling keeps whatever was written before you
-stopped, and that partial backup lives under the same retention rules as any other.
+### A cancelled run still leaves data behind
 
-**Removing a base from scope does not remove its backups.** Future runs stop including it; the
-versions already captured stay until the cleanup schedule ages them out.
+Cancelling keeps whatever was written before you stopped, and that partial backup lives under the
+same retention rules as any other.
 
-**There is no per-backup delete, and no exemption.** You cannot delete one run's data, and you
-cannot mark a specific version to survive the ladder. If you need a version to outlive the policy,
+### Removing a base from scope does not remove its backups
+
+Future runs stop including it; the versions already captured stay until the cleanup schedule ages
+them out.
+
+### There is no per-backup delete, and no exemption
+
+You cannot delete one run's data, and you cannot mark a specific version to survive the ladder. If you need a version to outlive the policy,
 take it out of Baseout — the data is in your own Destination and you can copy it.
 
 :::caution
@@ -89,7 +100,7 @@ manages on your behalf is a decision that has not been made, and this page will 
 If this matters to your decision to adopt Baseout, ask support and it will be answered directly
 rather than from a page.
 
-## Next
+## Next steps
 
 - [Schedule and scope](/backups/schedule-and-scope/) — the frequency the ladder keys off
 - [How backups work](/backups/how-backups-work/) — why a run is a permanent record

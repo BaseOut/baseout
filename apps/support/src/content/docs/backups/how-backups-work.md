@@ -15,22 +15,28 @@ are Restore and Actions, and each asks for a separate token that can write.
 
 A run captures up to three layers, and which of them it takes depends on the Space's scope.
 
-**Schema** — the structure of each base: its tables, fields, field types, and views. This is the
-smallest and fastest layer, which is why it can run on its own schedule.
+### Schema
 
-**Data** — the records themselves, table by table.
+The structure of each base: its tables, fields, field types, and views. This is the smallest and
+fastest layer, which is why it can run on its own schedule.
 
-**Attachments** — the files held in attachment fields, fetched and stored alongside the data.
+### Data
+
+The records themselves, table by table.
+
+### Attachments
+
+The files held in attachment fields, fetched and stored alongside the data.
 
 The run detail page shows which of the three a given run captured, so you never have to infer it
 from the counts.
 
 ## Full runs and Schema runs
 
-Because schema and data can run on different cadences, a run has a **kind** as well as a status:
+Because schema and data can run on different cadences, a run has a *kind* as well as a status:
 
-- A **Full** run captures schema and data (and attachments, where they exist).
-- A **Schema** run captures structure only.
+- A `full` run captures schema and data (and attachments, where they exist).
+- A `schema` run captures structure only.
 
 The history shows the kind as a second badge beside the status, so a day of frequent schema runs
 never gets confused with the monthly full backup. Every Full run also captures schema — a schema
@@ -48,17 +54,17 @@ See [Schedule and scope](/backups/schedule-and-scope/) for how the two cadences 
 
 Four things, and the history labels every run with which one it was:
 
-**Scheduled** — the Space's data or schema cadence came due. This is the normal case and most of
+`scheduled` — the Space's data or schema cadence came due. This is the normal case and most of
 your history will read this way.
 
-**Manual** — someone pressed Run backup now. Because an off-schedule run consumes additional
+`manual` — someone pressed **Run backup now**. Because an off-schedule run consumes additional
 credits, this one asks for confirmation first. See
 [Running a backup now](/backups/running-a-backup/).
 
-**Webhook** — used by the Instant cadence, where Airtable tells Baseout that something changed
+`webhook` — used by the `instant` cadence, where Airtable tells Baseout that something changed
 rather than Baseout waiting for the clock.
 
-**Trial** — a run taken before payment, during onboarding, so you can see real output from your own
+`trial` — a run taken before payment, during onboarding, so you can see real output from your own
 bases before committing.
 
 ## Where the data lands
@@ -80,7 +86,7 @@ The data is in your storage, under your control. Baseout records where it put th
 hold your backups hostage.
 
 :::note
-A base that failed in a run wrote nothing, and its Destination reads as empty rather than showing a
+A base that `failed` in a run wrote nothing, and its Destination reads as empty rather than showing a
 link to a folder that was never created.
 :::
 
@@ -100,13 +106,13 @@ The single mechanism that ever removes backed-up data is the cleanup schedule, d
 
 - It does not modify, move, or delete anything in Airtable.
 - It does not fail because one attachment failed. Attachments fail independently — a file over the
-  size cap, an expired Airtable URL — and the run reports them separately so you can retry just
-  those files.
+  size cap, an expired Airtable URL — and a run can end `succeeded` with files it could not fetch,
+  reported separately so you can retry just those.
 - It does not snapshot which bases were selected. The included-bases list on a run reflects the
   Space's **current** configuration, not what was chosen at the time the run happened. If you have
   changed the scope since, an old run will show today's list.
 
-## Next
+## Next steps
 
 - [Schedule and scope](/backups/schedule-and-scope/) — which bases, and how often
 - [Running a backup now](/backups/running-a-backup/) — off-schedule runs, pausing, cancelling

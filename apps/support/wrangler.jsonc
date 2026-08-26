@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-support",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist"
+  }
+  // Provisioned in tasks 2.1/2.2 of openspec/changes/support-portal — uncomment then:
+  // "d1_databases": [{ "binding": "SUPPORT_DB", "database_name": "baseout-support", "database_id": "TODO" }],
+  // "kv_namespaces": [{ "binding": "CHAT_LIMITS", "id": "TODO" }]
+}

@@ -4,12 +4,18 @@ description: A healthy connection that returns no content is a grant problem, no
 ---
 
 This is the most confusing failure in the product, because nothing looks broken. The connection says
-`Connected`. No error is reported. The picker is empty, or the run captured far less than you
+`connected`. No error is reported. The picker is empty, or the run captured far less than you
 expected.
 
 That combination almost always means the same thing: **the connection is fine and the grant is
 narrower than you think.** A platform answers a request for something you were not given by saying
 there is nothing there, not by refusing.
+
+In this guide, you will:
+
+- Recognize an empty result as a grant problem rather than a fault
+- Find where your platform keeps the grant, and widen it there
+- Know what Baseout does once the grant is wider
 
 ## Check the platform, not Baseout
 
@@ -50,9 +56,10 @@ The backup sees exactly what was granted, and what was not granted is not report
 because from the connection's side it does not exist. No tool can list what it was not allowed to
 see.
 
-That is why "the run succeeded" and "everything is backed up" are two different statements, and why
-it is worth reading what a run captured rather than only its status. See
-[Reading a backup run](/backups/reading-a-run/).
+:::note
+"The run succeeded" and "everything is backed up" are two different statements. Read what a run
+captured, not only its status. See [Reading a backup run](/backups/reading-a-run/).
+:::
 
 ## After you widen the grant
 

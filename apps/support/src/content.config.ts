@@ -27,6 +27,31 @@ export const collections = {
     schema: docsSchema({
       extend: z.object({
         platform: z.enum(PLATFORM_IDS as [string, ...string[]]).optional(),
+        /* THE OPERATIONS IN THE API THAT DO WHAT THIS PAGE DESCRIBES. Dan, 2026-08-24: "there will
+           be some items that are specific, like API endpoints that are specific to a doc. Most of
+           them I think will be generic, but there will be some where we should add that." So it is
+           optional and most pages will never carry it, exactly like `platform` above.
+
+           `summary` IS A SENTENCE, NOT A PATH, AND THAT IS THE WHOLE DESIGN. `docs/api/index.md`
+           rules that inventing endpoint paths is worse than any banner, because a banner is
+           detectable and an invented `GET /v1/runs` is not — a reader cannot tell it from a real
+           one, and neither can the next person to edit the file. So this field names the operation
+           in words, which is knowable today, and `slug` stays empty until a reference page exists
+           for it to point at. Filling `slug` is what happens when the API is real; do not fill it
+           with a guess.
+
+           A FIELD NOTHING READS IS A TRAP — this schema already carries the story of two of them
+           (`stub`, `provisional`). Its reader is `components/DocsApi.astro`, rendered from
+           `DocsFooter.astro`, and `smoke-support` asserts the rendered block appears on the pages
+           whose frontmatter declares it. */
+        api: z
+          .array(
+            z.object({
+              summary: z.string(),
+              slug: z.string().optional(),
+            }),
+          )
+          .optional(),
       }),
     }),
   }),

@@ -11,7 +11,7 @@
  * `My Requests` as two separate items. So this page is the form, and seeing your history is a
  * sign-in, stated once at the foot rather than given a page of its own.
  *
- * Four doors, two destinations — and the fork is the safeguard, not a convenience.
+ * Five doors, two destinations — and the fork is the safeguard, not a convenience.
  *
  * Dan asked for two things that share a shape: anonymous ticket submission (name, email, subject,
  * body) and public feature requests. They must NOT share a destination. A bug report carries
@@ -19,12 +19,22 @@
  * publishing one to a voting board is a privacy incident, not a UX slip. So the first question is
  * which kind it is, and the public path says out loud that it will be visible before anyone types.
  *
- * THREE OF THE FOUR ARE PRIVATE, and only the public one warns. `billing` and `other` arrived on
+ * FOUR OF THE FIVE ARE PRIVATE, and only the public one warns. `billing` and `other` arrived on
  * 2026-08-20: an invoice question was landing in the form headed "Something is broken", which
  * routes an account question to the people who read bug reports and tells the person writing it
  * that they have a fault. Both are private, so both are built from the same block as the ticket —
  * which is why the three are one array below rather than three near-identical copies of the same
  * markup. Three copies is how the fourth field gets added to two of them.
+ *
+ * `sales` IS PRIVATE AND IS STILL HAND-WRITTEN, and the reason is the same test the `PRIVATE`
+ * array was built to pass. That array exists to hold ONE attachment block, ONE email hint and ONE
+ * private note, because those are the parts that drift when copied. The sales fork shares none of
+ * them: it has no attachment block at all, its email cannot say "we use it to find your account"
+ * to someone who has not got one, and its note names a desk that is not support. Folding it in
+ * would mean wrapping the attachment block in a flag, the email hint in a second, and the platform
+ * field in a third — a config object with a clause per member, which is the copies wearing a hat.
+ * What it does share with every other door is the machinery: one `KINDS` list, one URL guard, one
+ * step machine, one validator.
  *
  * ATTACHMENTS ARE ON THE THREE PRIVATE FORMS AND NOT ON THE PUBLIC ONE. Dan asked for screenshots
  * (2026-08-20), and a screenshot is the single fastest way to publish something you did not mean
@@ -41,7 +51,7 @@
  *
  * THE FORK IS THE DEFAULT, NOT A TOLL. Five links lead here and four of them already know the
  * answer — three say "Add a request" and one says "Report a problem". Asking those people to choose
- * again is asking them to repeat the click they just made. All four kinds skip straight to their
+ * again is asking them to repeat the click they just made. All five kinds skip straight to their
  * form through `?kind=`, which still says which one it is and still offers the way back.
  *
  * NOTHING IS SENT. There is no backend in this repo. Every path ends in a confirmation that says
@@ -53,8 +63,45 @@ import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import Icon from '../components/Icon.astro';
 import RelatedToField from '../components/RelatedToField.astro';
 import { ATTACH_ACCEPT, ATTACH_HINT } from '../lib/submit';
+import { spacesByOrg } from '../data/spaces';
 
 const APP_LOGIN_URL = 'https://app.baseout.com/login?returnTo=https://support.baseout.com/contact';
+
+/**
+ * The Spaces the picker offers, grouped by organisation.
+ *
+ * DERIVED IN THE FRONTMATTER, because it is the same list for every door that shows it and a
+ * component that regrouped the roster per render would be doing one job three times. Empty is a
+ * REAL STATE and it is handled by the template rather than by an empty control: a person whose
+ * account holds no Space at all would otherwise be shown a picker whose only line is "not about a
+ * particular Space", which is a question with no answers on it.
+ */
+const SPACE_GROUPS = spacesByOrg();
+
+/**
+ * WHAT A SIGNED-OUT PERSON DOES WITH THE SAME KNOWLEDGE, and the whole ruling in one sentence.
+ *
+ * A signed-out visitor may well know exactly which Space they mean — they are usually a colleague
+ * of the account holder — but we do not know who they are, so there is no roster to offer them and
+ * no way to check an answer they type. THREE OPTIONS WERE ON THE TABLE and two were rejected:
+ *
+ *   A free-text box is honest to the person and dishonest to the data. `Ticket.spaceId` is an id
+ *     that a real store JOINS; filling it with "the finance one, I think" makes every consumer of
+ *     that column — the chip on the request list, any routing rule, any report — read a string that
+ *     resolves to nothing. Keeping it honest would mean a SECOND column carrying an unjoinable
+ *     hint, which is a schema change to hold a sentence.
+ *   Hiding the question entirely is simpler and loses exactly what the person knows, which is the
+ *     one thing this change exists to capture.
+ *
+ * So the field is signed-in only and the KNOWLEDGE still gets asked for — in the body hint, which is
+ * already the place this form collects the facts it cannot structure ("Run IDs, base names and error
+ * text all help"). The Space joins that list for the reader who has no picker. It costs no new
+ * field, no unjoinable column, and it lands in the one place a human triager reads anyway.
+ *
+ * ONE SENTENCE FOR BOTH DOORS. It is the same request whether the body asked "What happened?" or
+ * "What is it?", and two near-identical strings is how one of them goes stale.
+ */
+const SPACE_PROSE_OUT = 'If you know which Space it is about, name it here too.';
 
 /**
  * The three private forms, written once.
@@ -65,10 +112,21 @@ const APP_LOGIN_URL = 'https://app.baseout.com/login?returnTo=https://support.ba
  * different sets of rules. The public request form stays hand-written below — it has different
  * fields, live duplicate detection and no file input, so folding it in here would mean a config
  * object with a flag for every clause, which is the same three copies wearing a hat.
+ *
+ * `space` IS THE FOURTH FIELD THIS ARRAY WAS BUILT TO SURVIVE, and it goes on two of the three.
+ * A fault and a catch-all are both about something INSIDE the product, and the Space is the object
+ * that routes them: `data/tickets.ts` has carried `spaceId` since the first case and nothing has
+ * ever filled it, so the first reply on a failed backup is "which Space was this?". Billing is the
+ * exception and it is an argued one — an invoice belongs to the ACCOUNT, not to a Space, so on that
+ * door the honest answer is "not about a particular Space" every single time, and a control whose
+ * resting state is always the answer is furniture in front of someone trying to sort out a payment.
+ * `sales` is excluded by its premise (no account, therefore no Spaces) and `request` by the fork's
+ * own rule (a Space name is account data, and the public board is where account data must not go).
  */
 const PRIVATE = [
   {
     kind: 'ticket',
+    space: true,
     heading: 'Something is broken',
     note: 'This goes privately to support. Nothing here appears on the public board.',
     bodyLabel: 'What happened?',
@@ -79,6 +137,7 @@ const PRIVATE = [
   },
   {
     kind: 'billing',
+    space: false,
     heading: 'Account and billing',
     note: 'This goes privately to the people who hold your account. Nothing here appears on the public board.',
     bodyLabel: 'What do you need?',
@@ -92,6 +151,7 @@ const PRIVATE = [
   },
   {
     kind: 'other',
+    space: true,
     heading: 'Something else',
     note: 'This goes privately to support. Nothing here appears on the public board.',
     bodyLabel: 'What is it?',
@@ -102,6 +162,17 @@ const PRIVATE = [
   },
 ];
 ---
+
+{/* PRE-PAINT, AND DUPLICATED ON PURPOSE. `portal-session.ts` holds the same three lines and is the
+    authority after this runs; a module cannot execute before the document is parsed, so a page that
+    paints "Sign in" at a reader who is signed in has already said the wrong thing. Kept to one
+    expression so there is nothing here to drift. */}
+<script is:inline>
+  (function () {
+    var v = new URLSearchParams(location.search).get('session');
+    document.documentElement.setAttribute('data-portal-session', v === 'out' ? 'out' : 'in');
+  })();
+</script>
 
 <StarlightPage
   frontmatter={{
@@ -115,7 +186,11 @@ const PRIVATE = [
        support. This string and `TITLES.fork` in `lib/submit.ts` must stay identical — this one is
        what renders, and the script overwrites it on the first step change. */
     title: 'Contact us',
-    description: 'Report something broken, ask for something new, or get help with your account.',
+    /* IT ENUMERATES THE DOORS, so it has to hold all of them. This is also the meta description,
+       and the sales door is the one whose reader is most likely to arrive from a search engine
+       rather than from inside the product. */
+    description:
+      'Report something broken, ask for something new, get help with your account, or ask about pricing before you start.',
     tableOfContents: false,
     /* NO PAGINATION. Starlight derives prev/next from the SIDEBAR, and this page is in the sidebar
        so a phone can reach it — which put it into the documentation's reading order. Measured: the
@@ -149,16 +224,25 @@ const PRIVATE = [
       <p class="sb-lede">What happens next depends on which of these it is, so it is worth asking
         first.</p>
 
-      {/* FOUR EQUAL TILES, TWO ROWS (Oleh, 2026-08-20). This shipped as three shapes — two tiles,
-          a full-width card, and a quiet row — on the argument that a catch-all which looks like the
-          specific doors gets chosen by people who would otherwise have picked correctly. The
-          counter-argument is the one that won: three different shapes make the reader work out a
-          hierarchy before they can answer a question they already know the answer to, and the
-          reading order top-left to bottom-right puts the catch-all last anyway. Position carries
-          the ranking; shape no longer has to.
+      {/* TWO ROWS STILL, AND STILL NOTHING TO DECODE. Four tiles in a 2x2 was an explicit
+          instruction (Oleh, 2026-08-20), replacing three shapes on the argument that different
+          shapes make the reader work out a hierarchy before they can answer a question they
+          already know the answer to. A fifth door cannot keep that grid: two columns give three
+          rows with an orphan cell, and three columns give two rows with a hole that reads as a
+          card which failed to load.
 
-          The two lanes keep their tints (a fault, a wish) and the two administrative doors take the
-          neutral one, so the grid still reads as two pairs rather than four unrelated boxes. */}
+          What it keeps is the thing the instruction was protecting. The five doors split two and
+          three along a line that is already drawn on this page in colour: the two LANES a person
+          might be in (a fault, a wish) carry a tint, and the three DESKS they might want carry the
+          neutral one. So the rows are the tints, and the two shapes are one fact stated twice
+          rather than a second hierarchy to learn. Six columns underneath: three each on the top
+          row, two each on the bottom, which leaves the two common doors at exactly the 344px they
+          measure today and lands the grid flush on both rows with no empty cell anywhere.
+
+          Frequency agrees with it. A broken thing and a feature request are the common cases and
+          they are the large pair; billing, sales and the catch-all are the rare ones and they are
+          the small three. Position already ranked them top-left to bottom-right, so size is
+          carrying the same ranking rather than a new one, and the catch-all is still last. */}
       <div class="sb-fork">
         <button type="button" class="sb-choice" data-choose="ticket">
           <span class="sb-choice-icon sb-choice-icon-private"><Icon name="bug" size={20} /></span>
@@ -178,13 +262,26 @@ const PRIVATE = [
           </span>
         </button>
 
+        {/* TRIMMED BY ONE CLAUSE WHEN THE COLUMN NARROWED, and by measurement rather than taste.
+            The dropped clause was "or a question about what you are paying for", written for a
+            344px tile; in a 224px one it took this body to 7 lines against its two neighbours' 5
+            and made the whole bottom row 271px tall to hold one card's tail. The title already
+            says "Account and billing", which is what the clause was restating. */}
         <button type="button" class="sb-choice" data-choose="billing">
           <span class="sb-choice-icon sb-choice-icon-admin"><Icon name="credit-card" size={20} /></span>
           <span class="sb-choice-title">Account and billing</span>
           <span class="sb-choice-body">
-            An invoice, a plan change, a payment that will not go through, or a question about what
-            you are paying for. This goes <strong>privately</strong> to the people who hold your
-            account.
+            An invoice, a plan change, or a payment that will not go through. This goes
+            <strong>privately</strong> to the people who hold your account.
+          </span>
+        </button>
+
+        <button type="button" class="sb-choice" data-choose="sales">
+          <span class="sb-choice-icon sb-choice-icon-admin"><Icon name="handshake" size={20} /></span>
+          <span class="sb-choice-title">Sales question</span>
+          <span class="sb-choice-body">
+            Not a customer yet? Pricing, limits, or whether we cover the platform you use. This
+            goes <strong>privately</strong> to sales.
           </span>
         </button>
 
@@ -194,7 +291,7 @@ const PRIVATE = [
           </span>
           <span class="sb-choice-title">Something else</span>
           <span class="sb-choice-body">
-            Anything that does not fit the other three. It goes <strong>privately</strong> to
+            Anything that does not fit the other four. It goes <strong>privately</strong> to
             support and someone will place it for you.
           </span>
         </button>
@@ -206,6 +303,25 @@ const PRIVATE = [
         who are you, where do I reply, what is this about, what happened, show me. Attachments come
         last because they are the only optional thing here, and an optional control above a required
         one is read as required.
+
+        THE SPACE PICKER SITS UNDER THE BODY FOR THAT SAME RULE, not beside the platform field where
+        it reads as belonging. It is optional, and this form's own law is that an optional control
+        above a required one is read as required — putting it first, where "What is this about?"
+        already lives, would put the only skippable question at the top of a form of compulsory ones.
+        Under the body it also lands where it is most useful: the hint above it has just asked for run
+        IDs and base names, and the picker is the structured half of the same answer.
+
+        ITS RESTING STATE IS AN ANSWER, NOT A BLANK. `Not about a particular Space` is the first
+        option and it is selected, so the control at rest says something true rather than sitting
+        empty and reading as a question nobody answered. Nothing about it can block a submit: the
+        validator walks `[required]`, this carries none, and the empty value is the submitted one.
+
+        IT IS SIGNED-IN ONLY, and the whole argument for that is on `SPACE_PROSE_OUT` in the
+        frontmatter. Both halves ship in the HTML — this app is a static build, so a query parameter
+        cannot change what the server sent — and `html[data-portal-session]` picks one, exactly as
+        the sign-in line at the foot does. `lib/submit.ts` DISABLES the select in the signed-out
+        state as well as hiding it, because a control that is merely invisible is still in
+        `new FormData(form)`.
 
         NO ASTRO COMMENT MAY GO INSIDE THE EXPRESSION BELOW. A brace-slash-star comment inside a
         template expression is an SSR 500 with an empty body that every gate passes (six occurrences
@@ -244,13 +360,82 @@ const PRIVATE = [
           </label>
           <label>
             <span>Subject</span>
-            <input type="text" name="subject" required />
+            <input type="text" name="subject" required data-arts-input />
           </label>
+
+          <div class="sb-arts" data-arts hidden>
+            <div class="sb-arts-top">
+              <p class="sb-arts-h" data-arts-h></p>
+              <button type="button" class="sb-arts-x" data-arts-dismiss>
+                <Icon name="x" size={14} /> Dismiss
+              </button>
+            </div>
+            <div class="sb-arts-list" data-arts-list></div>
+            <p class="sb-arts-foot">
+              None of these? Carry on below — nothing here stops you sending it.
+            </p>
+          </div>
+
           <label>
             <span>{f.bodyLabel}</span>
             <textarea name="body" rows="6" required></textarea>
-            <small>{f.bodyHint}</small>
+            <small>
+              {f.bodyHint}{' '}
+              {f.space && <span data-when-signed-out>{SPACE_PROSE_OUT}</span>}
+            </small>
           </label>
+
+          {f.space && SPACE_GROUPS.length > 0 && (
+            <label class="sb-space" data-space-field>
+              <span>Which Space is this about?</span>
+              <select name="spaceId" data-space>
+                <option value="">Not about a particular Space</option>
+                {SPACE_GROUPS.map((g) => (
+                  <optgroup label={g.orgName}>
+                    {g.spaces.map((sp) => (
+                      <option value={sp.id}>{sp.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <small>Optional. Picking one saves us asking which backup you mean.</small>
+            </label>
+          )}
+
+          {f.kind === 'ticket' && (
+            <div class="sb-hand" data-hand hidden>
+              <div class="sb-hand-top">
+                <button
+                  type="button"
+                  class="sb-hand-toggle"
+                  data-hand-toggle
+                  aria-expanded="false"
+                  aria-controls="sb-hand-body"
+                >
+                  <Icon name="chevron-right" size={14} class="sb-hand-chev" />
+                  <span>From your chat</span>
+                  <span class="sb-hand-n" data-hand-n></span>
+                </button>
+                <button type="button" class="sb-hand-x" data-hand-remove>
+                  <Icon name="x" size={14} /> Remove
+                </button>
+              </div>
+              <p class="sb-hand-sum">
+                What the assistant tried, the pages it cited, and the page you were reading. It is
+                attached unless you remove it.
+              </p>
+              <div class="sb-hand-body" id="sb-hand-body" data-hand-body hidden>
+                <label class="sb-hand-field">
+                  <span>Edit out anything you would rather not send</span>
+                  <textarea name="chat" rows="9" data-hand-text></textarea>
+                </label>
+              </div>
+              <p class="sb-hand-wait">
+                A person reads this and replies by email to the address above. We do not publish
+                response times — you get an email when there is an update.
+              </p>
+            </div>
+          )}
 
           <div class="sb-files" data-files>
             <span class="sb-files-h">Attachments, if they help</span>
@@ -342,6 +527,78 @@ const PRIVATE = [
       </form>
     </section>
 
+    {/* ── Step 2c · the sales question ──
+        PRIVATE, AND THE ONLY DOOR THAT DOES NOT GO TO SUPPORT. Everything above assumes an account
+        exists: a ticket is filed against one, an invoice belongs to one, and the note at the foot
+        offers to show you the ones you opened. This one is for the person deciding whether to
+        start, so nothing on it may assume an account, and the note names the desk rather than
+        saying "support" like the three above.
+
+        NO ATTACHMENTS, AND THAT IS THE ARGUMENT RATHER THAN AN OMISSION. Each of the three private
+        forms has a concrete artefact behind it: the screenshot of the run that failed, the invoice
+        in question, the screen being described. A person who has not used the product has no
+        artefact, because the thing they are asking about does not exist for them yet. The block is
+        also the largest thing on any of those forms, it sits between the last field and the submit
+        button, and it carries a sentence about file types and a megabyte cap. On this form all of
+        that is furniture in front of someone who has not decided to talk to us. So the sales fork
+        joins `request` as the second form with no file input, and `wireAttachments` is a no-op on
+        it exactly as it already is there.
+
+        WHAT THE ANSWER NEEDS INSTEAD is asked in the body hint, which is how every other door on
+        this page asks for context: the fault report names run IDs and error text, billing names an
+        invoice number and the last four digits. Scale and any policy to meet are what a pricing or
+        limits answer turns on, and asking for them there costs the reader no extra required
+        field. */}
+    <section class="sb-step" data-step="sales" hidden>
+      <p class="sb-back">
+        <button type="button" data-restart><Icon name="arrow-left" size={14} /> Back</button>
+      </p>
+      <h2 class="sb-h">Sales question</h2>
+      <p class="sb-note sb-note-private">
+        <Icon name="lock" size={16} />
+        <span>
+          This goes privately to sales, not to support. Nothing here appears on the public board.
+        </span>
+      </p>
+
+      <form class="sb-form" data-form="sales" novalidate>
+        {/* FIRST, AND WITH THE UNSUPPORTED OPTION. "Do you support Notion yet" is the shape of a
+            large share of pre-sales questions, and it is the one question on this page whose
+            answer changes what we say about everything under it. The `allowNew` variant is the
+            request fork's, not the ticket fork's: a fault always happened on a platform we run, so
+            offering "one you do not support" there would be offering an impossible answer. Here it
+            is the likeliest answer of all, and without it someone evaluating us on a platform we
+            have never heard of has to tick All platforms and bury the name in prose. */}
+        <RelatedToField kind="sales" allowNew />
+
+        <label>
+          <span>Your name</span>
+          <input type="text" name="name" required autocomplete="name" />
+        </label>
+        <label>
+          <span>Email</span>
+          <input type="email" name="email" required autocomplete="email" />
+          {/* NOT the private forms' hint. Theirs offers to find your account, which is the one
+              thing this visitor does not have, and reading it is being told you are in the wrong
+              place. */}
+          <small>We reply here. You do not need an account.</small>
+        </label>
+        <label>
+          <span>Subject</span>
+          <input type="text" name="subject" required />
+        </label>
+        <label>
+          <span>What do you want to know?</span>
+          <textarea name="body" rows="6" required></textarea>
+          <small>How much data you are protecting, how many people need access, and any policy you
+            have to meet. If you are comparing us with something else, say which.</small>
+        </label>
+
+        <p class="sb-err" data-err hidden></p>
+        <button type="submit" class="sb-submit"><Icon name="send" size={15} /> Send to sales</button>
+      </form>
+    </section>
+
     {/* ── Step 3 · what actually happened ── */}
     <section class="sb-step" data-step="done" hidden>
       {/* The glyph rides ON the heading's line rather than sitting on its own above it. Alone on a
@@ -354,22 +611,93 @@ const PRIVATE = [
       <p data-done-body></p>
       {/* This one STAYS. It is the only sentence standing between a person who just pressed submit
           and the belief that someone is reading it. What the real backend must do moved to
-          `openspec/changes/support/design.md`; what the visitor needs to know is here. */}
+          `openspec/changes/support-portal/design.md`; what the visitor needs to know is here. */}
       <p class="sb-note">
         <strong>Nothing was sent.</strong> This portal has no backend yet — the form is complete and
         the submission is not.
       </p>
-      <p><a href="/roadmap/">Back to the board</a></p>
+
+      {/* THE RECEIPT CARRIES THREE FACTS AND THE CAPTION KEEPS IT HONEST. A receipt that says a
+          mail was sent when none was is a worse lie than the blunt sentence above it, so the
+          conditional voice of the confirmation body continues here rather than being dropped: this
+          is what a real submission would leave you holding, and the note above has already said
+          that this was not one. The two values inside are nonetheless real — the address is the one
+          typed into the form, and the reference is stable for this visit — because a receipt made
+          of placeholders cannot be judged.
+
+          A FOURTH ROW APPEARS ONLY WHEN THE PERSON PUT IT THERE. The three facts above are refused
+          extra company on the grounds that anything else is unknowable or an unmade promise, and the
+          Space is neither — it is the one thing on this receipt the visitor themselves chose. An
+          optional field that vanishes silently on submit is indistinguishable from one that was
+          never read, and this is the only place they can see it was. It is absent, not empty, when
+          nothing was picked: a row reading "About: —" would be the form asking its optional question
+          a second time at the point where nothing can be done about it.
+
+          The order is the order of the questions: what do I call this, what is it about, where will
+          the answer arrive, who sends it and when do I stop waiting. */}
+      <p class="sb-receipt-cap">A real submission leaves you with this, on screen and in your inbox.</p>
+
+      <div class="sb-receipt">
+        <div class="sb-receipt-row">
+          <span class="sb-receipt-k">Reference</span>
+          <span class="sb-receipt-v">
+            <code data-ref></code>
+            <button type="button" class="sb-copy" data-ref-copy aria-label="Copy the reference">
+              <span class="sb-copy-glyph" data-ref-glyph><Icon name="copy" size={14} /></span>
+            </button>
+          </span>
+        </div>
+
+        <div class="sb-receipt-row" data-receipt-about-row hidden>
+          <span class="sb-receipt-k">About</span>
+          <span class="sb-receipt-v"><span data-receipt-about></span></span>
+        </div>
+
+        <div class="sb-receipt-row">
+          <span class="sb-receipt-k">Replies go to</span>
+          <span class="sb-receipt-v"><span class="sb-receipt-mail" data-receipt-mail></span></span>
+        </div>
+
+        <p class="sb-receipt-line" data-receipt-answer></p>
+
+        {/* THE DELIVERABILITY LINE IS NOT HOUSEKEEPING. With no portal view and no code screen, the
+            mailbox is the only channel this person has — a filtered acknowledgement leaves them
+            with nothing at all and no way to know it. So the recovery is printed beside the address
+            rather than waited for, and it names a second address that is reachable without any of
+            the machinery above having worked. */}
+        <p class="sb-receipt-line sb-receipt-quiet">
+          If nothing arrives, look in your spam folder and allow mail from <code>baseout.com</code>.
+          If it never turns up, write to <a href="mailto:support@baseout.com">support@baseout.com</a>
+          — that is the way back if the mail is filtered.
+        </p>
+      </div>
+
+      <p><a href="/roadmap/" data-done-exit>Back to the board</a></p>
     </section>
 
-    {/* "See the ones I opened" is a different destination from "open one", and it needs an account.
-        It is one line here rather than a page of its own until sign-in exists — a menu item that
-        leads to a locked door is worse than no menu item. */}
-    <p class="sb-signin">
+    {/* "See the ones I opened" is a different destination from "open one", so it is one line here
+        rather than a page of its own — a menu item that leads to a locked door is worse than no menu
+        item.
+
+        BOTH HALVES ARE RENDERED AND THE SESSION PICKS ONE. This app is a static build, so a query
+        parameter cannot change what the server sent; `portal-session.ts` stamps the attribute and
+        the sheet decides, the same mechanism the landing's two variants use. Until 2026-08-21 this
+        line was unconditional and said "Sign in" to a reader `/requests/` had already treated as
+        signed in — two pages of one portal disagreeing about who you are.
+
+        THERE IS NOTHING HERE TO LOG INTO. The session is the Baseout app's, verified across origins
+        by the bridge in the paired monorepo change; the portal never mints one and has no account
+        surface of its own. That is why the signed-out half links to `app.baseout.com` rather than to
+        a form, and why nothing on this site offers to change a password, an address or a plan. */}
+    <p class="sb-signin" data-session-line>
       <Icon name="log-in" size={16} />
-      <span>
+      <span data-when-signed-out>
         Written to us before? <a href={APP_LOGIN_URL}>Sign in</a> to see your tickets. One opened
         without an account is still yours — sign in later with the same address and it will be there.
+      </span>
+      <span data-when-signed-in>
+        Written to us before? <a href="/requests/">See your requests</a> — this one will join them.
+        Anything you opened without an account is there too, if it used the same address.
       </span>
     </p>
 
@@ -403,12 +731,30 @@ const PRIVATE = [
     max-width: 44rem;
   }
 
+  /* The two new boxes join this list for the reason the comment above gives: Starlight's rhythm is
+     a general-sibling rule and it reaches into every nested box, so a `gap`-spaced container gets
+     the gap AND the margin. `.sb-arts-list`'s own children are written by `lib/submit.ts` at
+     runtime, and a scoped `> *` would carry the PAGE's hash while a runtime node carries none —
+     valid CSS selecting zero elements. Their reset is on the `:global` row rule further down. */
   .sb > * + *,
   .sb-fork > *,
   .sb-files > *,
   .sb-file-live > *,
+  .sb-receipt > *,
+  .sb-arts > *,
+  .sb-arts-top > *,
+  .sb-hand > *,
+  .sb-hand-top > *,
+  .sb-hand-body > *,
   .sb-form > * { margin-top: 0; }
   .sb-lede { margin: 0 0 20px; color: var(--bo-muted-strong); }
+
+  /* One line, two halves, the session picks. `[hidden]` is not used: an author `display` beats the
+     attribute, and this row is a flex container whose children would need `display: none` anyway. */
+  [data-session-line] [data-when-signed-in],
+  [data-session-line] [data-when-signed-out] { display: none; }
+  html[data-portal-session='in'] [data-session-line] [data-when-signed-in],
+  html[data-portal-session='out'] [data-session-line] [data-when-signed-out] { display: inline; }
 
   .sb-deflect,
   .sb-signin {
@@ -464,7 +810,28 @@ const PRIVATE = [
   .sb-signin { margin: 32px 0 0; }
 
   .sb-fork { display: grid; gap: 16px; grid-template-columns: 1fr; }
-  @media (min-width: 45rem) { .sb-fork { grid-template-columns: 1fr 1fr; } }
+
+  /* SIX COLUMNS SO TWO ROWS DIVIDE EXACTLY, three and three on the first, two and two and two on
+     the second. `1fr 1fr` cannot hold five tiles without an orphan, and `repeat(3, 1fr)` cannot
+     hold them without a hole; a track count that both 2 and 3 divide into holds both rows flush,
+     which is why this is 6 rather than a pair of breakpoints. Measured at the page's one container
+     width of 704px: 6 tracks with five 16px gaps give 104px each, so a top tile is 3 tracks plus 2
+     gaps = 344px — the exact width the two common doors already had — and a bottom tile is 2
+     tracks plus 1 gap = 224px.
+
+     The spans live inside the media query with the columns they refer to. Left outside, they would
+     apply to the one-column stack below 45rem, where `span 3` on a single-track grid silently
+     creates implicit columns and the stack stops being a stack. */
+  @media (min-width: 45rem) {
+    .sb-fork { grid-template-columns: repeat(6, 1fr); }
+
+    /* Position, not identity. The premise of this grid is that reading order carries the ranking,
+       so the row a tile lands in follows from where it is written rather than from a class naming
+       it — reorder the buttons and the layout follows, which is the behaviour you want when the
+       order IS the design. */
+    .sb-choice { grid-column: span 2; }
+    .sb-choice:nth-child(-n + 2) { grid-column: span 3; }
+  }
 
   /* A FLEX COLUMN, and the reason is the whitespace. As a block, the newline between the button tag
      and its first span is a text node that gets its own anonymous line box — measured, the two
@@ -489,8 +856,8 @@ const PRIVATE = [
   .sb-choice { transition: border-color 140ms ease; }
   .sb-choice:hover { border-color: var(--bo-primary); }
 
-  /* These are the only two controls on the first screen, so losing them to the keyboard loses the
-     page. `:focus-visible`, not `:focus`, so a mouse click does not leave a ring behind. */
+  /* These tiles are the only controls on the first screen, so losing them to the keyboard loses
+     the page. `:focus-visible`, not `:focus`, so a mouse click does not leave a ring behind. */
   .sb-choice:focus-visible {
     outline: 2px solid var(--bo-primary);
     outline-offset: 2px;
@@ -515,13 +882,20 @@ const PRIVATE = [
     border-radius: var(--bo-r-8);
   }
 
-  /* TWO LANES, NOT TWO STATUSES — and that reading was argued and accepted rather than assumed. On
-     the roadmap green means "shipped, this exists", and a wish is by definition the thing that does
-     not exist yet, so painting the wish tile green is a real collision. It is taken anyway: at the
-     fork nothing has a status, the only question is which lane you are in, and the pair reads as
-     fault against growth — the thing that went wrong, and the thing that could grow. Neutral grey
-     said the report was the unimportant one, and the accent said nothing at all because the accent
-     is already every link and every focus ring on the page. */
+  /* TWO LANES, NOT TWO STATUSES — and that reading was argued and accepted rather than assumed. At
+     the fork nothing has a status: the only question is which lane you are in, and the pair reads
+     as the thing that went wrong against the thing that could grow. Neutral grey said the report
+     was the unimportant one.
+
+     THE CORRECTION, 2026-08-21. The note that stood here argued this tile in GREEN, at length,
+     against the roadmap's "shipped, this exists" green — and the declaration below has read
+     `--bo-soft-primary-bg` since the line was written (`37b46a3`, the commit that added the rest
+     of the soft set). `--bo-primary` is a blue in both themes, so that collision was never on the
+     page and the next reader would have spent their time weighing it. The ARGUMENT above survives
+     the correction and is what the neutral tint further down leans on; only the hue it named was
+     wrong. What the accent costs is that it is also every link and every focus ring here. What it
+     buys is the thing that matters more: the one tile whose destination is PUBLIC does not wear
+     the same paint as the four whose destination is private. */
   .sb-choice-icon-private {
     background: var(--bo-soft-error-bg);
     color: var(--bo-soft-error-fg);
@@ -611,7 +985,12 @@ const PRIVATE = [
   .sb-form label { display: block; font-size: var(--bo-t-14); }
   .sb-form label > span { display: block; margin-bottom: 4px; font-weight: 500; }
 
+  /* `select` JOINS THESE RULES RATHER THAN GETTING ITS OWN. A picker in the same column as three
+     text fields has to be the same box, and the way that stops being true is two sets of values
+     drifting apart — measured once already in `RelatedToField.astro`, where a 10px pad left a field
+     4.0px taller than the one beneath it and nobody could name what was wrong. */
   .sb-form input,
+  .sb-form select,
   .sb-form textarea {
     width: 100%;
     padding: 8px 12px;
@@ -626,6 +1005,7 @@ const PRIVATE = [
   .sb-form textarea { resize: vertical; }
 
   .sb-form input:focus-visible,
+  .sb-form select:focus-visible,
   .sb-form textarea:focus-visible {
     outline: 2px solid var(--bo-primary);
     outline-offset: -1px;
@@ -654,6 +1034,33 @@ const PRIVATE = [
     color: var(--bo-soft-error-fg);
   }
   .sb-err[hidden] { display: none; }
+
+  /* THE NATIVE DISCLOSURE ARROW IS KEPT ON PURPOSE. `appearance: none` plus a drawn chevron is the
+     usual move and it buys nothing here: the arrow is the one mark that tells a reader this box has
+     a list behind it rather than a caret, and every alternative that looks better is a control we
+     would have to give keyboard behaviour back to. This is also why the picker is a `select` and not
+     a popover — see `lib/submit.ts`. `cursor` is the only thing worth saying. */
+  /* A NATIVE SELECT DOES NOT MATCH A TEXT INPUT ON ITS OWN. Measured on the rendered form: the
+     three text fields are 42.5px and this select came out 36.5px, a 6px step in one column of
+     fields. `RelatedToField.astro` records the same class of mismatch found the same way, at 4px —
+     the number differs because the control does, which is exactly why it has to be read rather than
+     inherited. `min-height` rather than a fixed height, so a longer option cannot clip itself. */
+  .sb-space select {
+    cursor: pointer;
+    min-height: 42.5px;
+  }
+
+  /* SIGNED-IN ONLY, DECIDED BY THE SHEET. Both halves are in the HTML because this is a static
+     build. `[hidden]` is not used and cannot be: `.sb-form label` sets an author `display`, and an
+     author `display` beats the attribute — the row would stay on screen with the gate green. */
+  .sb-space { display: none; }
+  html[data-portal-session='in'] .sb-space { display: block; }
+
+  /* The other half of the same fact: the sentence that asks a signed-out reader to name the Space in
+     the body, since they have no picker to name it in. Scoped to the form so it cannot collide with
+     the sign-in line's own pair at the foot of the page. */
+  .sb-form [data-when-signed-out] { display: none; }
+  html[data-portal-session='out'] .sb-form [data-when-signed-out] { display: inline; }
 
   .sb-submit:focus-visible {
     outline: 2px solid var(--bo-primary);
@@ -701,6 +1108,353 @@ const PRIVATE = [
     margin: 0 0 20px;
   }
 
+  /* ── The receipt ───────────────────────────────────────────────────────────────────────────── */
+
+  .sb-receipt-cap {
+    margin: 0 0 8px;
+    font-size: var(--bo-t-13);
+    color: var(--bo-muted);
+  }
+
+  /* `base-100` against the page, where the `Nothing was sent` note above it is `base-200`: the note
+     is an aside about this build and the receipt is the artefact, and they must not read as two
+     halves of one panel. */
+  .sb-receipt {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0 0 20px;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+  }
+
+  /* `wrap`, so a long address drops to its own line instead of pushing the label out of the box.
+     `baseline`, so the uppercase key sits on the same line as the value beside it rather than on
+     the top of its own box. */
+  .sb-receipt-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  /* THE ROW SETS AN AUTHOR `display`, SO THE ATTRIBUTE ALONE DOES NOTHING. Without this line the
+     About row ships visible and empty on every submit that did not pick a Space, and every gate
+     stays green — the same failure the sign-in line's comment records two hundred lines up. */
+  .sb-receipt-row[hidden] { display: none; }
+
+  .sb-receipt-k {
+    flex: none;
+    width: 104px;
+    font-size: var(--bo-t-12);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .sb-receipt-v {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: var(--bo-t-14);
+  }
+
+  .sb-receipt-v code { font-size: var(--bo-t-13); }
+
+  /* An address has no spaces to break at, so without this a long one widens the box past the
+     column instead of wrapping. */
+  .sb-receipt-mail { overflow-wrap: anywhere; }
+
+  /* `pattern-copy-id`, verbatim in everything but the class name: 20x20, ghost, the glyph swaps to
+     a check for ~1.1s and swaps back. The tick is the confirmation — no toast, because copying is
+     not an event worth a page-level announcement — and the button carries an `aria-label` naming
+     what it copies rather than a native `title=`. */
+  .sb-copy {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--bo-r-4);
+    background: none;
+    color: var(--bo-muted);
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .sb-copy:hover { background: var(--bo-base-200); color: var(--sl-color-white); }
+
+  .sb-copy:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 1px;
+  }
+
+  /* The glyph is swapped by `innerHTML`, so it needs a box of its own to swap inside — replacing
+     the button's whole contents would take the accessible name with it. */
+  .sb-copy-glyph { display: flex; }
+
+  .sb-receipt-line { margin: 0; font-size: var(--bo-t-14); line-height: 1.5; }
+
+  .sb-receipt-quiet { font-size: var(--bo-t-13); color: var(--bo-muted); }
+
+  /* ── Suggested articles ────────────────────────────────────────────────────────────────────── */
+
+  /* The same panel as the duplicate strip below, because it is the same offer in the other lane:
+     "this may already exist". Two shapes for one idea would make the reader work out whether they
+     differ. */
+  .sb-arts {
+    margin-top: -4px;
+    padding: 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+  }
+
+  .sb-arts[hidden] { display: none; }
+
+  .sb-arts-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .sb-arts-h {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    color: var(--bo-muted-strong);
+  }
+
+  /* THE CROSS TRAVELS WITH THE WORD. A bare glyph in the corner of a panel is the one control whose
+     meaning depends entirely on what it sits beside, and this panel sits inside a form where the
+     nearest thing to close is the form itself. Tertiary weight: dismissing is never the action we
+     are recommending. */
+  .sb-arts-x {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-6);
+    background: none;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-12);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .sb-arts-x:hover { background: var(--bo-base-300); color: var(--sl-color-white); }
+
+  .sb-arts-x:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 1px;
+  }
+
+  /* `:global`, because `lib/submit.ts` writes these rows as an HTML string and a scoped style never
+     reaches a node created by `innerHTML` — the same reason the duplicate rows and the file rows
+     below are written this way. `margin: 0` is part of it and not a tidy-up: Starlight's rhythm
+     rule reaches these nodes, and the `> *` reset at the top of this sheet cannot, because Astro
+     would stamp the page hash onto the `*`. */
+  .sb-arts-list :global(.sh-row) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 8px;
+    border-radius: var(--bo-r-6);
+    color: var(--sl-color-text-accent);
+    font-size: var(--bo-t-14);
+    text-decoration: none;
+  }
+
+  .sb-arts-list :global(.sh-row:hover) { background: var(--bo-base-300); text-decoration: underline; }
+
+  .sb-arts-list :global(.sh-row:focus-visible) {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  .sb-arts-list :global(.sh-row-icon) { display: flex; flex: none; color: var(--bo-muted); }
+
+  .sb-arts-list :global(.sh-row-body) { flex: 1; min-width: 0; }
+
+  /* One line each. A wrapped title turns a three-row strip into a six-row one, between the subject
+     field and the box the person came here to type in. */
+  .sb-arts-list :global(.sh-row-title) {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* THE ESCAPE HATCH, AND IT IS THE REASON THIS IS A SUGGESTION RATHER THAN A WALL. A deflection
+     with no stated way past it reads as a gate, and the person who has already decided the answer
+     is not here is exactly the person whose case we most want written down. */
+  .sb-arts-foot {
+    margin: 8px 0 0;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    color: var(--bo-muted);
+  }
+
+  /* ── The chat handoff ──
+     THE SAME PANEL AS THE TWO SUGGESTION STRIPS, because it is the third thing this form says in
+     its own voice rather than the visitor's, and three shapes for one idea would make the reader
+     work out whether they differ.
+
+     ALL OF THIS IS SERVER-RENDERED AND ONLY TOGGLED, which is the whole reason it is markup here
+     and not a string built at click time. A scoped `<style>` never reaches a node the browser made
+     after render — the defect that left every chat message unstyled for the life of the old chat
+     page — so the only thing `lib/submit.ts` writes into this block is the VALUE of a textarea.
+     There is no class here that a runtime node has to carry. */
+  .sb-hand {
+    margin-top: -4px;
+    padding: 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+  }
+
+  /* An author `display` beats the `hidden` attribute, and this block has one. */
+  .sb-hand[hidden] { display: none; }
+
+  .sb-hand-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* COLLAPSED IS THE RESTING STATE, and it has to be: attached-by-default is what keeps the
+     context for the people who never open it, and a block that arrived already unrolled would
+     push the send button off the screen on the one door that most needs pressing. */
+  .sb-hand-toggle {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--bo-muted-strong);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .sb-hand-toggle:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+    border-radius: var(--bo-r-6);
+  }
+
+  .sb-hand-n {
+    font-weight: 400;
+    color: var(--bo-muted);
+  }
+
+  .sb-hand-chev {
+    flex: none;
+    color: var(--bo-muted);
+    transition: transform 120ms ease;
+  }
+
+  .sb-hand-toggle[aria-expanded='true'] .sb-hand-chev { transform: rotate(90deg); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sb-hand-chev { transition-duration: 0s; }
+  }
+
+  /* REMOVE TRAVELS WITH ITS WORD, the same rule the dismiss control two panels up follows. */
+  .sb-hand-x {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--bo-r-6);
+    background: transparent;
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-12);
+    cursor: pointer;
+  }
+
+  .sb-hand-x:hover { background: var(--bo-base-300); color: var(--sl-color-white); }
+
+  .sb-hand-x:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 1px;
+  }
+
+  /* WHAT IS INSIDE, SAID WITHOUT OPENING IT. Collapsed-and-unexplained is how every vendor in the
+     sweep attaches a transcript; the difference here is that the person can read what they are
+     sending before they send it, and that only pays if the closed state says what it holds. */
+  .sb-hand-sum {
+    margin: 6px 0 0;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    color: var(--bo-muted);
+  }
+
+  .sb-hand-body { margin-top: 12px; }
+
+  .sb-hand-body[hidden] { display: none; }
+
+  .sb-hand-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sb-hand-field > span {
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  .sb-hand-field textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    color: var(--sl-color-text);
+    font-family: var(--sl-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: var(--bo-t-12);
+    line-height: 1.6;
+    resize: vertical;
+  }
+
+  .sb-hand-field textarea:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* THE WAIT, NAMED BY CHANNEL, ADDRESS AND EVENT. It sits under the block rather than on the
+     receipt alone because this is the screen where somebody decides whether to press send, and
+     the second sentence is what turns silence about how long into a stated policy. */
+  .sb-hand-wait {
+    margin: 8px 0 0;
+    font-size: var(--bo-t-12);
+    line-height: 1.4;
+    color: var(--bo-muted);
+  }
+
   /* ── Duplicate suggestions ── */
   .sb-dupes {
     margin-top: -4px;
@@ -732,13 +1486,25 @@ const PRIVATE = [
   .sb-dupes :global(.sb-dupe-title a) { color: var(--sl-color-text-accent); text-decoration: none; }
   .sb-dupes :global(.sb-dupe-title a:hover) { text-decoration: underline; }
 
-  /* ── The third and fourth doors ─────────────────────────────────────────────────────────────── */
+  /* ── The three desks ────────────────────────────────────────────────────────────────────────── */
 
-  /* NEITHER RED NOR AMBER. Red on this page means something broke, and an invoice question is not a
-     fault. Amber is spoken for by the public-board warning, the one thing here that must not be
-     missed. So the two administrative doors — billing and the catch-all — share the neutral
-     surface, which is also what they are: the doors that are neither a fault nor a wish. Sharing
-     one tint is what makes the second row read as a pair rather than as two more lanes. */
+  /* NEITHER RED NOR AMBER, AND NOT A FIFTH HUE EITHER. Red on this page means something broke, and
+     neither an invoice question nor a pre-sales question is a fault. Amber is spoken for by the
+     public-board warning, the one thing here that must not be missed. That much was already
+     settled when billing and the catch-all took the neutral surface.
+
+     Sales was the case for reaching past those two. It was refused. The tint on this grid does not
+     encode TOPIC, it encodes what happens to what you write: red says a fault, blue says this
+     becomes public, and neutral says neither. Sales is neither, so neutral is not a leftover for
+     it, it is the correct answer. The two hues left unused are both worse than correct — green
+     already means "shipped, this exists" on the roadmap board this page links to and shares status
+     tokens with, and blue is the public lane, which is the one thing a private door must not
+     suggest. A fifth hue would also make three of five tiles shout, and the fork would stop being
+     two lanes and three desks and become five competing offers.
+
+     What tells a stranger this door is theirs is the label, the handshake and the first three
+     words of the body, which is where that work belongs. Sharing one tint is what makes the bottom
+     row read as three desks rather than as three more lanes. */
   .sb-choice-icon-admin {
     background: var(--bo-base-200);
     color: var(--bo-muted-strong);
@@ -840,8 +1606,29 @@ const PRIVATE = [
     font-variant-numeric: tabular-nums;
   }
 
+  /* ── IT SAT 10px ABOVE THE ROW'S CENTRE, AND `align-items: center` WAS NOT THE PROBLEM ─────────
+     Oleh, 2026-08-26: "кнопка Remove, вона не по центру". Measured with a file attached, at 900:
+
+       .sb-file      y 1090.8  h 68.8   centre 1125.2   (align-items: center)
+       .sb-file-name                    centre 1125.2   ✓
+       .sb-file-size                    centre 1125.2   ✓
+       .sb-file-drop y 1098.8  h 32.8   centre 1115.2   — 10px high
+
+     The button carried `margin-bottom: 20px`. Flex centres an item's MARGIN box, so a 32.8px button
+     with 20px hanging below it centres as a 52.8px box and the visible part rides 10px — exactly
+     half the margin — above the line. The same 20px was also inflating the row: 32.8 + 20 + 16 of
+     padding is the 68.8 measured, where the row's own content needs 48.8.
+
+     WHERE IT CAME FROM. The prose-rhythm reset at the top of this sheet lists nine containers whose
+     direct children get `margin-top: 0`, and this button is not a direct child of any of them — it
+     is inside a row `lib/submit.ts` writes at runtime. So it kept a margin meant for stacked prose.
+     `margin: 0` states it on the control itself, which is where a control's box belongs. */
   .sb-file-list :global(.sb-file-drop) {
     flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
     padding: 4px 8px;
     border: 1px solid transparent;
     border-radius: var(--bo-r-4);
@@ -850,12 +1637,38 @@ const PRIVATE = [
     font: inherit;
     font-size: var(--bo-t-13);
     cursor: pointer;
-    transition: background-color 150ms ease-out, color 150ms ease-out;
+    transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
   }
 
-  .sb-file-list :global(.sb-file-drop:hover) {
-    background: var(--bo-base-200);
-    color: var(--sl-color-white);
+  .sb-file-list :global(.sb-file-drop-ic) {
+    display: inline-flex;
+    flex: none;
+    opacity: 0.7;
+  }
+
+  /* ── RED ON INTENT, NOT AT REST — and the reason is a named rule, not taste ────────────────────
+     Oleh asked for red, "або хоча б іконку". It gets both, in that order, because DESIGN.md §2's
+     Red-Means-Broken Rule is explicit: Fault Red is "**Never** used for a decision, a rejection, or
+     an unavailable option; only for something that went wrong." Detaching a file you attached ten
+     seconds ago, before anything is sent, is a decision, and it is undone by picking the file again.
+     A row that paints it red says a mistake has happened when none has — and with the five-file
+     limit this form allows, five permanently red buttons is the column of alarms the same document
+     bans for status pills.
+
+     Hover and focus are different: there the reader has aimed at the control and the question is no
+     longer "what is this" but "what will it do". Red there is a warning about what is ABOUT to
+     happen, which is the one thing this colour is for. The soft pair rather than a solid fill, per
+     the Soft-Fill Rule, so it reads as a warning and not as an error that already occurred. */
+  .sb-file-list :global(.sb-file-drop:hover),
+  .sb-file-list :global(.sb-file-drop:focus-visible) {
+    background: var(--bo-soft-error-bg);
+    border-color: transparent;
+    color: var(--bo-soft-error-fg);
+  }
+
+  .sb-file-list :global(.sb-file-drop:hover .sb-file-drop-ic),
+  .sb-file-list :global(.sb-file-drop:focus-visible .sb-file-drop-ic) {
+    opacity: 1;
   }
 
   .sb-file-list :global(.sb-file-drop:focus-visible) {
@@ -915,6 +1728,15 @@ const PRIVATE = [
     align-self: flex-start;
     align-items: center;
     height: 1.4em;
+  }
+
+
+  /* A CARD'S INNER PADDING AT NARROW IS 16 — `specs/16-responsive.md` §3, and the same measurement
+     as `PlatformStart.astro`'s note. `.sb-choice` was the portal's other 20px card: at 390 its title
+     sat at 37 while the deflection panel directly above it sat at 31, on the same screen. At the
+     3+2 grid reading it stays 20; it is only stacked that the difference shows. */
+  @media (max-width: 50rem) {
+    .sb-choice { padding: 16px; }
   }
 
 </style>

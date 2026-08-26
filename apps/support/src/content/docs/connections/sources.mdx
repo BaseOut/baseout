@@ -5,9 +5,16 @@ description: The connection to the platform your Spaces back up.
 
 import PlatformTabs from '../../../components/PlatformTabs.astro';
 
-A **Source** is a connection to the platform you are backing up. It belongs to your account rather
+A *Source* is a connection to the platform you are backing up. It belongs to your account rather
 than to one Space, so you add it once and reuse it wherever you need it. The Sources list shows each
 one's name, how it was authorized, its status, how many Spaces use it, and how much it can see.
+
+In this guide, you will:
+
+- Authorize a Source for your platform, and know what the grant covers
+- See why two Sources on the same platform can see different things
+- Hold more than one Source on an account, and point Spaces at different ones
+- Move a Space onto a different Source, and know what that resets
 
 What a Source *is* does not change with the platform. How you authorize one does, and so does what
 that authorization can reach.
@@ -55,10 +62,13 @@ was left out is not hidden from you inside Baseout, it is invisible to Baseout, 
 exists. That is the usual reason something is missing from a picker: see
 [My bases are missing from the picker](/troubleshooting/missing-bases/).
 
+:::note
 New objects are found by re-checking, never announced. No platform tells Baseout that a base was
-created, so the Source looks again and reports what it found. New objects are surfaced for you to
-add rather than added for you, because nothing should enter a backup, or a bill, without you
-choosing it.
+created, so the Source looks again and reports what it found.
+:::
+
+New objects are surfaced for you to add rather than added for you, because nothing should enter a
+backup, or a bill, without you choosing it.
 
 ## More than one account
 
@@ -82,7 +92,7 @@ Status, reconnect and the re-check for new objects all live on the Source rather
 Space, so one fix serves every Space using it. See
 [Reconnecting a broken connection](/connections/reconnecting/).
 
-## Next
+## Next steps
 
 - [Destinations](/connections/destinations/): the other half of the account's connections
 - [Getting started](/start/getting-started/): choosing a Source during setup

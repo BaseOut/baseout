@@ -1,0 +1,304 @@
+---
+import { ATTACH_ACCEPT } from '../lib/submit';
+/**
+ * The composer that continues a case — and, on a closed one, the thing that reopens it.
+ *
+ * `pattern-message-thread`, "THE COMPOSER HAS FOUR STATES, AND THE FOURTH IS THE ONE THAT MATTERS",
+ * plus `pattern-file-attach` half one for the upload field.
+ *
+ * ── IT STAYS ON A CLOSED CASE, AND IT SAYS WHAT SENDING WILL DO BEFORE THE SEND ────────────────
+ * Not after. A closed case that HIDES its composer teaches the customer to open a second ticket
+ * about the same problem, and then support has two threads and one history split across them.
+ * Disabling it costs exactly the same and explains less. So the composer is always present, and on a
+ * closed case a quiet inline line sits above the actions and the primary button says `Send and
+ * reopen` rather than `Send` — the button's own label is half the warning.
+ *
+ * ── THE DRAFT IS NEVER CLEARED OPTIMISTICALLY ──────────────────────────────────────────────────
+ * Through `sending` and through `failed` the text stays in the field, because a field cleared on
+ * dispatch loses the message when the request fails. A failure reports in the ONE form-level region
+ * above the action row — never as a field error, because no field is wrong. It IS cleared on a
+ * confirmed send, together with the file field: that is the one moment the message is safely
+ * somewhere else, and it is the moment the rule was written to protect.
+ *
+ * ── THE FAILURE REGION STAYS, AND NOTHING IN THIS PREVIEW REACHES IT (2026-08-21) ──────────────
+ * Send used to end in this region on every attempt, reading "Nothing was sent". A real store can
+ * genuinely fail a send and the catalog lists `failed` as one of the composer's four states, so the
+ * region is kept and `data-composer-state='failed'` still reveals it. What was wrong was using an
+ * alarm to report an EXPECTED, every-time condition; that fact now lives in one quiet permanent line
+ * on the case (`[ref].astro`, `.tk-preview-note`), which is the only such statement on the page.
+ *
+ * ── THE FOUR STATES ARE ALL RENDERED, AND CSS PICKS ONE ────────────────────────────────────────
+ * `apps/support` is a fully static build with no adapter, so a query parameter cannot change what
+ * the server renders. Every state is in the DOM and `data-composer-state` on the root selects it —
+ * the same mechanism `lib/shot-switch.ts` uses on the landing, for the same reason: no navigation,
+ * no re-render, and no innerHTML that a scoped style could never reach.
+ *
+ * ── THE UPLOAD FIELD STATES ITS CAP AND ITS TYPES BEFORE THE PICKER ────────────────────────────
+ * A limit the reader learns by violating it costs them the file and the trust that the next attempt
+ * will work — and on a support surface the person hitting it is already having a bad day. Stating it
+ * costs one muted line. The rejection message still exists as a second line of defence, never as the
+ * first.
+ *
+ * ── THE ONE RULING NO PEER PRODUCT HAS, AND IT IS ABOVE THE PICKER ─────────────────────────────
+ * Every support tool asks for a screenshot. Ours is the one where the screenshot is a picture of the
+ * customer's Airtable base — record values, contact names, email addresses — which is third-party
+ * personal data belonging to people who did not choose to send it to us. Redaction inside a binary is
+ * all-or-nothing, and a copy that has already gone out by email is beyond every control we own. So
+ * the ONLY control that works is the sentence the reader sees while deciding what to screenshot, and
+ * it sits ABOVE the picker. It is a plain sentence in the user's own terms — never a checkbox, a
+ * consent gate or a policy link, all of which convert a useful warning into a click-through nobody
+ * reads and move the burden onto the customer instead of preventing the problem.
+ *
+ * ── NO DURATION PROMISE, ANYWHERE ──────────────────────────────────────────────────────────────
+ * No estimate of any kind, however softly worded. Name the channel, the address and the event that ends the
+ * wait — never a clock.
+ */
+import Icon from './Icon.astro';
+
+interface Props {
+  /** The case's stored status at render time. The client controller may move it afterwards. */
+  status: string;
+}
+
+const { status } = Astro.props;
+
+/* DERIVED, SO IT CANNOT LIE — the same discipline `lib/submit.ts`'s `ATTACH_HINT` takes. Declared
+   here rather than imported from that module: it is the submit-form controller, and a static case
+   page pulling a form controller in to borrow two constants is a dependency that outlives its
+   reason. If a third caller ever appears, lift ONE of them into a shared module. */
+const ATTACH_MAX_FILES = 5;
+const ATTACH_MAX_MB = 10;
+const ATTACH_TYPES = 'PNG, JPG, GIF, WebP or PDF';
+const ATTACH_HINT = `${ATTACH_TYPES} · up to ${ATTACH_MAX_MB} MB each · ${ATTACH_MAX_FILES} files`;
+---
+
+{/* TWO ATTRIBUTES, BECAUSE THEY ARE TWO FACTS. `data-composer-state` is what the COMPOSER is doing
+     (empty · sending · failed); `data-case-closed` is what the CASE is. The catalog lists `closed` as
+     a fourth composer state, and folding it into the same attribute would make a closed case that is
+     mid-send unrepresentable — the reopen warning would vanish at exactly the moment it is being
+     acted on. */}
+<form
+  class="cp"
+  data-composer
+  data-composer-state="empty"
+  data-case-closed={status === 'closed' ? 'true' : 'false'}
+>
+  <label class="cp-label" for="cp-reply">Reply</label>
+  <textarea
+    class="cp-text"
+    id="cp-reply"
+    name="reply"
+    rows="4"
+    placeholder="Write your reply"></textarea>
+
+  <div class="cp-attach">
+    <p class="cp-attach-label">Attachments</p>
+    {/* ABOVE THE PICKER. Everything that acts after the file is chosen is a control that cannot
+         work — see the header. */}
+    <p class="cp-attach-privacy">
+      Screenshots of your base may include record data. Crop or blur anything you would not want to
+      share.
+    </p>
+    <label class="cp-drop" for="cp-files">
+      <Icon name="paperclip" size={16} />
+      <span class="cp-drop-main">Drop files here, or click to browse</span>
+      <span class="cp-drop-hint">{ATTACH_HINT}</span>
+    </label>
+    <input class="cp-file" id="cp-files" type="file" name="files" multiple /
+      accept={ATTACH_ACCEPT}
+    >
+  </div>
+
+  {/* THE ONE FORM-LEVEL FAILURE REGION. Above the action row, never under a field. */}
+  <p class="cp-fail" role="status">
+    <Icon name="triangle-alert" size={16} />
+    <span data-composer-fail></span>
+  </p>
+
+  {/* BEFORE THE SEND, not after it. Rendered on every case and revealed by `data-composer-state`,
+       because a static build cannot re-render this line when the status changes. */}
+  <p class="cp-reopen">
+    <Icon name="rotate-ccw" size={14} />
+    This request is closed. Sending a reply reopens it.
+  </p>
+
+  <div class="cp-actions">
+    <button class="cp-send" type="submit" data-composer-send>
+      <Icon name="send" size={16} />
+      <span class="cp-send-open">Send</span>
+      <span class="cp-send-closed">Send and reopen</span>
+    </button>
+  </div>
+</form>
+
+<style>
+  .cp {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+  }
+
+  .cp-label {
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    color: var(--bo-base-content);
+  }
+
+  .cp-text {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    color: var(--bo-base-content);
+    font: inherit;
+    font-size: var(--bo-t-14);
+    line-height: 1.55;
+    resize: vertical;
+  }
+
+  .cp-text:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 1px; /* ds-ok: 1px — an outline offset, not spacing. */
+  }
+
+  .cp-attach {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .cp-attach-label {
+    margin: 0;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    color: var(--bo-base-content);
+  }
+
+  .cp-attach-privacy {
+    max-width: 60ch;
+    margin: 0;
+    font-size: var(--bo-t-12);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  /* BOTH AFFORDANCES, ONE TARGET. A drop-only zone is invisible to anyone who does not think to
+     drag; a button-only field throws away the gesture people actually use for a screenshot. */
+  .cp-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 16px;
+    border: 1px dashed var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    color: var(--bo-muted);
+    cursor: pointer;
+  }
+
+  .cp-drop:hover {
+    border-color: var(--bo-primary);
+  }
+
+  .cp-drop-main {
+    font-size: var(--bo-t-13);
+    color: var(--bo-muted-strong);
+  }
+
+  /* THE CAP AND THE TYPES, BEFORE THE PICKER. */
+  .cp-drop-hint {
+    font-size: var(--bo-t-12);
+  }
+
+  /* The input is reached through its label, which is the whole zone. Not `display: none`: a hidden
+     input is unfocusable, and the keyboard route to the picker would go with it. */
+  .cp-file {
+    position: absolute;
+    width: 1px; /* ds-ok: the visually-hidden idiom, not spacing. */
+    height: 1px; /* ds-ok */
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .cp-fail {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-error-bg);
+    font-size: var(--bo-t-13);
+    color: var(--bo-soft-error-fg);
+  }
+
+  .cp[data-composer-state='failed'] .cp-fail {
+    display: flex;
+  }
+
+  /* THE REOPEN LINE, and it appears only where it is true. */
+  .cp-reopen {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    font-size: var(--bo-t-13);
+    color: var(--bo-muted-strong);
+  }
+
+  .cp[data-case-closed='true'] .cp-reopen {
+    display: flex;
+  }
+
+  .cp-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .cp-send {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border: 0;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-primary);
+    color: var(--bo-primary-content);
+    font: inherit;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .cp-send:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  .cp-send[disabled] {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  /* One button, two labels, and the state decides which is true. */
+  .cp-send-closed {
+    display: none;
+  }
+
+  .cp[data-case-closed='true'] .cp-send-open {
+    display: none;
+  }
+
+  .cp[data-case-closed='true'] .cp-send-closed {
+    display: inline;
+  }
+</style>

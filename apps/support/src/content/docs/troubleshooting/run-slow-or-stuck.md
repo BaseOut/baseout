@@ -6,9 +6,16 @@ description: How to tell a run that is being rate-limited from one that has actu
 A run that has been in `running` for an hour is usually being paced by the platform, not stalled.
 Cancelling it and starting again makes it slower, because the second run starts from the beginning.
 
+In this guide, you will:
+
+- Tell a run that is being paced apart from one that has actually stopped
+- See what sets the pace on your platform
+- Narrow what a run has to do, so it has less to pace through
+- Know when to pause, when to cancel, and when to report it instead
+
 ## Tell the difference first
 
-`Running` means in progress. What separates slow from stuck is whether the counts are moving.
+`running` means in progress. What separates slow from stuck is whether the counts are moving.
 
 Open the run. It shows totals and a per-base table, and those figures climb as the run works. Refresh
 after a couple of minutes:
@@ -56,8 +63,13 @@ run by definition. See [Schedule and scope](/backups/schedule-and-scope/).
 
 ## Pause and Cancel
 
-Both act only on a run that is still in flight. Pause can be restarted; Cancel cannot, and a
-cancelled run stays in the history as a cancelled run, because the history is a permanent record.
+Both act only on a run that is still in flight.
+
+:::note
+A `paused` run can be restarted. A `cancelled` run cannot, and it stays in the history as a
+cancelled run, because the history is a permanent record.
+:::
+
 See [Running a backup now](/backups/running-a-backup/).
 
 ## If it really is stuck

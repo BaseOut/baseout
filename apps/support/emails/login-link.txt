@@ -1,0 +1,25 @@
+BASEOUT SUPPORT
+
+SUPPORT ACCOUNT
+
+Your sign-in link.
+
+This link signs you in to the Baseout support portal, where you can read the
+cases opened from your email address. It is a support account only, not a
+Baseout account, and it gives no access to your data.
+
+SIGN IN TO SUPPORT
+{{ login_url }}
+
+OR PASTE THIS INTO YOUR BROWSER
+{{ login_url }}
+
+The link expires {{ link_expires }} after this email was sent, and it works
+once. If it has expired, or if it reports that it has already been used, ask
+for a new one at {{ request_url }}. Some corporate mail filters open links
+before you do, which can use a link up before it reaches you; asking for
+another is the fix, and you can ask as often as you need.
+
+If you did not ask for this, ignore it. Nothing changes until the link is used,
+and it only works from this email. If you keep receiving these, tell us at
+{{ support_address }}.

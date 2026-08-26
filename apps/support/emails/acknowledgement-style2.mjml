@@ -1,0 +1,266 @@
+<!--
+  ACKNOWLEDGEMENT, STYLE TWO — the same email, drawn a second way, for a side-by-side decision.
+
+  ── IT IS A STYLE VARIANT, SO THE COPY IS HELD STILL — WITH TWO NAMED EXCEPTIONS ────────────────
+  Change the words and the form at once and whichever version wins, nobody can say which change won.
+  So every sentence here is the same string as `acknowledgement.mjml`, in the same order, and if one
+  is edited it is edited in both files or the pair stops being a test.
+
+  A DIFF OVER THE TWO COMPILED FILES RETURNS EXACTLY TWO DIFFERENCES, and both are forced by the
+  structure rather than chosen:
+
+    1. THE THREE FACTS ARE PACKAGED DIFFERENTLY. Style one prints them as three numbered steps;
+       style two prints them as one paragraph under the stage track, because the track has already
+       done the enumerating and numbering them twice would be the same list drawn twice. The words
+       are the same words, and steps 01 and 02 are still verbatim `ANSWERED_BY_EMAIL` from
+       `lib/submit.ts` in both files.
+    2. THE PORTAL EXIT IS A LINK IN ONE AND A BUTTON IN THE OTHER, so its label differs: "See this
+       case in the support portal" against "Track this case" plus "or just hit reply". That is the
+       control being tested, not a copy edit, and the reasoning for keeping it optional is below.
+
+  Anything beyond those two appearing in a diff is drift, and the check is a diff.
+
+  ── WHAT IS ACTUALLY DIFFERENT ──────────────────────────────────────────────────────────────────
+    1. A STATUS BAR ABOVE THE MASTHEAD. `RECEIVED` on the left, `EMAIL CASE / NO LOGIN` on the right.
+       Both are permanently true of this message: it IS the receipt, and the case IS one you can work
+       without an account. Neither goes stale, which is the trap the next point had to avoid.
+    2. THE STAGE TRACK: `RECEIVED — IN REVIEW — ANSWERED`. This is the piece the reference was
+       brought in for, and it is the piece that needed the most care. A track with the first node
+       filled reads as WHERE YOUR CASE IS, and a status printed into a mailbox is a snapshot that
+       goes stale — a month later this email would still be claiming the case sits at RECEIVED. So it
+       is labelled `WHAT HAPPENS NEXT`, the same label style one puts over its numbered list, and it
+       is the same three facts: this is the PATH, and the filled node is the stage this email is
+       about, not a live position. Read that way it is permanently true.
+    3. THE REFERENCE IN CORNER BRACKETS instead of a tinted callout. No fill, four 1px marks and air.
+       ONE PIXEL, NOT TWO: DESIGN.md bans a coloured border over 1px on a box, and while corner
+       brackets are arguably a different device from the side stripe that rule is aimed at, quietly
+       reinterpreting a ban to suit a variant is how bans stop working. At 1px over a 24px arm it
+       still reads as a bracket. If it should be heavier, that is a ruling to make out loud.
+    4. MONOSPACED LABELS THROUGHOUT. Style one sets its micro-labels in the brand sans; this sets
+       them in the mono face, which is what makes it read as an instrument rather than a letter. It
+       is a real deviation from the type system, and it is the variable being tested.
+    5. TWO FACTS SIDE BY SIDE instead of a ledger table. They stack under 480px on their own.
+    6. A BUTTON, WHICH IS OPTIONAL AND MUST BE OMITTED RATHER THAN DISABLED. `{{ case_url }}` only
+       exists for a sender who is signed in; there is no anonymous case view, so for most recipients
+       there is no page behind it. Whatever renders this drops the whole button block when the
+       variable is absent, exactly as it drops the `About` row. "Or just hit reply" beside it is the
+       path that always works, and it is why the button can be missing without leaving a hole.
+
+  ── THE VOCABULARY QUESTION THIS RAISES, AND IT IS NOT MINE TO CLOSE ────────────────────────────
+  `RECEIVED / IN REVIEW / ANSWERED` is a SECOND status vocabulary. The product already has one for
+  the customer — `Open`, `Awaiting your reply`, `Closed` — and it is on `/requests/`. These describe a
+  different axis (the stages a message passes through, rather than the state a case is in) and both
+  can be defended, but shipping two vocabularies to the same person is the variance this repo exists
+  to fight.
+
+  OLEH RULED ON 2026-08-24 THAT THIS IS RECONCILABLE RATHER THAN BLOCKING. It does not have to be
+  settled before style two can be chosen; it has to be settled before style two is SENT. The two ways
+  out are unchanged: the portal adopts these stages, or the track is redrawn in the portal's words.
+  The reply's track already took the second route for its own second node, which is why it reads
+  `AWAITING YOUR REPLY` and not something invented, so half the reconciliation is done.
+
+  ── VARIABLES ────────────────────────────────────────────────────────────────────────────────────
+  Identical to `acknowledgement.mjml`; the notes are there and in the readme. `{{ space_label }}` and
+  `{{ case_url }}` are the two optional ones, and the rule for both is omit the block, never blank it.
+
+  ── THE SUBJECT, THE CLOCK AND THE LOOP HEADER ──────────────────────────────────────────────────
+  All three rules are unchanged and all three are argued in `acknowledgement.mjml`: the subject is
+  ours and never echoes what was submitted; no text here names how long anything takes; and this is
+  machine-sent, so the sending code must set `Auto-Submitted: auto-generated`.
+-->
+<mjml>
+  <mj-head>
+    <mj-include path="./partials/head.mjml" />
+    <mj-preview>Your reference is {{ case_ref }}. Reply to this email to add to it.</mj-preview>
+  </mj-head>
+
+  <mj-body>
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+
+    <mj-wrapper>
+
+      <!-- NO BAND HERE EITHER. The dark status bar that used to sit above this carried `RECEIVED`
+           and `EMAIL CASE / NO LOGIN`, and both facts survive it: the first is the filled node on the
+           stage track below, the second is what "no account needed" says in the sentence under it. A
+           strip that repeats two things the page already states is decoration, and removing it also
+           settles what this pair is actually testing — brackets, a track, boxes and mono labels
+           against plain type — rather than "one of them has a black bar".
+
+           The logo takes the same two-file swap as the other three: it sits on the card, and the card
+           is white in one theme and #111111 in the other. -->
+      <mj-section border-radius="12px 12px 0 0" css-class="bo-band-top" padding="52px 32px 0">
+        <mj-column>
+          <mj-raw>
+            <img src="https://support.baseout.com/email/baseout-logo-ink@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-light" style="display: block; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #156e97; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--[if !mso]><!-->
+            <img src="https://support.baseout.com/email/baseout-logo-cyan@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-dark" style="display: none; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #5cceff; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--<![endif]-->
+          </mj-raw>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="24px 32px 0">
+        <mj-column>
+          <mj-text mj-class="h1">We have your message</mj-text>
+          <mj-spacer height="12px" />
+          <mj-text>Everything about this conversation lives under one reference.</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <!-- THE REFERENCE IN BRACKETS. Three rows of a plain table: two corner marks, the value, two
+           more corner marks. Borders on table cells are the one drawing primitive every mail client
+           agrees on, which is why this is not four positioned spans. -->
+      <mj-section padding="28px 32px 0">
+        <mj-column>
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-bracket">
+            <tr>
+              <td style="width: 24px; height: 16px; border-top: 1px solid #156e97; border-left: 1px solid #156e97;">&#160;</td>
+              <td>&#160;</td>
+              <td style="width: 24px; height: 16px; border-top: 1px solid #156e97; border-right: 1px solid #156e97;">&#160;</td>
+            </tr>
+            <tr>
+              <td colspan="3" align="center" style="padding: 12px 8px;">
+                <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; color: #646464;" class="bo-muted">YOUR REFERENCE</div>
+                <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 20px; letter-spacing: 0.02em; line-height: 1.4; color: #111111; padding: 8px 0; word-break: break-word;" class="bo-ink">{{ case_ref }}</div>
+                <div style="font-size: 13px; line-height: 1.6; color: #646464;" class="bo-muted">Quote it in anything you send us about this.</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="width: 24px; height: 16px; border-bottom: 1px solid #156e97; border-left: 1px solid #156e97;">&#160;</td>
+              <td>&#160;</td>
+              <td style="width: 24px; height: 16px; border-bottom: 1px solid #156e97; border-right: 1px solid #156e97;">&#160;</td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="28px 32px 0">
+        <mj-column><mj-divider border-style="dotted" css-class="bo-rule bo-dots" /></mj-column>
+      </mj-section>
+
+      <!-- THE STAGE TRACK. The connectors are a 1px DIV with a background inside a middle-aligned
+           cell, not a `border-top` on the cell itself: a border draws at the top of the box whatever
+           the alignment says, so the first version hung two stubs above the dots instead of joining
+           them. Measured before the fix, and it is the kind of thing that reads as "roughly right"
+           in a screenshot and as broken at full size.
+           THE STAGE TRACK. Labelled as the PATH, not as a position — the argument is in this file's
+           header and it is the reason the label above it is the same one style one uses. The words
+           are style one's three steps, and 01 and 02 are still verbatim `ANSWERED_BY_EMAIL` from
+           `lib/submit.ts`, which the sentences under the track carry unchanged. -->
+      <mj-section padding="20px 32px 0">
+        <mj-column>
+          <mj-text mj-class="label" css-class="bo-muted">WHAT HAPPENS NEXT</mj-text>
+          <mj-spacer height="12px" />
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0">
+            <tr>
+              <td style="vertical-align: middle; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; color: #156e97; white-space: nowrap;" class="bo-node-done">&#9679;&#160;RECEIVED</td>
+              <td width="22%" style="padding: 0 12px; vertical-align: middle;"><div style="height: 1px; background-color: #d5d7de; font-size: 0; line-height: 0;" class="bo-connector">&#160;</div></td>
+              <td style="vertical-align: middle; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; color: #646464; white-space: nowrap;" class="bo-node-todo">&#9675;&#160;IN REVIEW</td>
+              <td width="22%" style="padding: 0 12px; vertical-align: middle;"><div style="height: 1px; background-color: #d5d7de; font-size: 0; line-height: 0;" class="bo-connector">&#160;</div></td>
+              <td align="right" style="vertical-align: middle; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; color: #646464; white-space: nowrap;" class="bo-node-todo">&#9675;&#160;ANSWERED</td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="16px 32px 0">
+        <mj-column>
+          <mj-text mj-class="muted" css-class="bo-muted">
+            A person answers by replying to this email. We do not publish response times; you get an
+            email when there is an update. No account needed, and your reply joins the same case.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+
+      <!-- TWO FACTS SIDE BY SIDE. MJML stacks columns under 480px on its own, which is what should
+           happen here: at 375 a value cell 130px wide would break an address in three places. -->
+      <mj-section padding="24px 32px 0">
+        <mj-column width="50%" padding-right="8px" vertical-align="top">
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-quotebox bo-round">
+            <tr><td style="background-color: #f6f7fb; border: 1px solid #d5d7de; border-radius: 8px; padding: 14px 16px;">
+              <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; color: #646464;" class="bo-muted">ABOUT</div>
+              <div style="font-size: 14px; line-height: 1.5; color: #111111; padding-top: 6px; word-break: break-word;" class="bo-ink">{{ space_label }}</div>
+            </td></tr>
+          </mj-table>
+        </mj-column>
+        <mj-column width="50%" padding-left="8px" vertical-align="top">
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-quotebox bo-round">
+            <tr><td style="background-color: #f6f7fb; border: 1px solid #d5d7de; border-radius: 8px; padding: 14px 16px;">
+              <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; color: #646464;" class="bo-muted">REPLIES GO TO</div>
+              <div style="font-size: 14px; line-height: 1.5; color: #111111; padding-top: 6px; word-break: break-word;" class="bo-ink">{{ reply_to_address }}</div>
+            </td></tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <!-- WHAT THEY WROTE. Style two keeps its labelled-box vocabulary for the two facts above, and
+           takes the QUOTATION for this one, because a quotation is a different kind of thing from a
+           field: the two boxes hold values we recorded, this holds words somebody wrote. Same 4px
+           bar as style one, so the pair still differs in structure and not in this. -->
+      <mj-section padding="24px 32px 0">
+        <mj-column>
+          <mj-text mj-class="label" css-class="bo-muted">WHAT YOU SENT</mj-text>
+        </mj-column>
+      </mj-section>
+      <mj-section padding="12px 32px 0">
+        <mj-column>
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-round">
+            <tr>
+              <td width="4" style="width: 4px; background-color: #89b6ca; border-radius: 8px 0 0 8px; font-size: 0; line-height: 0;" class="bo-qbar">&#160;</td>
+              <td style="background-color: #f6f7fb; border-radius: 0 8px 8px 0; padding: 16px 20px;" class="bo-qbody">
+                <div style="font-size: 16px; font-weight: 600; line-height: 1.6; color: #111111; word-break: break-word;" class="bo-ink">{{ submitted_subject }}</div>
+                <div style="font-size: 13px; line-height: 1.6; color: #646464; padding-top: 8px;" class="bo-muted">{{ submitted_body }}</div>
+              </td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <!-- THE BUTTON IS OPTIONAL AND MUST BE OMITTED, NOT DISABLED. `{{ case_url }}` exists only for a
+           sender who is signed in; there is no anonymous case view, so for most recipients there is
+           no page behind it. Whatever renders this drops the whole block when the variable is absent,
+           exactly as it drops the `About` row. "Or just hit reply" beside it is the path that always
+           works, which is why the block can go missing without leaving a hole where an instruction
+           used to be.
+
+           THE COLUMN IS SIZED IN PIXELS, NOT PERCENT, and that is what puts the caption beside the
+           button rather than a third of the way across the card. A percentage column parks the text
+           wherever the split lands; 270px is the button plus its air, so the caption starts where the
+           button ends. The alternative — one table with the button hand-written into a cell — spaces
+           it perfectly and throws away `mj-button`'s VML fallback, which is the only reason the
+           button is a button and not coloured text in Outlook on Windows.
+           BOTH COLUMNS CARRY A PERCENTAGE AND THE PAIR SUMS TO 100, which took two wrong answers to
+           reach. Sizing only the first one stacks them: MJML gives the unsized sibling `per-50`, so
+           the row asks for 270px plus half of itself and wraps. Sizing BOTH in pixels stacks them
+           too, and that one is not obvious — 184 + 352 is exactly the 536 available, and MJML lays
+           columns out as inline-blocks, so the single whitespace character between the two divs
+           tips the row over its own width. A percentage pair has no such margin of error. Under
+           480px MJML stacks them anyway, which is the behaviour wanted there. -->
+      <mj-section padding="28px 32px 0">
+        <mj-column width="42%" vertical-align="middle">
+          <mj-button href="{{ case_url }}" align="left" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13px" letter-spacing="0.08em">TRACK THIS CASE &#8594;</mj-button>
+        </mj-column>
+        <mj-column width="58%" vertical-align="middle">
+          <mj-text mj-class="muted" css-class="bo-muted">or just hit reply</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="28px 32px 0">
+        <mj-column><mj-divider /></mj-column>
+      </mj-section>
+      <!-- THE SAME TWO-LINE CLOSE AS STYLE ONE, and it has to stay the same: the close is not one of
+           the things this pair is testing, so a difference here would be noise in the answer. -->
+      <mj-section padding="16px 32px 32px">
+        <mj-column>
+          <mj-text mj-class="muted" css-class="bo-muted bo-break">
+            You are receiving this because you wrote to
+            <a href="mailto:{{ support_address }}" class="bo-break" style="color: #156e97;">{{ support_address }}</a>.
+            If the answer never arrives, check your spam folder.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+    </mj-wrapper>
+
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+  </mj-body>
+</mjml>

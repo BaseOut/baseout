@@ -10,9 +10,17 @@
  * click. It is never rendered anywhere.
  */
 import { PLATFORMS } from './platforms';
+import { PICKER_EVENT, resetPickerPlatforms } from './platform-picker';
 import { hasVoted, looksLikeEmail, readVoteEmail, toggleVote, writeVoteEmail, VOTE_EMAIL_NOTE } from './votes';
 
 const platformName = (id: string): string => PLATFORMS.find((p) => p.id === id)?.name ?? id;
+
+/** "Airtable", "Airtable and Notion", "Airtable, ClickUp and Notion". */
+function listNames(ids: string[]): string {
+  const names = ids.map(platformName);
+  if (names.length <= 1) return names[0] ?? '';
+  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+}
 
 export function wireBoard(): void {
   /* ── Filtering ───────────────────────────────────────────────────────────────────────────── */
@@ -34,7 +42,17 @@ export function wireBoard(): void {
        whole intake section visible under every filter — a failure that looks like a layout bug and
        is really a selector. A slug is what every item has regardless of the shape it is drawn in. */
     const statusChips = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-filter]'));
-    const platChips = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-plat-filter]'));
+    /* THE PLATFORM FACET IS NO LONGER THIS FILE'S CONTROL. Until 2026-08-21 it was a row of
+       `[data-plat-filter]` buttons this module pressed and un-pressed itself; it is now
+       `components/PlatformPicker.astro`, which owns its own pressed state, its own keyboard
+       behaviour and its own collapse. All that is left here is listening to what it decided.
+
+       SCOPED TO THE BOARD, NOT TO THE DOCUMENT. `/roadmap/` renders FOUR pickers: this one plus the
+       docs sidebar's, the search modal's and the chat's, all three of them `shared`. A document-wide
+       query returns whichever Starlight put in the DOM first, which is the sidebar — so the count
+       below would have been 3 instead of 5 and `Show all` would have reset the manual's filter
+       instead of the board's, both silently and both looking like the control was ignoring clicks. */
+    const picker = board.querySelector<HTMLElement>('[data-platform-picker]');
     const items = Array.from(board.querySelectorAll<HTMLElement>('[data-slug]'));
     const sections = Array.from(board.querySelectorAll<HTMLElement>('[data-sec]'));
     const empty = board.querySelector<HTMLElement>('[data-board-empty]');
@@ -42,11 +60,37 @@ export function wireBoard(): void {
     const narrowText = board.querySelector<HTMLElement>('[data-plat-narrow-text]');
 
     let status = 'all';
-    let plat = 'all';
+    /* WHY THIS STAYS PAGE-LOCAL, AND THE OLD REASON IS NOT IT. The argument that used to sit here
+       was that the board HIDES untagged items and the documentation filter must not, so the two
+       could not share a value. Adopting the multi-select dissolved it: this board no longer hides
+       them either (see the item loop below).
+
+       WHAT REPLACES IT IS A VOCABULARY MISMATCH. The board's picker draws all five platform
+       IDENTITIES, because here a platform is the SUBJECT of a request. Every documentation surface
+       draws only the platforms that have pages — three of the five. A shared value would therefore
+       be written in one alphabet and read in another: a click on Smartsheet here would repaint the
+       docs sidebar to a filter naming a platform that control renders no row for, so nothing there
+       could switch it back off, and "All platforms" would be unreachable from the sidebar for the
+       rest of the session. The reverse is no better — a docs choice would silently re-filter a
+       board the reader is counting rows on, from a control on another page.
+
+       AND THE LIFETIME IS WRONG. `?platform=` and the stored preference are a durable statement
+       about which manual this person wants. Which requests they are reading right now is a
+       question about one list, and it should end when they leave it.
+
+       THE COST, STATED: a `/roadmap/?platform=notion` link cannot exist. Nobody has asked for one,
+       and the board is one screen with a control at the top of it. */
+    let plat: string[] = [];
+    let platCount = 0;
 
     const apply = () => {
       const anyStatus = status === 'all';
-      const anyPlat = plat === 'all';
+      /* BOTH ENDS ARE NO FILTER, and since 2026-08-21 both are reachable. Everything ticked narrows
+         to nothing; nothing ticked also narrows to nothing, because the picker's lock on the last
+         platform is gone and an empty selection now means "no narrowing" rather than "impossible".
+         This line already read the empty case that way — it was written for the first paint, before
+         any event had arrived — so the behaviour change cost it no edit, only this note. */
+      const anyPlat = plat.length === 0 || plat.length === platCount;
 
       /* ONE ATTRIBUTE FOR BOTH FACETS, because the columns stop being true the moment EITHER
          narrows: a head reading "PLANNED 3" over one card is a stale count, and a card carries its
@@ -55,13 +99,14 @@ export function wireBoard(): void {
 
       for (const el of items) {
         const okStatus = anyStatus || el.dataset.status === status;
-        /* An untagged item is about Baseout itself, so a platform choice hides it. That is a
-           deliberate divergence from the docs filter, which never hides an untagged page: there,
-           narrowing removes noise from a manual you still have to be able to read; here, choosing
-           Airtable is a question about Airtable, and answering it with eighteen rows that are not
-           about any platform answers nothing. The notice below says so out loud rather than
-           leaving the reader to infer it from an absence. */
-        const okPlat = anyPlat || el.dataset.platform === plat;
+        /* AN UNTAGGED ITEM IS NEVER HIDDEN, AND THAT REVERSES WHAT THIS LINE USED TO DO. It read
+           `el.dataset.platform === plat`, so choosing Airtable removed every request that named no
+           platform — and a request that names no platform is not a request about nothing, it is a
+           request about Baseout, which is to say about all five at once. Filtering to Airtable and
+           being handed only the rows with the word "Airtable" on them dropped exactly the ones an
+           Airtable user most wanted counted. It also matches the docs filter now, which has never
+           hidden an untagged page, so the portal has one rule for this instead of two. */
+        const okPlat = anyPlat || !el.dataset.platform || plat.includes(el.dataset.platform);
         el.hidden = !(okStatus && okPlat);
       }
 
@@ -90,17 +135,19 @@ export function wireBoard(): void {
       if (narrow) {
         narrow.hidden = anyPlat;
         if (narrowText && !anyPlat) {
+          /* THE SENTENCE CHANGED WITH THE BEHAVIOUR, and it had to. It used to end "Requests that
+             apply to every platform are hidden", which is now false — leaving it would have been a
+             notice actively lying about what the filter did. What is true is the other half: rows
+             about the platforms NOT ticked are gone, and that is still worth saying, because the
+             conclusion on offer from a short board is that nobody has asked us for much. */
           narrowText.textContent =
-            `Showing only requests specific to ${platformName(plat)}. ` +
-            'Requests that apply to every platform are hidden.';
+            `Showing ${listNames(plat)} requests, plus everything that applies to every platform. ` +
+            'Requests specific to the other platforms are hidden.';
         }
       }
 
       for (const chip of statusChips) {
         chip.setAttribute('aria-pressed', String(chip.dataset.filter === status));
-      }
-      for (const chip of platChips) {
-        chip.setAttribute('aria-pressed', String(chip.dataset.platFilter === plat));
       }
     };
 
@@ -110,16 +157,30 @@ export function wireBoard(): void {
         apply();
       });
     }
-    for (const chip of platChips) {
-      chip.addEventListener('click', () => {
-        plat = chip.dataset.platFilter ?? 'all';
-        apply();
-      });
-    }
-    board.querySelector<HTMLButtonElement>('[data-plat-show-all]')?.addEventListener('click', () => {
-      plat = 'all';
+    /* The picker announces on its own root and the event bubbles, so one listener on the document
+       catches it wherever the control ends up sitting in the bar. `detail` is the ids that are ON,
+       in catalogue order, and it CAN be empty — which `apply` reads as no filter, the same view as
+       all of them ticked. */
+    document.addEventListener(PICKER_EVENT, (e) => {
+      /* Only a `local` picker fires this and the board owns the only one — but the guard is a line
+         and the failure it prevents is a board silently re-filtered by a control belonging to the
+         documentation, which is the exact confusion this whole pass came to remove. */
+      if (!(e.target instanceof Node) || !board.contains(e.target)) return;
+      plat = (e as CustomEvent<string[]>).detail ?? [];
       apply();
     });
+
+    /* THE WAY BACK IS THE PICKER'S OWN PATH, NOT A SECOND COPY OF THE RULE. `Show all` used to set
+       this module's variable and repaint; with the state living in the control, doing that would
+       leave the notice gone and every chip still showing the narrowed set. Resetting the picker
+       makes it fire the same event a click does, which repaints both. */
+    board.querySelector<HTMLButtonElement>('[data-plat-show-all]')?.addEventListener('click', () => {
+      if (picker) resetPickerPlatforms(picker);
+    });
+
+    /* The control's rendered rows are the denominator. Read off the markup rather than off
+       `PLATFORM_IDS`, so a board whose picker ever draws a subset still knows what "all" means. */
+    platCount = picker ? picker.querySelectorAll('[data-pk-opt]').length : PLATFORMS.length;
 
     apply();
   }

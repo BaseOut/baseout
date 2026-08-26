@@ -1,9 +1,18 @@
 ---
 title: Running a backup now
 description: Starting an off-schedule run, pausing or cancelling one in flight, and why a run cannot be deleted.
+api:
+  - summary: Start a backup run on a Space
+  - summary: Cancel a run that is in flight
 ---
 
 **Run backup now** starts a backup immediately instead of waiting for the next scheduled run.
+
+In this guide, you will:
+
+- Start an off-schedule run, and know what it costs before you confirm
+- Pause and resume a run, or cancel it for good
+- Understand why a run can never be deleted from the history
 
 ## When you would use it
 
@@ -45,12 +54,16 @@ ask — there is nothing to warn about.
 ### Cancel
 
 Cancelling stops the run for good. **The data captured so far is kept**, not discarded: the bases
-that finished before you cancelled remain backed up, and the run is recorded with a `cancelled`
-status and whatever counts it reached.
+that finished before you cancelled remain backed up, and the run is recorded with a
+[`cancelled`](/reference/statuses/#cancelled) status and whatever counts it reached.
 
 Cancel asks for confirmation too, and its confirmation says the part already written is kept and
-**cannot be resumed**. That is the real difference between the two controls — Pause is a comma,
-Cancel is a full stop.
+**cannot be resumed**.
+
+:::note
+Pause is a comma, Cancel is a full stop. There is no way back from a cancelled run — to cover the
+rest of the data you start a new one, which costs credits again.
+:::
 
 :::note
 Controlling a run is gated by role. A viewer-role member can read a running run in full detail but
@@ -80,12 +93,12 @@ failed file with its base, table, and reason, and offers **Retry failed** — wh
 those files into the *same* run. It does not start a new one.
 
 **A run that failed on one base.** The bases that completed before the failure still wrote their
-data, and the history still shows their counts. A failed status means the run did not finish, not
-that it achieved nothing.
+data, and the history still shows their counts. A [`failed`](/reference/statuses/#failed) status
+means the run did not finish, not that it achieved nothing.
 
 Both are covered in [Reading a backup run](/backups/reading-a-run/).
 
-## Next
+## Next steps
 
 - [Reading a backup run](/backups/reading-a-run/) — statuses and the audit trail
 - [Schedule and scope](/backups/schedule-and-scope/) — so you need this button less often

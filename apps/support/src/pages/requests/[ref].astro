@@ -1,0 +1,437 @@
+---
+/**
+ * One request, on its own route.
+ *
+ * ── A ROUTE, NOT A DRAWER ──────────────────────────────────────────────────────────────────────
+ * A case has to survive a cold load from a link in an email, and `/contact` has no panel host to
+ * borrow. The panel-stack law is an `apps/web` law about pages that already own a stack; importing
+ * one here would be importing the machinery to hold a thing that arrives by URL.
+ *
+ * ── THE CONVERSATION IS THE HISTORY ────────────────────────────────────────────────────────────
+ * A request has no stages. It is not a run, not a pipeline, not a record with revisions — so
+ * `pattern-changelog-timeline`, `pattern-data-changelog`, `pattern-run-log` and
+ * `pattern-record-history` are all reachable and all wrong: each models a SUBJECT that changed state
+ * while an OBSERVER recorded it, and here both authors are people and no column can hold a paragraph.
+ * `pattern-message-thread` is the shape, `RecordPanel.astro`'s `.rp-cm-*` is the reference
+ * implementation, and `components/TicketMessage.astro` is where both are honoured.
+ *
+ * OLDEST FIRST. A conversation reads down. The stream on a listing reads newest-first because it is
+ * a feed; this is not a feed.
+ *
+ * ── STATUS IS CARRIED ONCE ─────────────────────────────────────────────────────────────────────
+ * In the record rail, never repeated per message. All three badges are printed and
+ * `data-case-status` selects one, because a static build cannot re-render after `Close`.
+ *
+ * ── THE TWO IDS, AND ONLY ONE OF THEM IS ON THIS PAGE ──────────────────────────────────────────
+ * `ref` is the human, quotable string — it is on the rail with a copy control, because the whole
+ * point of it is being pasted into a forum post or read down a phone. `threadToken` is the routing
+ * key in the reply-to address and it is RENDERED NOWHERE. One id doing both jobs is the hole where
+ * the string a customer pastes in public becomes a write key into their own case.
+ *
+ * ── NO CHANNEL BADGES ──────────────────────────────────────────────────────────────────────────
+ * Whether a message was typed here or arrived by mail is our plumbing. The axis that earns a marker
+ * is verified vs asserted author, and `TicketMessage.astro` carries it — with the meaning PRINTED
+ * once below, because this app has no tooltip and its hints are printed rather than hovered.
+ *
+ * ── NOTHING HERE PROMISES A DURATION ───────────────────────────────────────────────────────────
+ * Not on the rail, not in the composer, not in the failure. Name the channel, the address and the
+ * event that ends the wait.
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Icon from '../../components/Icon.astro';
+import LockedCapability from '../../components/LockedCapability.astro';
+import TicketMessage from '../../components/TicketMessage.astro';
+import FileChip from '../../components/FileChip.astro';
+import TicketStatusBadge from '../../components/TicketStatusBadge.astro';
+import TicketComposer from '../../components/TicketComposer.astro';
+import { TICKETS, type Ticket, type TicketMessage as TicketMessageRow } from '../../data/tickets';
+import { ticketStatusMeta } from '../../lib/ticket-status';
+import { fmtStamp, isoAttr } from '../../lib/ticket-time';
+import type { IconName } from '../../lib/icons';
+
+export function getStaticPaths() {
+  return TICKETS.map((t) => ({ params: { ref: t.ref }, props: { ticket: t } }));
+}
+
+interface Props {
+  ticket: Ticket;
+}
+
+const { ticket: t } = Astro.props;
+
+const SIGN_IN_URL = `https://app.baseout.com/login?returnTo=https://support.baseout.com/requests/${t.ref}`;
+
+const ABOUT_GLYPH: Record<'space' | 'run', IconName> = {
+  space: 'folder',
+  run: 'database-backup',
+};
+
+/* Printed once, at the head of the thread, and only where a message on THIS thread carries it. A
+   legend for a marker that does not appear is noise on every other case. */
+const hasAsserted = t.messages.some((m) => !m.verified);
+
+/* All three, and the attribute picks one. `unknown` is not printed: a fixture cannot produce it, and
+   the map's fallback is what covers a store that does. */
+const STATES = ['open', 'pending', 'closed'] as const;
+
+/* ── THE TWO CLONE SOURCES ──────────────────────────────────────────────────────────────────────
+ * A reply sent during this preview is a CLONE of a server-rendered `TicketMessage` and of a
+ * server-rendered `FileChip`, never markup the client builds. An Astro scoped `<style>` never
+ * reaches a node made by `createElement`, and this app has already shipped exactly that defect
+ * once — every message a visitor sent on the old `/chat/` page rendered unstyled for the whole
+ * life of that page. Cloning a node the compiler already stamped is the only version of this that
+ * cannot regress: the hash classes come with the copy.
+ *
+ * THE NAME ON THE CLONE IS THE THREAD'S OWN CUSTOMER, not an invented one and not a hard-coded
+ * "You". It is read off the case's own first named customer message, and where a case has none —
+ * an anonymous intake — it falls back to the second-person word, which asserts no person. */
+const meName =
+  t.messages.find((m) => m.sender === 'customer' && m.senderName)?.senderName ?? 'You';
+
+const TEMPLATE_MESSAGE: TicketMessageRow = {
+  id: 'template',
+  sender: 'customer',
+  senderName: meName,
+  kind: 'human',
+  verified: true,
+  /* A real instant so the template parses; the controller overwrites both halves on every clone. */
+  at: t.raised,
+  body: '',
+  attachments: [],
+  quoted: null,
+};
+
+/* One chip per glyph bucket, because the glyph is chosen from the TYPE and a clone cannot change
+   an icon that a child component already rendered. */
+const CHIP_KINDS = ['image', 'document', 'other'] as const;
+---
+
+<StarlightPage
+  frontmatter={{
+    title: t.subject,
+    description: `Support request ${t.ref}.`,
+    tableOfContents: false,
+    prev: false,
+    next: false,
+  }}
+>
+  <div class="tk" data-case data-case-ref={t.ref} data-session="in" data-case-status={t.status}>
+    <div class="tk-locked">
+      <LockedCapability
+        title="This request is behind sign-in"
+        does="A request holds the whole conversation about one problem — every reply, every file, and where it stands now."
+        why="A request is keyed to an email address, and this page has no session behind it, so it cannot tell whether this request is yours."
+        actionLabel="Sign in to Baseout"
+        actionHref={SIGN_IN_URL}
+      >
+        <p class="tk-alt" slot="alternative">
+          The email thread about this request reaches the same place. Reply to the message we sent
+          about it, or <a href="/contact/">start a new request</a>.
+        </p>
+      </LockedCapability>
+    </div>
+
+    <div class="tk-case">
+      <p class="tk-back">
+        <a href="/requests/"><Icon name="arrow-left" size={14} /> My requests</a>
+      </p>
+
+      {/* ── THE RECORD RAIL. Status lives here and nowhere else on the page. ──────────────────── */}
+      <div class="tk-rail">
+        <div class="tk-rail-facts">
+          {
+            STATES.map((s) => (
+              <span class="tk-badge" data-badge-for={s}>
+                <TicketStatusBadge status={s} size={14} />
+              </span>
+            ))
+          }
+
+          <span class="tk-ref">
+            {t.ref}
+            <button class="tk-copy" type="button" data-copy-ref={t.ref}>
+              <Icon name="copy" size={14} />
+              <span class="tk-copy-label">Copy</span>
+              <span class="tk-copy-done">Copied</span>
+            </button>
+          </span>
+
+          {
+            t.about && (
+              <span class="tk-about">
+                <span class="tk-ic"><Icon name={ABOUT_GLYPH[t.about.kind]} size={14} /></span>
+                {t.about.label}
+              </span>
+            )
+          }
+        </div>
+
+        <p class="tk-rail-times">
+          <span>Opened <time datetime={isoAttr(t.raised)}>{fmtStamp(t.raised)}</time></span>
+          <span>Last activity <time data-last-activity datetime={isoAttr(t.lastActivityAt)}>{fmtStamp(t.lastActivityAt)}</time></span>
+        </p>
+
+        {
+          STATES.map((s) => (
+            <p class="tk-hint" data-hint-for={s}>{ticketStatusMeta(s).hint}</p>
+          ))
+        }
+
+        {/* A CUSTOMER MAY CLOSE THEIR OWN REQUEST. Somebody who solved it themselves should not
+             have to write "never mind". Tertiary, beside the status it changes — closing is not a
+             way of replying, so it does not live in the composer. */}
+        <div class="tk-rail-actions">
+          <button class="tk-close" type="button" data-case-close>
+            <Icon name="check" size={14} />
+            Close this request
+          </button>
+        </div>
+      </div>
+
+      {
+        hasAsserted && (
+          <p class="tk-legend">
+            <span class="tk-ic"><Icon name="shield-check" size={14} /></span>
+            <span>
+              <strong>Unverified sender</strong> marks a message that arrived from this request’s
+              email address with nobody signed in behind it. It says who we could confirm — not how
+              the message reached us.
+            </span>
+          </p>
+        )
+      }
+
+      <div class="tk-thread" data-thread>
+        {t.messages.map((m) => <TicketMessage message={m} />)}
+      </div>
+
+      <TicketComposer status={t.status} />
+
+      {/* ── THE ONE HONEST LINE, AND THERE IS EXACTLY ONE ────────────────────────────────────
+           In the register `/handoff` uses for the same job: it says what this PREVIEW does, not
+           what the product does. It is permanent and quiet, and it replaced a red per-send error
+           region that read "Nothing was sent". That region was honest and it was the wrong
+           instrument — an expected, every-time condition rendered as an alarm teaches the reader
+           that the alarm means nothing, and it made the one flow this portal exists to demo look
+           broken. The fact did not disappear; it moved to a line that is always true and never
+           startles. The composer's `failed` state still exists for a send that genuinely fails —
+           nothing in this preview triggers it. */}
+      <p class="tk-preview-note">
+        Preview: replies are added to this thread in your browser only — no mail leaves this site.
+        They last for this browser tab and are gone when you close it.
+      </p>
+
+      {/* Inert until cloned. See the frontmatter for why these are server-rendered. */}
+      <template data-tpl-message><TicketMessage message={TEMPLATE_MESSAGE} /></template>
+      {CHIP_KINDS.map((k) => (
+        <template data-tpl-chip={k}><FileChip file={{ name: 'file', bytes: 0, kind: k, openable: false }} /></template>
+      ))}
+    </div>
+  </div>
+</StarlightPage>
+
+<script>
+  import { wireTicketCase } from '../../lib/ticket-case';
+  wireTicketCase();
+</script>
+
+<style>
+  .tk-locked,
+  .tk-case {
+    display: none;
+  }
+
+  .tk[data-session='out'] .tk-locked {
+    display: block;
+  }
+
+  .tk[data-session='in'] .tk-case {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .tk-alt {
+    max-width: 46ch;
+    margin: 16px 0 0;
+    font-size: var(--bo-t-13);
+    line-height: 1.55;
+    color: var(--bo-muted);
+  }
+
+  .tk-back {
+    margin: 0;
+    font-size: var(--bo-t-13);
+  }
+
+  .tk-back a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* ds-ok: 6px optical icon↔label gap. */
+    text-decoration: none;
+  }
+
+  .tk-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+  }
+
+  .tk-rail-facts {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  /* ONE badge on screen. All three are printed because a static build cannot re-render one. */
+  .tk-badge {
+    display: none;
+  }
+
+  .tk[data-case-status='open'] .tk-badge[data-badge-for='open'],
+  .tk[data-case-status='pending'] .tk-badge[data-badge-for='pending'],
+  .tk[data-case-status='closed'] .tk-badge[data-badge-for='closed'] {
+    display: inline-flex;
+  }
+
+  .tk-hint {
+    display: none;
+    margin: 0;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  .tk[data-case-status='open'] .tk-hint[data-hint-for='open'],
+  .tk[data-case-status='pending'] .tk-hint[data-hint-for='pending'],
+  .tk[data-case-status='closed'] .tk-hint[data-hint-for='closed'] {
+    display: block;
+  }
+
+  .tk-ref,
+  .tk-about {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tk-ic {
+    display: inline-flex;
+    opacity: 0.7;
+  }
+
+  .tk-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* ds-ok: 6px optical icon↔label gap. */
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--bo-r-6);
+    background: var(--bo-base-200);
+    color: var(--bo-muted);
+    font: inherit;
+    font-size: var(--bo-t-12);
+    cursor: pointer;
+  }
+
+  .tk-copy:hover {
+    color: var(--bo-base-content);
+  }
+
+  .tk-copy:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* The confirmation replaces the label rather than sitting beside it — a button that grows a word
+     on click reflows the row it is in. */
+  .tk-copy-done {
+    display: none;
+  }
+
+  .tk-copy[data-copied='true'] .tk-copy-label {
+    display: none;
+  }
+
+  .tk-copy[data-copied='true'] .tk-copy-done {
+    display: inline;
+  }
+
+  .tk-rail-times {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 0;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  .tk-rail-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  /* Tertiary. Closing is a real transition and a quiet one — it is not an alarm and not a primary. */
+  .tk-close {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* ds-ok: 6px optical icon↔label gap. */
+    padding: 6px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: transparent;
+    color: var(--bo-muted-strong);
+    font: inherit;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .tk-close:hover {
+    color: var(--bo-base-content);
+  }
+
+  .tk-close:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* Already closed: the control has nothing left to do, and a control that does nothing is worse
+     than an absent one. The reopen path is the composer, which says so itself. */
+  .tk[data-case-status='closed'] .tk-rail-actions {
+    display: none;
+  }
+
+  .tk-legend {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: 72ch;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-200);
+    font-size: var(--bo-t-12);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  .tk-thread {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tk-preview-note {
+    margin: 0;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+</style>

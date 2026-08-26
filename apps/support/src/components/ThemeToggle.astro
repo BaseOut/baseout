@@ -1,0 +1,85 @@
+---
+/**
+ * The theme control, as one icon instead of a labelled select.
+ *
+ * ── WHAT IT REPLACES AND WHY ───────────────────────────────────────────────────────────────────
+ * Starlight ships `ThemeSelect`: a `<select>` reading `Auto ▾` / `Light ▾` / `Dark ▾`, about 100px
+ * of header carrying a word most readers set once and never touch. Oleh, 2026-08-24: make it a
+ * toggle, no `Dark` / `Light` text, save the room. The room is what buys the identity control beside
+ * it, which is the thing Dan actually asked for.
+ *
+ * ── IT DRIVES STARLIGHT'S OWN MECHANISM, NOT A SECOND ONE ──────────────────────────────────────
+ * Same `localStorage` key (`starlight-theme`), same `documentElement.dataset.theme`, same empty
+ * string for "follow the system". That is what keeps Starlight's inline pre-paint script in
+ * `ThemeProvider.astro` working untouched: it reads the key before the first paint, and a control
+ * that wrote its preference anywhere else would leave the page flashing the other theme on load.
+ *
+ * ── THE LOSS, NAMED: `AUTO` BECOMES A STARTING STATE RATHER THAN A CHOICE ──────────────────────
+ * Three states do not fit in two, so a reader can no longer return to "follow the system" once they
+ * have pressed this. Auto survives where it matters most — a first visit with nothing stored still
+ * follows the OS, and the empty-string convention is preserved so a cleared storage means auto
+ * again — but the control cannot get you back. `apps/web` behaves exactly this way already
+ * (`lib/theme.ts`, `getInitialTheme`), so this is the product's existing answer rather than a worse
+ * one invented here.
+ *
+ * ── ONE ICON, WHERE `apps/web` USES SUN + SWITCH + MOON ────────────────────────────────────────
+ * Same two Lucide glyphs, same two states, different container: the app's lives in a dropdown panel
+ * where width is free, this lives in a header row that already sheds items at the breakpoint. The
+ * glyph shown is the theme you would GET, not the one you are in, because a button labels its
+ * action; the `aria-label` says so in words for anyone who cannot see which one is drawn.
+ */
+import Icon from './Icon.astro';
+---
+
+<button type="button" class="bo-theme" data-theme-toggle aria-label="Switch to dark theme">
+  <span class="bo-theme-i" data-when="light"><Icon name="moon" size={16} /></span>
+  <span class="bo-theme-i" data-when="dark"><Icon name="sun" size={16} /></span>
+</button>
+
+<script>
+  import { wireThemeToggle } from '../lib/theme-toggle';
+  wireThemeToggle();
+</script>
+
+<style>
+  .bo-theme {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-8);
+    background: transparent;
+    color: var(--bo-muted);
+    cursor: pointer;
+  }
+  .bo-theme:hover {
+    border-color: var(--bo-base-300);
+    color: var(--bo-base-content);
+  }
+  .bo-theme:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
+  }
+
+  /* ONLY ONE GLYPH IS EVER IN THE BOX, and which one is decided by the attribute Starlight already
+     writes on `<html>`. Doing it in CSS rather than in the script means the correct icon is in the
+     first paint: a script that swapped it would show the wrong glyph for one frame on every load,
+     which is the same class of flash the theme provider exists to prevent. */
+  .bo-theme-i {
+    display: none;
+    line-height: 0;
+  }
+  :global(html[data-theme='light']) .bo-theme-i[data-when='light'],
+  :global(html:not([data-theme='dark'])) .bo-theme-i[data-when='light'] {
+    display: inline-flex;
+  }
+  :global(html[data-theme='dark']) .bo-theme-i[data-when='light'] {
+    display: none;
+  }
+  :global(html[data-theme='dark']) .bo-theme-i[data-when='dark'] {
+    display: inline-flex;
+  }
+</style>

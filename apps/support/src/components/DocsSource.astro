@@ -1,0 +1,79 @@
+---
+/**
+ * The one line at the foot of a documentation page that tells a reader this page has a
+ * machine-readable form, and where the whole set of them is.
+ *
+ * WHY IT EXISTS AT ALL. `/llms.txt`, `/llms-full.txt` and the `.md` twins were all reachable and
+ * none of them was announced: three surfaces built for machines, discoverable only by someone who
+ * already guessed they were there. A person pasting a docs page into a chat gets a page of portal
+ * chrome; the same person one line lower gets the prose.
+ *
+ * WHY IT IS A LINE AND NOT A CARD. Placement was the whole decision. This is a footer note, under
+ * the pagination, in the muted colour the last-updated line already uses, because it is a fact ABOUT
+ * the page rather than part of it. A bordered box or a button would put a developer affordance in
+ * front of every reader who came to find out why their backup failed, and rank it above the
+ * documentation on its own page. Nothing new is invented visually: the glyph is `Icon`, the type
+ * scale is `--bo-t-13`, the colour is `--bo-muted`, the same token the portal's other footer-weight lines use, and the underline
+ * behaviour is the one the prose links use.
+ *
+ * DOCUMENTATION ONLY. `DocsFooter` renders this under the same condition it renders the rating
+ * block: not on the splash landing, not on `/contact`, `/roadmap` or `/requests`. Those three are
+ * `.astro` pages rendered through `StarlightPage` and have no entry in the docs collection, so they
+ * have no `.md` twin either; a link to one would 404, which is the defect this app shipped last
+ * (a dead `/chat` in the sidebar, 404 on all 41 pages, every gate green).
+ */
+import Icon from './Icon.astro';
+import { idToMdPath } from '../lib/docs-index';
+
+interface Props {
+  /** Collection id of the page this footer belongs to, e.g. `backups/reading-a-run`. */
+  id: string;
+}
+
+const { id } = Astro.props;
+const mdPath = idToMdPath(id);
+---
+
+<p class="ds-line not-content" data-pagefind-ignore>
+  <Icon name="file-text" size={14} />
+  <span>
+    For AI and scripts: <a href={mdPath}>this page as Markdown</a>, an <a href="/llms.txt"
+      >index of every page</a
+    >, or <a href="/llms-full.txt">the whole documentation in one file</a>.
+  </span>
+</p>
+
+<style>
+  /* Sits under Starlight's own footer, which ends with the last-updated line and the pagination
+     pair. 24px is the gap the pagination already keeps below itself, so this reads as one more
+     line of the same block rather than as a new section. */
+  .ds-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 24px;
+    font-size: var(--bo-t-13);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  /* The glyph inherits `currentColor` from the line, so it is muted with the text rather than
+     coloured separately. The nudge keeps it on the first line's optical baseline: `align-items:
+     flex-start` puts its box top at the line box top, which sits it about 2px high against
+     lower-case text. Optical, not grid, which is the one case the 4px rule exempts. */
+  .ds-line :global(.bo-i) {
+    flex: none;
+    margin-top: 2px;
+  }
+
+  .ds-line a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color 150ms ease-out;
+  }
+
+  .ds-line a:hover {
+    color: var(--bo-primary);
+  }
+</style>

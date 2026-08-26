@@ -25,7 +25,9 @@
  *
  * PLATFORM IS A FACET, NEVER A TAB AND NEVER A COLUMN. A tab would claim the board is about one
  * platform, and the great majority of what is on it is about Baseout; a column would put an
- * orthogonal question on the axis the state machine already owns.
+ * orthogonal question on the axis the state machine already owns. As of 2026-08-21 the facet is
+ * `components/PlatformPicker.astro` — the portal's shared control — rather than a row this page
+ * drew for itself, and it is MULTI-SELECT: see the comment above it for what that changed.
  *
  * PLATFORMS ARE THEIR OWN SECTION, because a platform is not a feature. Mixed into the three
  * feature columns those five rows would be invisible among twenty, which is exactly the thing this
@@ -44,7 +46,7 @@
  * 1 · THE CARD IS THREE BANDS NOW. "Everything is mixed into one heap." The argument and the
  *     measurements are in `components/RequestCard.astro`, which owns that fix entirely.
  *
- * 2 · THE FILTER BAR IS TWO NAMED TIERS SEPARATED BY A RULE. The scope control and the status
+ * 2 · THE FILTER BAR IS TWO NAMED TIERS SEPARATED BY A RULE. The platform control and the status
  *     chips were 8px apart with nothing between them, which is the spacing of two rows of ONE
  *     control. They are not one control: platform governs what every status count below it even
  *     MEANS, and status filters within that. So each tier is announced by its own micro-label —
@@ -73,10 +75,8 @@ import {
   FEATURE_REQUESTS,
   PLATFORM_REQUESTS,
   countByStatus,
-  countByPlatform,
 } from '../data/requests';
-import PlatformMark from '../components/PlatformMark.astro';
-import { PLATFORMS } from '../lib/platforms';
+import PlatformPicker from '../components/PlatformPicker.astro';
 import { statusMeta } from '../lib/status';
 import { VOTES_LIVE } from '../lib/votes';
 
@@ -144,21 +144,78 @@ const sugMeta = statusMeta('Suggested');
     <div class="rb-bar">
       <div class="rb-tier">
         <p class="rb-tier-label" id="rb-plat-label">Platform</p>
-        {/* A DIFFERENT SHAPE ON PURPOSE. The status chips are pills that filter within a set; this
-            chooses which product the whole page is about. Drawn as one segmented block with square
-            corners at the 8px rung, a rung more type and a shared recessed ground, so the two are
-            told apart before either is read. */}
-        <div class="rb-scope" role="group" aria-labelledby="rb-plat-label">
-          <button type="button" class="rb-seg" data-plat-filter="all" aria-pressed="true">
-            <Icon name="globe" size={16} />
-            Any platform
-          </button>
-          {PLATFORMS.map((p) => (
-            <button type="button" class="rb-seg" data-plat-filter={p.id} aria-pressed="false">
-              <PlatformMark id={p.id} size={16} />
-              {p.name} <span class="rb-n">{countByPlatform(p.id)}</span>
-            </button>
-          ))}
+        <div class="rb-scope-row">
+        {/* ── THE SHARED CONTROL, AS OF 2026-08-21 ──────────────────────────────────────────
+            This was `.rb-seg`: a hand-rolled segmented row, one button per platform, SINGLE-select,
+            with a leading "Any platform" and a per-platform count. It is deleted rather than kept
+            beside its replacement — two controls asking one question is the condition
+            `PlatformPicker` exists to end, and that component had already been given a `scope` mode
+            for this board that this board never used, so the repo was holding both answers at once.
+
+            WHAT THE OLD CONTROL ARGUED, AND WHY IT NO LONGER PAYS. The comment here used to say the
+            board deliberately looked unlike the status chips below — square corners at the 8px
+            rung, a rung more type, a shared recessed ground — because "this chooses which product
+            the whole page is about" while the chips "filter within a set". The distinction is real
+            and it is not worth a second implementation of a multi-select. The tier LABEL already
+            says PLATFORM, and the hairline above STATUS already says these are two axes; a shape
+            argument that costs a duplicate control has stopped paying for itself.
+
+            THE BEHAVIOUR CHANGE, STATED PLAINLY. The old row was single-select and it HID every
+            request that named no platform. The new one is multi-select and hides none of them. An
+            untagged request is not a request about nothing — it is a request about Baseout, which
+            is to say about every platform at once. Filtering to Airtable and being shown only the
+            rows that say "Airtable" dropped exactly the ones an Airtable user most wanted counted.
+            The reader loses the ability to ask "ONLY the Airtable-specific ones" and gains the
+            ability to ask "Airtable and Notion", and to trust that what is on screen is the board.
+
+            NO PER-PLATFORM COUNT ANY MORE, and that is not an oversight. A count beside a checkbox
+            in a multi-select set cannot be the number of rows the click reveals — what you see is
+            the union of what is ticked PLUS everything untagged. This board has already been bitten
+            once by a facet count that disagreed with what pressing it showed (the terminal-section
+            argument in `lib/board.ts`), and the fix then was to make the number honest. The honest
+            number here is no number. The board's own group heads still count what they hold.
+
+            `state="local"` — this stays a question about the board. The reason is no longer the old
+            untagged one, which adopting the multi-select dissolved; the surviving argument is in
+            the `state` prop and it is about vocabulary.
+
+            `catalogue="all"` — five identities, not the three that have documentation. Here a
+            platform is the SUBJECT of a request: "back up Smartsheet" is among the most votable
+            rows on this page precisely because it is not built yet.
+
+            `size="md"` — THE ONE THING THAT IS DIFFERENT HERE. Oleh, 2026-08-21: on the roadmap let
+            us make it larger. Measured on the live board at 1440, the status chips below are 36.8px
+            and `Add a request` is 40.5px, and the control that governs what every one of those
+            counts means was the shortest thing in the bar. `md` keeps `.rb-chip`'s padding and type
+            and moves only the floor, to 40px. The documentation surfaces stay `sm`: that row was
+            not wrong, and a global bump would have fixed this one by breaking it.
+
+            NO CHIP ROW, AND NO PROP TO CHOOSE ONE. Until this pass a wide surface like this bar
+            rendered the platforms as inline chips and a narrow one collapsed them, on a per-surface
+            count. One question drawn two ways is what this component was built to end; it now draws
+            the disclosure everywhere, and this bar's 66rem simply goes unspent. */}
+          <PlatformPicker label="Platform" state="local" catalogue="all" size="md" />
+
+          {/* THE WAY OUT OF THE LIST (Dan, 2026-08-21: "maybe just a link or button in the top
+              Platforms menu"). A reader whose product is not among these five has read the control
+              as the whole answer — the section that names the candidates and takes another is
+              2,000px below and nothing up here said so.
+
+              AFTER THE CONTROL, OUTSIDE IT. Beside the tier LABEL it would arrive before the reader
+              has discovered they need it, and it would hang a link off the micro-label rung that
+              five group heads share, which is a system. Inside the picker it would be a sixth
+              platform by shape. Sitting after the chips, with no mark, no pill and one rung less
+              type, it is the only thing on this tier that is not a control — which is what stops it
+              competing with the ones that are.
+
+              IT CARRIES NO PICKER ATTRIBUTE. `PlatformPicker` collects its own rows by
+              `data-pk-opt`; an anchor with one would become a platform the control tried to press.
+
+              NO GLYPH, and there is no down-chevron in `lib/icons.ts` to reach for anyway. Every
+              chip beside it wears a leading mark; the surest way not to read as one more of them is
+              to wear none. The underline is what says link, and it is the same quiet underline the
+              narrowing notice spends on `Show all`. */}
+          <a class="rb-jump" href="#rb-platforms">Not seeing your platform?</a>
         </div>
       </div>
 
@@ -215,8 +272,13 @@ const sugMeta = statusMeta('Suggested');
       </section>
     </div>
 
-    {/* ── Platform candidates ───────────────────────────────────────────────────────────────── */}
-    <section class="rb-sec" data-sec="platform" aria-labelledby="rb-plat-h">
+    {/* ── Platform candidates ─────────────────────────────────────────────────────────────────
+        THE ID IS ON THE SECTION, NOT ON THE HEADING. `#rb-plat-h` already exists and would have
+        been free, but landing on the h2 puts the group's own hairline and the 24px above it off
+        the top of the window, so the reader arrives at a heading with no visible boundary behind
+        it. Landing on the section brings the rule, the head, the hint and the first row of tiles
+        into frame together, which is the whole group and the whole answer. */}
+    <section class="rb-sec" id="rb-platforms" data-sec="platform" aria-labelledby="rb-plat-h">
       <header class="rb-grphead">
         <h2 class="rb-head" id="rb-plat-h">
           <Icon name="plug" size={14} />
@@ -330,7 +392,7 @@ const sugMeta = statusMeta('Suggested');
   .rb-lede > *,
   .rb-bar > *,
   .rb-tier > *,
-  .rb-scope > *,
+  .rb-scope-row > *,
   .rb-filters > *,
   .rb-narrow > *,
   .rb-board > *,
@@ -341,6 +403,19 @@ const sugMeta = statusMeta('Suggested');
   .rb-pgrid > *,
   .rb-sgrid > *,
   .rb-newp > * { margin-top: 0; }
+
+  /* AND THE ONE THE LIST ABOVE CANNOT REACH. `PlatformPicker` renders with its own scope hash, so
+     `.rb-scope-row > *` — which Astro rewrites to `.rb-scope-row > *.astro-<this page>` — selects
+     every box on that row except the control. `:global()` on the child half is the same escape the
+     picker itself uses for the brand marks. It is first in its row today and so takes no owl margin
+     today; this is what keeps that true when something else is put before it. */
+  .rb-scope-row > :global(.pk) {
+    margin-top: 0;
+    /* And its flex minimum, for the same reason `.rb-scope-row` carries `max-width: 100%`: a flex
+       item's automatic minimum size is its content, which is how a wrapping row still manages to
+       push a page sideways. */
+    min-width: 0;
+  }
 
   /* ── The lede and the door ──────────────────────────────────────────────────────────────────
      NO WIDTH CAP ON THE PROSE, AND THAT IS A DELIBERATE REVERSAL. This block was capped at 40rem to
@@ -433,62 +508,87 @@ const sugMeta = statusMeta('Suggested');
     color: var(--bo-muted);
   }
 
-  /* ── The scope control ──────────────────────────────────────────────────────────────────── */
-  .rb-scope {
+  /* ── The platform control, and the way past it ──────────────────────────────────────────────
+     One row: the shared picker, then the link out of it. `align-items: center` rather than
+     baseline, because the picker is a row of bordered pills whose text sits inside its own padding
+     — a baseline shared with a bare link would hang the link near their chin. Centred, the link
+     reads as annotation ON the control rather than a line of it.
+
+     `max-width: 100%` and `flex-wrap` together are what keep this off the page's horizontal scroll:
+     `.rb-tier` is `align-items: flex-start`, so this row is sized by its content and would happily
+     grow past the container. When the two no longer fit the link drops under the control at the
+     leading edge, which is the same shape one rung down and needs no media query to say so.
+
+     The picker's own `min-width: 0` is set with the owl reset above, because both are rules this
+     page can only reach across a component boundary and they belong in one place. */
+  .rb-scope-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: stretch;
-    gap: 4px;
-    max-width: 100%;
-    padding: 6px;
-    border: 1px solid var(--bo-base-300);
-    border-radius: var(--bo-r-12);
-    background: var(--bo-base-200);
-  }
-
-  .rb-seg {
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 36px;
-    padding: 8px 16px;
-    border: 1px solid transparent;
-    border-radius: var(--bo-r-8);
-    background: none;
+    gap: 8px 16px;
+    max-width: 100%;
+  }
+
+  /* ── The link past the list ─────────────────────────────────────────────────────────────────
+     13px against the chips' 12 — but muted against their base ink, unbordered against their pill,
+     and with no weight of its own where they carry 600. It is quieter on every axis that decides
+     whether something looks pressable, which is how it sits on the same line without asking to be
+     read first. It is deliberately NOT smaller: 12px is this portal's floor and a link one rung
+     under the floor is a link nobody clicks.
+
+     IT IS `.rb-docs` WITH A DIFFERENT DESTINATION, deliberately and to the declaration. A card's
+     documentation link is already this board's answer to "a quiet link that is not a button": the
+     strong ink rather than the teal, a hairline underline that fills in on hover, 3px of offset so
+     the rule clears the descenders. A second look for the same job would be one more way to do one
+     thing. It is not merged into one class because they live in two files and the shared home for
+     that is `styles/support.css`, which is not this task's to open. */
+  .rb-jump {
+    flex: none;
     color: var(--bo-muted-strong);
-    font: inherit;
-    font-size: var(--bo-t-14);
-    font-weight: 600;
-    line-height: 1.3;
-    cursor: pointer;
-    transition:
-      background-color 150ms ease-out,
-      color 150ms ease-out;
+    font-size: var(--bo-t-13);
+    line-height: 1.4;
+    text-decoration: underline;
+    text-decoration-color: var(--bo-base-300);
+    text-underline-offset: 3px;
   }
 
-  .rb-seg:hover { color: var(--sl-color-white); }
-
-  /* The selected segment lifts to the page's own ground, which is the inverse of the chips below:
-     there the pressed state adds colour, here it adds LIGHT, and a raised tile inside a recessed
-     track is the oldest signal a segmented control has. */
-  .rb-seg[aria-pressed='true'] {
-    border-color: var(--bo-base-300);
-    background: var(--bo-base-100);
-    color: var(--sl-color-white);
+  .rb-jump:hover {
+    color: var(--bo-primary);
+    text-decoration-color: currentColor;
   }
 
-  .rb-seg[aria-pressed='false'] :global(.bo-mark) {
-    filter: grayscale(1);
-    opacity: 0.8;
-  }
-
-  .rb-seg:focus-visible {
+  .rb-jump:focus-visible {
     outline: 2px solid var(--bo-primary);
-    outline-offset: -1px;
+    outline-offset: 2px;
+    border-radius: var(--bo-r-4);
   }
 
-  .rb-seg .rb-n { font-weight: 600; }
+  /* A LINK MUST NOT LAND ON A HIDDEN ELEMENT. `lib/board.ts` hides a section whose visible item
+     count is zero, and the platform section holds nothing tagged `airtable` and nothing `Shipped`
+     — so narrowing to either takes the destination away while the link stayed put, pointing at a
+     `display: none` box. Clicking it would have moved nothing at all, which reads as a broken link
+     rather than as a filtered page.
+
+     `:has()` rather than a class the controller would have to set: the condition is literally "my
+     target is hidden", and stating it as such means no second copy of the visibility rule to fall
+     out of step with the first. `board.ts` is untouched by this feature. The reader who narrowed
+     the board still has the amber notice and its `Show all` a few pixels below, so the way back to
+     the full page is on screen the whole time this link is not. */
+  .rb:has([data-sec='platform'][hidden]) .rb-jump { display: none; }
+
+  /* THE TARGET CLEARS THE STICKY HEADER. Starlight's is `position: fixed` at `--sl-nav-height`, so
+     an untreated fragment jump parks the section's top rule underneath it. 24px on top of the nav
+     is the same step this page puts above every other group head. */
+  #rb-platforms { scroll-margin-top: calc(var(--sl-nav-height) + 24px); }
+
+  /* SMOOTH ONLY WHERE MOTION IS WELCOME. The jump is roughly two thousand pixels and it crosses the
+     whole board; instant, it is indistinguishable from a page change, which is the one thing an
+     in-page link must not look like. The scroll must be set on the scrolling element, so this is
+     global by necessity — but this stylesheet loads on `/roadmap/` alone, so the rule exists on
+     exactly the page that has an anchor to use it. */
+  @media (prefers-reduced-motion: no-preference) {
+    :global(html) { scroll-behavior: smooth; }
+  }
 
   /* ── The status chips ───────────────────────────────────────────────────────────────────────
      A CHIP CARRIES ITS STATUS'S COLOUR AT REST, in the glyph only. Tinting six resting chips would

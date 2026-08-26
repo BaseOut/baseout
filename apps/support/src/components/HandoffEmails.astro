@@ -1,0 +1,476 @@
+---
+/**
+ * The `Emails` section of `/handoff/` — the three transactional emails, rendered so they can be
+ * looked at rather than read as source.
+ *
+ * ── IT IS A SECTION, NOT A SURFACE IN THE REGISTRY ─────────────────────────────────────────────
+ * `handoff-registry.ts` models a FLOW: an ordered walk of steps, each with a URL you can open and a
+ * state that URL genuinely produces. An email has neither. There is no address, no state to open,
+ * and the page's own load-bearing rule — a link here always produces the state it names — would have
+ * to be answered with `no URL yet` on every single step. That is precisely the noise the 2026-08-21
+ * rebuild removed, and adding an eighth surface would put it back under a new name.
+ *
+ * The precedent is already on the page twice: `Cross-cutting` and `Platforms` are both sections that
+ * are not flows, both render from their own data, and neither is a `HandoffFlow`. This is the third.
+ * So `HANDOFF_FLOWS` is untouched, the `n flows` count in the header stays true, and this section
+ * reads its own three items from `lib/email-previews.ts`.
+ *
+ * ── WHY AN IFRAME, WHEN §5 OF THE HANDOFF DESIGN DOC ARGUES AGAINST THEM ───────────────────────
+ * It argues against framing PORTAL SURFACES, and it is right about those: the four `?platform=`
+ * frames were removed because the element being compared sat below the fold of a 560px cell, every
+ * cell showed the same site header, and the served HTML of all four addresses was identical anyway.
+ * A frame there cost a screenful to show nothing.
+ *
+ * An email is a different kind of artefact. It is a standalone HTML document with its own `<head>`,
+ * its own reset and a table layout built for clients that have no cascade worth the name. Rendered
+ * inside this page it would inherit the brand bridge, the page's font stack and the theme — none of
+ * which any mail client will ever load — and the reviewer would be judging a thing that does not
+ * exist. Here the frame IS the fidelity, where there it was the obstruction. Same mechanism, opposite
+ * verdict, because the subject changed.
+ *
+ * `srcdoc` rather than a URL, so the frame carries the COMPILED FILE and cannot drift from it.
+ * Copying the three files into `public/` would work and would create a third copy to go stale.
+ *
+ * `sandbox="allow-same-origin"` — scripts inside the frame are refused (an email has none, and one
+ * appearing is worth failing on), while the parent keeps the access it needs to size the frame.
+ *
+ * ── 600px IS A MEASUREMENT, NOT A TASTE ────────────────────────────────────────────────────────
+ * MJML's own default body width, and what every email template is built to, because it is what
+ * survives Outlook's reading pane. At this page's width the reviewer would be shown a layout nobody
+ * receives.
+ *
+ * ── NOTHING HERE IS EVIDENCE ABOUT A MAIL CLIENT ───────────────────────────────────────────────
+ * This is a browser rendering an email's HTML. Gmail rewrites it, Outlook on Windows renders it
+ * through Word. The page says so where the reviewer reads it, not only in this comment.
+ *
+ * NO ASTRO COMMENT MAY GO INSIDE A TEMPLATE EXPRESSION BELOW — six SSR 500s with empty bodies are on
+ * record from exactly that, and every gate passes them.
+ */
+import Icon from './Icon.astro';
+import { EMAIL_PREVIEWS, EMAILS_NOT_BUILT } from '../lib/email-previews';
+---
+
+<section class="em-surface" id="surface-emails" data-hf-section data-hf-name="emails email templates acknowledgement reply login link">
+  <h2 class="em-h2">
+    <Icon name="mail" size={18} />
+    Emails
+    <span class="em-h2-n">{EMAIL_PREVIEWS.length} templates</span>
+  </h2>
+
+  <p class="em-lede">
+    The mail a person gets after using the form above. In an email-first product this is the half of
+    the experience they actually spend time in, so it belongs on this page beside the screens.
+    Each frame is the <strong>compiled file that would be sent</strong>, shown at
+    <strong>600px</strong> — the width every email is built to, because it is what survives Outlook's
+    reading pane.
+  </p>
+
+  <p class="em-lede">
+    <strong>These are designed, not wireframes.</strong> A letter on a near-white ground: the logo
+    standing on the card, the letter, and a two-line close. Colour marks three things and no fourth:
+    identity, what can be acted on, and the one string the reader copies.
+  </p>
+
+  <p class="em-lede">
+    <strong>Every email ships two drawings and two palettes</strong>, and the viewer has a toggle for
+    each. <em>Style 1</em> is the plain-type letter; <em>Style 2</em> is the instrument, with mono
+    labels, the reference in corner brackets and a stage track. The words are held still across the
+    pair on purpose: change the copy and the form at once and whichever wins, nobody can say which
+    change won. The frames on this page are Style 1; open the viewer for the other.
+  </p>
+
+  <p class="em-lede">
+    <strong>What is still unverified is the mail client.</strong> Nobody in this repo has opened any
+    of these in Gmail or in Outlook on Windows, and the browser cannot answer for either. Those two
+    need a person with real accounts; the readme names the three values to look at first, and the
+    masthead's blocked-image fallback is on that list.
+  </p>
+
+  <p class="em-lede">
+    The frames below are filled with the portal's own case &mdash; reference BO-7QX9-K4TD, Dana
+    Keller at Northwind &mdash; lifted verbatim from <code class="em-code">data/tickets.ts</code>, so
+    the mailbox and <code class="em-code">/requests/</code> tell one story. The variable list under
+    each email is built from the <em>raw</em> file, so it still names everything the sender has to
+    supply.
+  </p>
+
+  <p class="em-lede">
+    Colour marks three things and no fourth: <strong>identity</strong> (the logo),
+    <strong>what can be acted on</strong> (the button, every link), and <strong>the one string the
+    reader copies</strong> (a full-bleed band). Which band says how much it matters: the
+    acknowledgement's reference gets the soft-primary teal because it is the payload, the login
+    link's URL gets a neutral band because it is only the fallback for the button above it, and the
+    reply gets no band at all because a person wrote its payload and nothing there is for copying.
+  </p>
+
+  <p class="em-lede">
+    <strong>What is still unverified is the mail client.</strong> Nobody in this repo has opened any
+    of these in Gmail or in Outlook on Windows, and the browser cannot answer for either. Those two
+    need a person with real accounts; the readme names the three values to look at first, and the
+    masthead's blocked-image fallback is on that list.
+  </p>
+
+
+  {/* THE VIEWER IS THE OTHER HALF. This section is the overview — three emails at once, each with
+      its subject, its variables and its plain-text part. `/handoff/emails/` is for looking at ONE of
+      them properly, at a chosen width, with nothing else on screen. Neither can do the other's job
+      without getting worse at its own. In-page anchor rules do not apply: this leaves the page, so
+      it carries `target` by hand like every other outbound link here. */}
+  <p class="em-lede">
+    <strong>The browser is not a mail client.</strong> Nothing on either page says how these look in
+    Gmail, whose dark theme inverts colours on its own terms, or in Outlook on Windows, which renders
+    through Word and reads no media query at all. Both need a person with real accounts. This
+    paragraph used to sit under the viewer; it belongs here, with the rest of the writing about these
+    emails, so that the viewer ends in the email rather than in three paragraphs of ours.
+  </p>
+
+  <p class="em-viewer">
+    <a href="/handoff/emails/" target="_blank" rel="noopener noreferrer">
+      <Icon name="monitor" size={14} />
+      <span>Open the viewer — one email at a time, desktop or mobile width</span>
+      <Icon name="external-link" size={13} />
+    </a>
+  </p>
+
+  <p class="em-warn">
+    <Icon name="triangle-alert" size={16} />
+    <span>
+      <strong>This is a browser, not a mail client.</strong> Nothing below is evidence about how these
+      look in Gmail or Outlook. Gmail's dark theme inverts colours on its own terms and Outlook on
+      Windows renders through Word — those are the two places a responsive email actually breaks, and
+      both need a human with real accounts.
+    </span>
+  </p>
+
+  {EMAILS_NOT_BUILT && (
+    <p class="em-warn" data-missing>
+      <Icon name="circle-slash" size={16} />
+      <span>
+        <strong>The templates have not been compiled.</strong> The frames below are empty because
+        <code class="em-code">apps/support/emails/*.html</code> is missing. Run
+        <code class="em-code">pnpm --filter @baseout/support emails</code> and build again.
+      </span>
+    </p>
+  )}
+
+  {EMAIL_PREVIEWS.map((mail) => (
+    <div
+      class="em-mail"
+      id={`email-${mail.slug}`}
+      data-hf-row
+      data-hf-name={`${mail.title} ${mail.slug}`.toLowerCase()}
+    >
+      <h3 class="em-h3">{mail.title}</h3>
+      <p class="em-purpose">{mail.purpose}</p>
+
+      <p class="em-subject">
+        <span class="em-k">Subject</span>
+        <code class="em-subject-v">{mail.subject ?? 'no subject file'}</code>
+      </p>
+
+      {/* Straight into the viewer with this email already chosen — the URL carries the state, which
+          is the rule the rest of this portal holds. */}
+      <p class="em-open">
+        <a href={`/handoff/emails/?email=${mail.slug}&width=desktop`} target="_blank" rel="noopener noreferrer">
+          <span>Open {mail.title} in the viewer</span>
+          <Icon name="external-link" size={13} />
+        </a>
+      </p>
+
+      <div class="em-grid">
+        <div class="em-frame-wrap">
+          {mail.styles.one.html ? (
+            <iframe
+              class="em-frame"
+              title={`${mail.title} — the rendered email`}
+              srcdoc={mail.styles.one.html}
+              sandbox="allow-same-origin"
+              data-em-frame
+              loading="lazy"
+            />
+          ) : (
+            <p class="em-empty">Not compiled — run the build script.</p>
+          )}
+        </div>
+
+        <div class="em-side">
+          <h4 class="em-h4">Variables</h4>
+          <p class="em-note">
+            Read out of the compiled file, so this list cannot go stale. The syntax is
+            <code class="em-code">&#123;&#123; name &#125;&#125;</code> — a convention we chose,
+            because Mailgun's templating already speaks it and Cloudflare imposes none.
+          </p>
+          <dl class="em-dl">
+            {mail.variables.map((v) => (
+              <div class="em-dl-row">
+                <dt><code class="em-code">{v.name}</code></dt>
+                {v.note && <dd>{v.note}</dd>}
+              </div>
+            ))}
+          </dl>
+
+          <details class="em-text">
+            <summary>Plain-text part</summary>
+            <p class="em-note">
+              The only version that survives a gateway that strips HTML, and the half nobody looks at.
+            </p>
+            <pre class="em-pre">{mail.styles.one.text ?? 'no plain-text file'}</pre>
+          </details>
+        </div>
+      </div>
+    </div>
+  ))}
+
+  <p class="em-foot">
+    Source and the argument behind every line of copy: <code class="em-code">apps/support/emails/</code>.
+    Each template's header comment carries its own reasoning; the readme carries the rules all three
+    obey — no email names how long anything will take, the acknowledgement's subject never echoes what
+    was submitted, and the author is a real name or the desk, never an invented person.
+  </p>
+</section>
+
+<script>
+  /* The sizing helper is SHARED with the viewer at `/handoff/emails/` — `lib/email-frame.ts`. It
+     carries the collapse-before-measuring fix and the reason for it; a second copy here is how one
+     of the two would keep the broken version. */
+  import { watchEmailFrame } from '../lib/email-frame';
+
+  for (const frame of document.querySelectorAll<HTMLIFrameElement>('[data-em-frame]')) {
+    watchEmailFrame(frame);
+  }
+</script>
+
+<style is:global>
+  /* ── EVERY CLASS HERE IS `em-`, AND THAT IS NOT TIDINESS ───────────────────────────────────────
+     The first version of this component reused the page's `hf-surface`, `hf-h2`, `hf-lede` and
+     `hf-code` so the section would match its neighbours. It rendered COMPLETELY UNSTYLED and the
+     build was green: Astro's scoped `<style>` in `pages/handoff.astro` compiles every selector to
+     `.hf-h2.astro-<PAGE hash>`, and a node emitted by THIS file carries the component's hash instead.
+     Valid CSS, shipped, matching zero elements — the same defect this repo has recorded twice.
+     Caught by reading the built HTML, not by any gate.
+
+     The fix is a local mirror rather than making the page's rules `:global`: turning them global
+     would give the whole page's headings a second, competing definition living in a component, and
+     the next person to edit one of them would have no way to know. The values below are copied from
+     `pages/handoff.astro` deliberately — if that page's heading scale moves, this moves with it by
+     hand. `is:global` because this file also has runtime-injected iframes and a scoped selector
+     would not reach a `<style>`-less child either. */
+
+  .em-surface {
+    margin-top: 40px;
+    scroll-margin-top: calc(var(--hf-nav-h, 56px) + 16px);
+  }
+  .em-h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--bo-base-300);
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .em-h2-n {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--bo-muted);
+  }
+  .em-h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+  }
+  .em-lede {
+    margin: 0 0 16px;
+    max-width: 46rem;
+    color: var(--bo-muted-strong);
+  }
+  .em-lede code {
+    font-size: 13px;
+  }
+
+  .em-viewer {
+    margin: 0 0 16px;
+    font-size: 13px;
+  }
+  .em-viewer a,
+  .em-open a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 8px;
+    background: var(--bo-base-100);
+    color: var(--bo-base-content);
+    text-decoration: none;
+  }
+  .em-viewer a:hover,
+  .em-open a:hover {
+    border-color: var(--bo-primary);
+    color: var(--bo-primary);
+  }
+  .em-open {
+    margin: 0 0 16px;
+    font-size: 13px;
+  }
+
+  .em-warn {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: 62ch;
+    margin: 0 0 16px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--bo-soft-warning-bg);
+    color: var(--bo-soft-warning-fg);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .em-warn[data-missing] {
+    background: var(--bo-soft-error-bg);
+    color: var(--bo-soft-error-fg);
+  }
+  /* The glyph matches the first line box rather than being nudged towards it: these rows are 13px at
+     1.6, so 1.6em IS the line box, and centring in it survives a change of type scale. */
+  .em-warn .bo-i {
+    flex: 0 0 auto;
+    height: 1.6em;
+  }
+
+  .em-mail {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--bo-base-300);
+  }
+  .em-purpose {
+    max-width: 62ch;
+    margin: 4px 0 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--bo-muted);
+  }
+
+  .em-subject {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 16px;
+  }
+  .em-k {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+  .em-subject-v {
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: var(--bo-base-200);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    word-break: break-word;
+  }
+
+  /* The frame track is FIXED at the email's own width and the notes take what is left. A fractional
+     track would let the email be squeezed, and the width is the one fact this section exists to
+     show. */
+  .em-grid {
+    display: grid;
+    grid-template-columns: 600px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+
+  /* A 600px document floating on the page with no edge reads as part of the page. A mail client
+     draws a boundary; so does this. */
+  .em-frame-wrap {
+    border: 1px solid var(--bo-base-300);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ffffff; /* ds-ok — the paper the email is printed on, not a theme surface. */
+  }
+  .em-frame {
+    display: block;
+    width: 600px;
+    height: 640px;
+    border: 0;
+  }
+  .em-empty {
+    margin: 0;
+    padding: 24px;
+    font-size: 13px;
+    color: var(--bo-muted);
+  }
+
+  .em-h4 {
+    margin: 0 0 4px;
+    font-size: 14px;
+  }
+  .em-note {
+    margin: 0 0 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--bo-muted);
+  }
+  .em-dl {
+    margin: 0;
+  }
+  .em-dl-row + .em-dl-row {
+    margin-top: 12px;
+  }
+  .em-dl dt {
+    margin: 0;
+  }
+  .em-dl dd {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--bo-muted);
+  }
+
+  .em-text {
+    margin-top: 20px;
+  }
+  .em-text summary {
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .em-pre {
+    max-width: 100%;
+    margin: 8px 0 0;
+    padding: 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 8px;
+    background: var(--bo-base-200);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+
+  .em-foot {
+    max-width: 62ch;
+    margin: 24px 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--bo-muted);
+  }
+
+  /* Below the two-column threshold the frame stops being a grid track and becomes a scroller: the
+     email's width is the fact being shown, so it is the one thing that must not be squeezed. */
+  @media (max-width: 960px) {
+    .em-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .em-frame-wrap {
+      overflow-x: auto;
+    }
+  }
+</style>

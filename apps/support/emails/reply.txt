@@ -1,0 +1,19 @@
+BASEOUT SUPPORT
+
+{{ case_ref }}
+
+{{ author_name }} replied.
+
+{{ reply_body }}
+
+---
+
+Reply to this email to continue. Your reply joins {{ case_ref }}, and there is
+nothing to log in to and nothing to fill in.
+
+Open this case in the support portal:
+{{ case_url }}
+
+EARLIER IN THIS CASE
+
+{{ quoted_history }}

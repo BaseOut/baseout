@@ -1,0 +1,111 @@
+---
+/**
+ * The end-of-page "Next" list, laid out as cards — `{% linkcards %}`.
+ *
+ * IT TAKES A MARKDOWN LIST, NOT ATTRIBUTES, and that is the whole reason it exists beside the
+ * Starlight preset's `{% cardgrid %}` + `{% linkcard %}` pair. Those ask an author for two tag names
+ * and three attributes per card; the pages in this tree already END with exactly the list this
+ * component wants, so adopting it is a two-line change to a finished page rather than a rewrite:
+ *
+ *   {% linkcards %}
+ *   - [Sources](/connections/sources/): the connection a Space reads through
+ *   - [Reconnecting](/connections/reconnecting/): what to do when one breaks
+ *   {% /linkcards %}
+ *
+ * Every card is a link followed by a sentence. There is no title-only card and no card without a
+ * destination, because a "Next" block whose entries do not go anywhere is a list of nouns.
+ *
+ * WHY `is:global` AND A PREFIX. The list is SLOTTED CONTENT: Astro stamps it with the hash of the
+ * page that wrote it, not this component's, so a scoped rule here matches nothing at all — valid
+ * CSS, shipped, zero elements selected. `bolc-` is the unique prefix that keeps a global sheet from
+ * reaching anything else.
+ *
+ * WHY EVERY MARGIN IS RESET EXPLICITLY. Starlight's prose rhythm is a general-sibling rule that
+ * margins every child of every nested box, including the ones inside these cards. Left alone it
+ * pushes the description away from its own title and the grid rows out of alignment.
+ */
+---
+
+<div class="bolc">
+  <slot />
+</div>
+
+<style is:global>
+  /* One column below 640, two above it. `auto-fit` rather than a fixed count: three "Next" entries
+     and two "Next" entries are both common, and a fixed count leaves the odd one stretched across a
+     row of its own at a width nothing else in the column uses. */
+  .bolc ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    margin: 24px 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .bolc ul li {
+    margin: 0;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  /* The rhythm rule again, one level down: a tight Markdown list gives bare text, a loose one gives
+     `<p>`, and the same page can produce both. */
+  .bolc ul li > * {
+    margin: 0;
+  }
+
+  .bolc ul li > * + * {
+    margin-top: 4px;
+  }
+
+  /* The link is the card's title and the card's whole hit area. `::after` stretched over the `li`
+     is what makes the sentence beneath it clickable too, without nesting anything inside the
+     anchor — the description often carries its own inline links, and an anchor inside an anchor is
+     not valid HTML. */
+  .bolc ul li a:first-child {
+    display: block;
+    margin-bottom: 4px;
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    color: var(--bo-base-content);
+    text-decoration: none;
+  }
+
+  .bolc ul li a:first-child::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  .bolc ul li {
+    position: relative;
+  }
+
+  .bolc ul li:hover {
+    border-color: var(--bo-primary);
+  }
+
+  .bolc ul li:hover a:first-child {
+    color: var(--bo-primary);
+  }
+
+  /* The stretched `::after` sits above the description's own links, so any link that is not the
+     title has to be lifted back out to stay clickable. */
+  .bolc ul li a:not(:first-child) {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Keyboard reaches the title link, and the ring has to appear on the card rather than on the
+     invisible stretched box. */
+  .bolc ul li:focus-within {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+</style>

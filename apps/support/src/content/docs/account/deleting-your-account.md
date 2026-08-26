@@ -6,12 +6,18 @@ description: What deleting your own account does, what it deliberately does not 
 Deleting your account is not the same act as deleting your organization's data, and confusing the
 two is the expensive mistake here. This page separates them.
 
+In this guide, you will:
+
+- Separate deleting your account from ending your organization
+- See what deletion does not reach, starting with the backup files themselves
+- Work through the handover to do before you start
+
 ## Your account against your organization
 
-Your **account** is you: an email address, a display name, your security settings and your
+Your *account* is you: an email address, a display name, your security settings and your
 membership.
 
-Your **organization** is the customer entity. Spaces, Sources, Destinations, backup history and
+Your *organization* is the customer entity. Spaces, Sources, Destinations, backup history and
 billing all belong to it, not to you. See
 [How Baseout is organized](/start/how-baseout-is-organized/).
 
@@ -32,8 +38,12 @@ What Baseout holds is the record of where things were put and what happened when
 ## If you are the only person in the organization
 
 Then there is nobody left to own it, and deleting your account and ending the organization become
-the same decision made once. That is the case to think about before starting, because the Spaces
-stop running and the history goes with them.
+the same decision made once.
+
+:::caution
+This is the case to think about before starting. The Spaces stop running and the history goes with
+them.
+:::
 
 If somebody else should keep it, hand it over first. See
 [Transferring ownership](/account/organization/transferring-ownership/).
@@ -56,3 +66,9 @@ rather than improvise. This page will state the periods once they are decided ra
 a number it would have to retract.
 
 To start the process today, [contact us](/contact/?kind=ticket) from the address on the account.
+
+## Next steps
+
+- [Transferring ownership](/account/organization/transferring-ownership/) — hand it over instead
+- [Cancelling](/account/billing/cancelling/) — the billing half of leaving
+- [Destinations](/connections/destinations/) — where your backup files actually are

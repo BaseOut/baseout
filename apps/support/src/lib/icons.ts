@@ -26,11 +26,17 @@ export type IconName =
   | 'lightbulb'
   | 'life-buoy'
   | 'log-in'
+  | 'circle-user'
   | 'lock'
   | 'globe'
   | 'calendar'
   | 'triangle-alert'
   | 'send'
+  | 'mail'
+  | 'monitor'
+  | 'smartphone'
+  | 'sun'
+  | 'moon'
   | 'external-link'
   | 'database-backup'
   | 'rotate-ccw'
@@ -54,8 +60,17 @@ export type IconName =
   | 'thumbs-up'
   | 'thumbs-down'
   | 'credit-card'
+  | 'handshake'
   | 'paperclip'
-  | 'sparkles';
+  | 'copy'
+  | 'check'
+  | 'x'
+  | 'sparkles'
+  | 'file-text'
+  | 'image'
+  | 'file'
+  | 'chevron-down'
+  | 'folder';
 
 export const ICONS: Record<IconName, string> = {
   'circle-dashed':
@@ -78,6 +93,7 @@ export const ICONS: Record<IconName, string> = {
     '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
   'life-buoy':
     '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>',
+  'circle-user': '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/>',
   'log-in':
     '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>',
   lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
@@ -91,6 +107,12 @@ export const ICONS: Record<IconName, string> = {
     '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
   'external-link':
     '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  /* The emails section on `/handoff/`, and the width toggle on its viewer. */
+  monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+  smartphone: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
   send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
   'database-backup':
     '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 12a9 3 0 0 0 5 2.69M21 9.3V5"/><path d="M3 5v14a9 3 0 0 0 6.47 2.88M12 12v4h4"/><path d="M13 20a5 5 0 0 0 9-3a4.5 4.5 0 0 0-4.5-4.5c-1.33 0-2.54.54-3.41 1.41L12 16"/>',
@@ -135,8 +157,46 @@ export const ICONS: Record<IconName, string> = {
   'thumbs-down':
     '<path d="M9 18.12L10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88M17 14V2"/>',
   'credit-card': '<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>',
+  /* THE PRE-SALES DOOR, and it is deliberately not a coin, a card or a price tag. Money is
+     `credit-card`'s subject and that glyph is two tiles away on the same grid; a second money
+     glyph beside it would say the two doors differ by amount rather than by whether you are a
+     customer at all. A handshake is the one shape that says a relationship that does not exist
+     yet. Verbatim from `@iconify-json/lucide` 1.2.114, wrapper `<g>` stripped because the
+     wrapper here sets fill, stroke and joins. */
+  handshake:
+    '<path d="m11 17l2 2a1 1 0 1 0 3-3"/><path d="m14 14l2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3l1 11h-2M3 3L2 14l6.5 6.5a1 1 0 1 0 3-3M3 4h8"/>',
   paperclip:
     '<path d="m16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
+  /* THE COPY PAIR, AND THEY ONLY WORK AS A PAIR. `pattern-copy-id` in the catalog is one control
+     with two faces: `copy` at rest, `check` for ~1.1s after a successful write, then back. Adding
+     one without the other gives a button that copies and says nothing, which is the failure the
+     pattern was written to stop — the clipboard has no visible state of its own. */
+  copy:
+    '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  /* Dismissal, and it never travels alone either: it rides beside a word, never as a bare glyph.
+     An unlabelled cross is the one control on a page whose meaning depends entirely on what it is
+     sitting next to. */
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  /* ── The support-case glyphs (2026-08-21) ────────────────────────────────────────────────────
+     FILE TYPE, NOT FILE. `pattern-file-attach` binds the chip's glyph to the file's TYPE from the
+     one Lucide mapping, "so a PDF and a CSV are distinguishable without reading". Three is the
+     whole set the ticket surfaces can produce: an image, a text-ish document, and everything
+     else. `file-text` is byte-identical to `lib/rows.ts`'s inlined `ICON_DOC` on purpose — that
+     one is an HTML string for `innerHTML` rows and this one is for the component; the same
+     geometry, reachable by name. */
+  'file-text':
+    '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  image:
+    '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  /* The disclosure mark for `Show quoted text`. It points DOWN while closed and the component
+     rotates it — one glyph, not two, so the two directions cannot drift apart. */
+  'chevron-down': '<path d="m6 9 6 6 6-6"/>',
+  /* A Space. The case's `spaceId` is the object a case is most often about, and it needs a mark
+     that is not a Base, a table or a run. */
+  folder:
+    '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
 };
 
 /**

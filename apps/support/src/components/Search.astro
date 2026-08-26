@@ -1,6 +1,5 @@
 ---
-import { PLATFORMS } from '../lib/platforms';
-import PlatformMark from './PlatformMark.astro';
+import PlatformPicker from './PlatformPicker.astro';
 /**
  * Overrides Starlight's `Search` — the header pair, and our own ⌘K modal in place of Pagefind's UI.
  *
@@ -61,25 +60,32 @@ import PlatformMark from './PlatformMark.astro';
     </button>
   </div>
 
-  {/* THE SAME FILTER AS THE SIDEBAR, not one that resembles it (Oleh, 2026-08-20). It reads and
-      writes the one stored preference, so a reader who narrowed to Notion on the welcome screen
-      opens search already narrowed, and narrowing here updates the sidebar behind the dialog.
+  {/* THE SAME FILTER AS THE SIDEBAR, not one that resembles it (Oleh, 2026-08-20), and now
+      literally the same control: `PlatformPicker` reads and writes the one stored preference, so a
+      reader who narrowed to Notion on the welcome screen opens search already narrowed, and
+      narrowing here updates the sidebar behind the dialog.
 
-      IT IS VISIBLE AND PRESSED rather than applied quietly. A filter carried in from another
-      surface silently removes results, and a reader who does not know it is on reads the gap as
-      "the documentation does not cover this". The chips are the disclosure. */}
+      IT IS VISIBLE rather than applied quietly. A filter carried in from another surface silently
+      removes results, and a reader who does not know it is on reads the gap as "the documentation
+      does not cover this". The control is the disclosure, which is why its collapsed form has to
+      say what is on rather than the word "Platforms".
+
+      NO `chipsUpTo` AND NO CHIP ROW, as of 2026-08-21. This surface used to render four inline
+      chips because it had roughly 510px to spend and they fitted. They are gone with the prop: one
+      question drawn two ways, depending on which surface the reader was standing on, cost more than
+      the extra breathing room bought here. The disclosure is the control on all four surfaces.
+
+      IT STAYS ON EVERY PAGE, INCLUDING THE ONE THAT NOW HAS ITS OWN (Oleh, 2026-08-21). The landing
+      hero gained a visible `PlatformPicker` because a control that scopes the search must not be
+      hidden inside it — and this one is the reason that diagnosis was right, so the temptation is to
+      remove it here. It stays, for two reasons that are not preference. Every page but the landing
+      has no hero at all, and ⌘K opens this dialog from all of them. And while this dialog is open it
+      is in the top layer: the hero's control is behind the backdrop and cannot be reached or read,
+      so suppressing this one would put the reader back in front of a search whose scope is stated
+      nowhere — the exact defect. Two places, one stored value, never both reachable at once. */}
   <div class="sm-plat" data-search-platforms>
     <span class="sm-plat-label" id="sm-plat-label">Search in</span>
-    <div class="sm-plat-chips" role="group" aria-labelledby="sm-plat-label">
-      {
-        PLATFORMS.map((p) => (
-          <button type="button" class="sm-plat-chip" data-search-platform={p.id} aria-pressed="true">
-            <PlatformMark id={p.id} size={13} />
-            {p.name}
-          </button>
-        ))
-      }
-    </div>
+    <PlatformPicker label="Search in" />
   </div>
 
   <div class="sm-list" id="sm-list" role="listbox" aria-label="Results" data-search-list></div>
@@ -104,6 +110,12 @@ import PlatformMark from './PlatformMark.astro';
     border-bottom: 1px solid var(--bo-base-300);
   }
 
+  /* Starlight's prose rhythm margins every sibling after the first inside any flex box it reaches.
+     This row is two children, and without the reset the control sat 16px below its own label. */
+  .sm-plat > * {
+    margin-top: 0;
+  }
+
   .sm-plat-label {
     flex: none;
     font-size: var(--bo-t-12);
@@ -111,55 +123,6 @@ import PlatformMark from './PlatformMark.astro';
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--bo-muted);
-  }
-
-  .sm-plat-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  /* The sidebar's recipe, one rung smaller: neutral ground, the brand mark carrying recognition,
-     and OFF drawn as desaturation rather than a fade. Deliberately not the accent — a pressed chip
-     in the accent would compete with the result rows for the eye that is here to read them. */
-  .sm-plat-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border: 1px solid var(--bo-base-300);
-    border-radius: 999px;
-    background: none;
-    color: var(--bo-muted);
-    font: inherit;
-    font-size: var(--bo-t-12);
-    cursor: pointer;
-    transition:
-      background-color 150ms ease-out,
-      border-color 150ms ease-out;
-  }
-
-  .sm-plat-chip[aria-pressed='true'] {
-    background: var(--bo-base-200);
-    color: var(--sl-color-white);
-    font-weight: 600;
-  }
-
-  /* Never faded away — a logo that vanishes reads as a rendering fault, and 0.55 is what made the
-     ClickUp mark disappear entirely once on the roadmap. Desaturated keeps the silhouette. */
-  .sm-plat-chip[aria-pressed='false'] :global(.bo-mark) {
-    filter: grayscale(1);
-    opacity: 0.8;
-  }
-
-  .sm-plat-chip:hover {
-    border-color: var(--bo-primary);
-  }
-
-  .sm-plat-chip:focus-visible {
-    outline: 2px solid var(--bo-primary);
-    outline-offset: 1px;
   }
 
   /* ── The header pair ── */
@@ -226,7 +189,45 @@ import PlatformMark from './PlatformMark.astro';
 
   .hs-ask[aria-expanded='true'] .hs-ask-icon { color: inherit; }
 
-  @media (max-width: 50rem) {
+  /* ── 50rem → 70rem: THE PAIR IS AN ICON PAIR UNTIL THE ROW HAS ROOM FOR THE WORDS ─────────────
+     Oleh, 2026-08-26, from a tablet: the header was clipping. Measured on `/contact/` at 834, 900
+     and 1024 — the whole band between Starlight's `md` (50rem, where it hands the header to the
+     mobile treatment) and the width where the full row fits:
+
+       header width      834 / 900 / 1024
+       header content    1101   at all three
+       .right-group      x=978 … 1101 — the account control ENTIRELY off-screen
+
+     267px of header past the right edge, and no page overflow to give it away because the header
+     clips. The expanded field is 348px of that; collapsed to its icon it is 84px, and the row's
+     requirement drops from 1101 to 837.
+
+     ── 70rem WAS THE FIRST ANSWER AND IT WAS TOO LOW ─────────────────────────────────────────
+     1120 was derived from one page. It missed that the row's width depends on WHICH page you are
+     on: the current pill carries `font-weight: 600`, so a long current label is ~10px wider than
+     the same pill at rest. Measured at 1440 with the expanded field, `.header` content box 1392:
+
+       /backups/how-backups-work/   current is `Docs`      nav 386 — fits exactly, no slack
+       /contact/                    current is `Contact`   nav 396 — 10px over, and it CLIPPED
+
+     Zero slack at 1440 on the widest laptop in the sweep, and a page-dependent overflow that only
+     showed as a clipped account control. The row needs about 1460px to hold this field honestly.
+
+     SO IT TAKES THE PRODUCT'S OWN NUMBER: 1599.98px, which is `collapsingSearch.ts`'s threshold in
+     `apps/web` and one of the four declared widths in `specs/16-responsive.md` §1 — *"an empty
+     toolbar search collapses to its icon"*. It was solved there for this exact question, it clears
+     the measured 1460 with room for a longer label, and it mints nothing: this portal now shares a
+     boundary with the product instead of inventing a fifth one.
+
+     The precondition that rule carries is already satisfied here. `apps/web` checks that the search
+     is EMPTY before collapsing it, because there a query in the field must never be hidden;
+     `.hs-search` is a BUTTON that opens a dialog and can never hold a query, so there is nothing to
+     check before folding it.
+
+     `.hs-kbd` GOES WITH THEM, and not only for width: it names a shortcut the reader still has, but
+     a bare `⌘K` floating beside an icon with no field is a label for a control that is no longer on
+     screen. The dialog it opens states the shortcut itself. */
+  @media (max-width: 1599.98px) {
     .hs-ask-label,
     .hs-search-label,
     .hs-kbd { display: none; }
@@ -237,10 +238,17 @@ import PlatformMark from './PlatformMark.astro';
   /* ── The modal ──
      `is:global` because the dialog is moved to `<body>` at hydration and would lose a scoped
      stylesheet's attribute along with its place in the component tree. */
+  /* `dvh` AND `dvh`, NOT `vh` (2026-08-25). On mobile Safari and Chrome `vh` is the LARGE viewport —
+     the height the page would have if the address bar were retracted — and it does not change when
+     the bar is showing. So `100vh - 96px` overstates the room by the bar's height, and `10vh` of top
+     margin pushes the panel down by more than a tenth of what the reader can actually see: the
+     search results run under the bottom bar on the one surface where the answer is the whole point.
+     `dvh` is the live value and both readings want it. `vw` is left alone: the horizontal viewport
+     has no equivalent problem, and under overlay scrollbars it equals `%` anyway. */
   dialog.sm {
     width: min(40rem, calc(100vw - 32px));
-    max-height: min(32rem, calc(100vh - 96px));
-    margin: 10vh auto auto;
+    max-height: min(32rem, calc(100dvh - 96px));
+    margin: 10dvh auto auto;
     padding: 0;
     border: 1px solid var(--bo-base-300);
     border-radius: var(--bo-r-12, 12px);

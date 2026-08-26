@@ -63,7 +63,7 @@ Airtable's ids are the platform's, and a restore cannot preserve them. If matchi
 back to an external system matters to you, keep your own identifier in an ordinary field. A stored
 value comes back exactly as it was: see [Airtable field types](/platforms/airtable/field-types/).
 
-## Next
+## Next steps
 
 - [Restoring Airtable data](/platforms/airtable/restoring/): what comes back, type by type
 - [Restoring a base](/restore/restoring-a-base/): the flow, and the outcome report

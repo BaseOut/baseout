@@ -1,0 +1,37 @@
+---
+/**
+ * The mobile menu's footer — deliberately empty.
+ *
+ * Starlight's own `MobileMenuFooter.astro` renders three things under the navigation tree:
+ * `SocialIcons`, `ThemeSelect` and `LanguageSelect`. On this portal that came out as two unlabelled
+ * 28–32px glyphs in a row at the bottom of the sheet, and Oleh's reading of them was the test:
+ * "вона така маленька, нічого не зрозуміла по ній". He guessed the left one opened the app.
+ *
+ * ── WHAT THE TWO ACTUALLY WERE ────────────────────────────────────────────────────────────────
+ *
+ * THE LEFT GLYPH WAS `/handoff/`, arriving through `astro.config.mjs`'s
+ * `social: [{ icon: 'external', label: 'Portal handoff' }]`. That page is the scenario catalogue
+ * written for the person who DESIGNS this portal: `robots: noindex, nofollow`, pruned from the
+ * sitemap, addressed to a colleague. It is temporary and it keeps its place in the desktop header,
+ * where the people it is for work. It has no business in a customer's navigation sheet, and
+ * labelling it there would have been worse than the icon — a label advertises it.
+ *
+ * THE RIGHT GLYPH WAS THE THIRD THEME TOGGLE. Measured at 390 with the menu open: three theme
+ * controls in the DOM. `SessionControl.astro` already admits to two of them in its own header
+ * ("THE THEME CONTROL IS IN TWO PLACES, AND THAT IS THE ONE INCONSISTENCY HERE"), and
+ * `astro.config.mjs` records catching this same footer once before — it made the two copies LOOK
+ * alike ("125 pages carried both controls, one of them still reading `Auto ▾`") and left them two.
+ * This removes the copy rather than restyling it.
+ *
+ * ── WHERE THE THEME LIVES NOW, ON A PHONE, IN BOTH SESSION STATES ─────────────────────────────
+ * Signed in: the row inside the account panel. Signed out: the icon beside `Sign in`. Both are in
+ * the header, which survives the breakpoint. Verified at 390 in both states before this shipped —
+ * nothing about the preference became unreachable, it stopped being offered three times.
+ *
+ * ── WHY A COMPONENT AND NOT `display: none` ───────────────────────────────────────────────────
+ * A hidden node is still built, still focusable by anything that ignores `display`, and still there
+ * for the next person to wonder about. An empty override renders nothing, and this comment is what
+ * they find instead. `LanguageSelect` goes with them and costs nothing: this portal ships one
+ * locale, so Starlight renders it empty at every width already.
+ */
+---

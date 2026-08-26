@@ -58,7 +58,7 @@ are still there, the restored pages are cross-linked to them.
 - **A database restored through the API is parented by a page**, so a restore lands under a page you
   nominate rather than at the top of a workspace.
 
-## Next
+## Next steps
 
 - [Restoring Notion data](/platforms/notion/restoring/): what comes back, and what comes back changed
 - [Restoring a base](/restore/restoring-a-base/): the flow, and the outcome report

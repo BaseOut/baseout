@@ -17,14 +17,43 @@
 import Default from '@astrojs/starlight/components/PageTitle.astro';
 import PlatformMark from './PlatformMark.astro';
 import { platform, type PlatformId } from '../lib/platforms';
+import { manualForPath } from '../lib/api-docs';
+import { entryDate, formatEntryDate } from '../lib/changelog';
 
-const data = Astro.locals.starlightRoute.entry.data as {
+const route = Astro.locals.starlightRoute;
+const data = route.entry.data as {
   platform?: PlatformId;
   description?: string;
   template?: string;
+  lastUpdated?: unknown;
 };
 const id = data.platform;
 const p = id ? platform(id) : null;
+
+/* THE DATE A CHANGELOG ENTRY IS ABOUT, ABOVE ITS TITLE.
+ *
+ * Dan, on video 2026-08-26, standing on an entry: "here I don't have context of when this got
+ * deployed, which I think is important… either a label or part of the heading." He was right about
+ * the fact as well as the need — this portal renders `lastUpdated` NOWHERE. Starlight's own
+ * last-updated line is off (no `lastUpdated: true` in `astro.config.mjs`), so an entry carried a
+ * date in its frontmatter, sorted the hub by it, and never showed it to the reader who had opened
+ * the page.
+ *
+ * A KICKER, NOT A FOOTER LINE. Turning Starlight's `lastUpdated` option on would put the date under
+ * the article, which answers the question after the reading rather than before it, and would put it
+ * on all ninety documentation pages to fix three. Every changelog worth copying — Linear, Stripe,
+ * GitHub — sets the date above the title, because on a dated record the date is half the heading.
+ *
+ * ONLY IN THE CHANGELOG, and asked through `manualForPath` rather than a path prefix, for the
+ * reason `DocsSidebar.astro` gives at length: the registry is what three other files already agree
+ * through. The hub is excluded by its own id — it is a list of dates, not one of them.
+ *
+ * THE WORD IS ABSENT ON PURPOSE. Oleh, 2026-08-26: the label is the date and nothing else.
+ * `lib/changelog.ts` carries the argument — `lastUpdated` does not mean "deployed", and this repo
+ * does not print a claim it cannot trace. */
+const isChangelogEntry =
+  manualForPath(Astro.url.pathname) === 'changelog' && route.id !== 'changelog/index';
+const stamp = isChangelogEntry ? entryDate(data.lastUpdated) : undefined;
 
 /* THE LEDE. Both GitHub and Stripe put exactly one summary sentence under the title of every page,
    larger than body and muted, and it is the cheapest structural thing either of them does: it tells
@@ -36,6 +65,8 @@ const p = id ? platform(id) : null;
    would be the same sentence twice. */
 const lede = data.template === 'splash' ? null : data.description;
 ---
+
+{stamp && <p class="pp-date">{formatEntryDate(stamp)}</p>}
 
 {
   p && (
@@ -82,6 +113,17 @@ const lede = data.template === 'splash' ? null : data.description;
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+  }
+
+  /* Sized and weighted to be read before the title rather than after it, and coloured with the
+     accent so it is the one thing above the heading that is not muted. `--bo-t-13` is the rung the
+     portal's own metadata rows already use; nothing is minted for one line. */
+  .pp-date {
+    margin: 0 0 6px;
+    font-size: var(--bo-t-13);
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--bo-primary);
   }
 
   .pp-chip {

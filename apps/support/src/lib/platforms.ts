@@ -40,8 +40,40 @@
  *     because it has to change with the theme and these fills cannot; this line is the pointer, so
  *     the provenance record is complete in one place even though the paint is not.
  *     Painting it in a hue to "match" the others would be the only invention on this list.
+ *   Smartsheet — geometry from SMARTSHEET'S OWN published logomark,
+ *     `smartsheet.com/sites/default/files/2022-10/smartsheet-logomark.svg`, one path on a 109x134
+ *     canvas, copied verbatim. Simple Icons does NOT carry Smartsheet (checked against
+ *     `data/simple-icons.json` on master: no entry, and Iconify's search returns nothing either),
+ *     so the ClickUp fallback was not available and the vendor's own file is the whole source.
+ *     It is MONOCHROME and that is their rule, not our simplification: the "Logo colorways" page of
+ *     `Smartsheet-Visual-Guidelines-Q12023.pdf` lists six approved schemes and every one is a single
+ *     flat colour — blue-800 on white, white on blue-800, blue-800 on warm-gray-25, white on
+ *     blue-500, white on warm-gray-800, white on photo — and the guide's own logo file paints all
+ *     eleven of its paths one fill. So it takes the Notion treatment: no fill in the path,
+ *     `.bo-mark-smartsheet` in `support.css` carrying Blue 800 #00184D on light and White MAX
+ *     #FFFFFF on dark, both named in that PDF's Primary/Icon colour tables.
+ *     NOT VERIFIED, and worth knowing: the logomark file they serve is dated 2022-10 and fills with
+ *     #041C4E, which is NOT the #00184D their 2023 guidelines call Blue 800. Two vendor sources
+ *     disagree; the newer one — the guidelines that name the colorway "smartsheet-logo-blue-800" —
+ *     is what this file follows, and the older asset hex is recorded here rather than used.
+ *   monday.com — geometry AND colour from MONDAY'S OWN brand site, `brand-monday.com`: the three
+ *     symbol paths are lifted verbatim from the logo file that page serves
+ *     (`.../6885f4d732ebea93d1e5392f_monday.com-1.svg`), and the viewBox is tightened to their
+ *     bounding box so the wordmark below them is dropped. Their `/colors` page publishes the three
+ *     supportive hues the symbol is drawn in — Green Done #00CA72, Yellow Working on It #FFCC00,
+ *     Red Stuck #FB275D — and the fills inside their own file are byte-identical to those three, so
+ *     the two vendor sources agree and nothing here is placed by hand.
+ *     Simple Icons has no monday.com entry either. Iconify's `logos:monday-icon` (SVG Logos, CC0)
+ *     does, and it was NOT used: its red is #F62B54, which is close to monday's #FB275D without
+ *     being it, and a third party's approximation loses to the vendor's own file.
+ *     The three shapes are separate flat fills, so no gradient and therefore no `defs` — the id
+ *     collision `uniquifyMark` exists for cannot arise here.
+ *     NOT VERIFIED: their brand site also lists darker "logo capsule" colours (#00854D, #D79700,
+ *     #B1123B). Those are the BACKGROUND of a capsule holding a white logo, not paint for the
+ *     symbol, and nothing on the page says otherwise — but the page shows them only as images, so
+ *     that reading comes from the captions and the layout, not from a stated rule.
  */
-export type PlatformId = 'airtable' | 'clickup' | 'notion';
+export type PlatformId = 'airtable' | 'clickup' | 'notion' | 'smartsheet' | 'monday';
 
 /** One shape of a brand mark. `fill` absent means `currentColor`, which is how a monochrome brand
  *  follows the theme. */
@@ -139,6 +171,61 @@ export const PLATFORMS: Platform[] = [
       paths: [{ d: 'M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z' }],
     },
     vocab: { top: 'Teamspace', mid: 'Database', row: 'Page', col: 'Property' },
+  },
+  {
+    id: 'smartsheet',
+    name: 'Smartsheet',
+    mark: {
+      viewBox: '0 0 109 134',
+      /* No fill, so `currentColor` reaches it and `.bo-mark-smartsheet` paints it per theme. That is
+         the Notion mechanism, used here for the same reason and not by analogy: every approved
+         colorway in their own visual guidelines is one flat colour. */
+      paths: [
+        {
+          d: 'M20.57,54.66s5.66-8.08,13.28-8.25c11.71-.25,21.27,20.87,22.73,23.93C69.52,41.34,90.96,16.8,108.4,.4H1.46c0,10.06,.12,111.52,.12,119.83,.06,4.49-.4,8.97-1.35,13.36,13.95-2.24,27.67-5.72,41-10.38,32.48-11.67,45.21-24.11,45.33-24.24l.83-.82,.47,1.06c0,.09,4.07,9,8.11,13.77,4.48,5.28,7,5.9,8.33,5.48,1.82-.56,3-3.52,3.55-8.53,.48-4.8,.92-15.74,.91-29V9.6c-31.53,38.71-54.76,96.61-54.76,96.61,0,0-15.22-51.92-33.43-51.55Z',
+        },
+      ],
+    },
+    /* Smartsheet's own nouns, and `top` is the one worth arguing: a Sheet is the tabular object, so
+       it sits where Airtable's Table sits, and the container you actually PICK when choosing what to
+       protect is the Workspace — the shareable top-level thing that holds sheets, reports and
+       dashboards, and a first-class resource in their own REST API. That is the same shape as
+       ClickUp's Space and Notion's Teamspace, which is why those two read the way they do.
+       NO KEY FOR IT: Smartsheet also has Views, and there is nowhere honest to put one. It is a
+       saved presentation of a Sheet, not a rung of the hierarchy, and inventing a fifth key for a
+       noun only some platforms have would put an empty string in front of every other reader. */
+    vocab: { top: 'Workspace', mid: 'Sheet', row: 'Row', col: 'Column' },
+  },
+  {
+    id: 'monday',
+    name: 'monday.com',
+    mark: {
+      /* Tightened to the three symbol paths' bounding box in the source file's own coordinates, so
+         the wordmark that sits below them on that canvas falls outside the frame. The paths are
+         untouched. */
+      viewBox: '5.9 24.3 119.8 69.7',
+      paths: [
+        {
+          d: 'M21.4 93.7968C16.0264 93.792 11.0788 90.9938 8.47805 86.4887C5.87734 81.9835 6.03321 76.4811 8.88514 72.1177L35.4949 31.4164C38.2281 26.9846 43.2559 24.3225 48.6268 24.4636C53.9977 24.6047 58.8658 27.5266 61.3414 32.0953C63.817 36.6639 63.5103 42.1598 60.5403 46.4495L33.9464 87.1508C31.2415 91.292 26.4989 93.8042 21.4 93.7968Z',
+          fill: '#FB275D',
+        },
+        {
+          d: 'M66.7371 93.7968C61.3723 93.792 56.4328 91.0004 53.8364 86.506C51.2399 82.0116 51.3955 76.5222 54.2428 72.1692L80.8011 31.5645C83.4914 27.0681 88.5369 24.3423 93.9481 24.462C99.3593 24.5817 104.268 27.5277 106.738 32.1383C109.209 36.7489 108.845 42.2843 105.79 46.5619L79.2315 87.1665C76.5369 91.2888 71.8165 93.7937 66.7371 93.7968V93.7968Z',
+          fill: '#FFCC00',
+        },
+        {
+          d: 'M110.939 93.8796C119.066 93.8796 125.654 87.3027 125.654 79.1898C125.654 71.0768 119.066 64.5 110.939 64.5C102.812 64.5 96.2238 71.0768 96.2238 79.1898C96.2238 87.3027 102.812 93.8796 110.939 93.8796Z',
+          fill: '#00CA72',
+        },
+      ],
+    },
+    /* monday's own nouns. `mid` is the Board, the tabular object; `top` is the Workspace, which is
+       what holds boards and what a reader picks when they say what to protect.
+       NO KEY FOR IT: a Board holds Groups of Items, and Group has no rung here. It is a partition
+       WITHIN one board's rows rather than a level above or below them, so the nearest equivalent on
+       every other platform is a view's grouping, not a container — and there is no key on this
+       interface that would be true of it. Said here rather than filled with a borrowed word. */
+    vocab: { top: 'Workspace', mid: 'Board', row: 'Item', col: 'Column' },
   },
 ];
 
@@ -244,4 +331,47 @@ export function writePlatformPreference(on: Set<PlatformId>): void {
     /* storage disabled: the filter still works, it just does not survive the next page */
   }
   document.dispatchEvent(new CustomEvent(FILTER_EVENT, { detail: [...on] }));
+}
+
+/**
+ * The reader's choice as every surface actually wants it: a set that is never empty and never null.
+ *
+ * WHY THIS IS NOT JUST `readPlatformPreference`. That function answers "has the reader chosen", and
+ * null is a real and different answer to it — `platform-start.ts` needs to know whether to
+ * pre-select a card. But the four surfaces that FILTER by the choice all wrote the same coalesce,
+ * `readPlatformPreference() ?? new Set(PLATFORM_IDS)`, four times, and "no choice means everything"
+ * is a rule about this product, not a line of boilerplate. It belongs in one place.
+ */
+export function currentPlatforms(): Set<PlatformId> {
+  return readPlatformPreference() ?? new Set<PlatformId>(PLATFORM_IDS);
+}
+
+/**
+ * Runs `fn` whenever the choice changes anywhere, and returns the unsubscribe.
+ *
+ * WHY IT MOVED HERE. The sidebar, the search modal and the chat each hand-rolled the same listener:
+ * take `detail`, check it is an array, drop anything that is not a platform id, ignore an empty
+ * result. Three copies of one validation is three chances for one of them to trust the payload, and
+ * the payload crosses a `CustomEvent` boundary where nothing checks types. The empty guard is the
+ * part that matters: an empty set would leave a reader with a documentation site showing nothing.
+ *
+ * It does NOT fire on subscribe. Every caller reads `currentPlatforms()` for its first paint, and a
+ * synthetic first event would make the sidebar mirror the preference into the URL on page load,
+ * which would rewrite a shared `?platform=` link the moment it was opened.
+ */
+export function onPlatformsChange(fn: (on: Set<PlatformId>) => void): () => void {
+  const handler = (e: Event) => {
+    const ids = (e as CustomEvent<string[]>).detail;
+    if (!Array.isArray(ids)) return;
+    const next = new Set(ids.filter(isPlatformId));
+    if (!next.size) return;
+    fn(next);
+  };
+  document.addEventListener(FILTER_EVENT, handler);
+  return () => document.removeEventListener(FILTER_EVENT, handler);
+}
+
+/** True when the two sets hold the same ids, in any order. */
+export function samePlatforms(a: Set<PlatformId>, b: Set<PlatformId>): boolean {
+  return a.size === b.size && [...a].every((id) => b.has(id));
 }

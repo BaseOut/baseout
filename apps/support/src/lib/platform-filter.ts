@@ -2,8 +2,8 @@
  * The platform filter's controller.
  *
  * WHAT IT TOUCHES: the chips' pressed state, the visibility of platform-tagged rows in the sidebar,
- * the narrowing notice, and the notice on a page that the reader's own filter is hiding. Nothing
- * else. It never rewrites prose and never navigates.
+ * the `Show all` reset beside the control, and the notice on a page that the reader's own filter is
+ * hiding. Nothing else. It never rewrites prose and never navigates.
  *
  * PRECEDENCE IS `?platform=` OVER STORAGE, which is the order Docusaurus arrived at in PR #8486
  * after shipping both separately. A link someone shares carries the platforms it was written for;
@@ -19,9 +19,9 @@
  */
 import {
   PLATFORM_IDS,
-  PLATFORMS,
-  FILTER_EVENT,
-  readPlatformPreference,
+  currentPlatforms,
+  onPlatformsChange,
+  samePlatforms,
   writePlatformPreference,
   uniquifyMark,
   type Mark,
@@ -33,12 +33,16 @@ let rowSeq = 0;
 
 const isPlatform = (v: string): v is PlatformId => (PLATFORM_IDS as string[]).includes(v);
 
-const name = (id: string) => PLATFORMS.find((p) => p.id === id)?.name ?? id;
-
 /* `readStored`, `fromUrl` and `write` used to live here. They moved to `lib/platforms.ts` when the
    search modal grew the same chips: two implementations of "which platforms is this reader
    interested in" is two answers to one question, and they would have disagreed the first time
-   somebody set the filter in one place and read it in the other. */
+   somebody set the filter in one place and read it in the other.
+
+   THE CHIPS THEMSELVES HAVE GONE THE SAME WAY. `components/PlatformPicker.astro` is the control on
+   all three surfaces now, and it owns the pressed state, the keyboard, and the rule that the last
+   platform does not turn off. What is left in this file is the only part that was ever the
+   SIDEBAR's: hiding rows, folding an emptied group, the marks on each row, the visibility of the
+   `Show all` reset, and the mirror into the URL. */
 
 export function mountPlatformFilter(): void {
   const found = document.querySelector<HTMLElement>('[data-platform-filter]');
@@ -54,10 +58,12 @@ export function mountPlatformFilter(): void {
   const map = data.pages ?? {};
   const marks = data.marks ?? {};
 
-  const narrow = root.querySelector<HTMLElement>('[data-platform-narrow]');
-  const narrowText = root.querySelector<HTMLElement>('[data-platform-narrow-text]');
+  /* The ONE-CLICK WAY BACK, and the whole of what the amber notice left behind. It is shown only
+     while something is actually hidden, because a reset for a filter that is not narrowed is a
+     control that cannot act. */
+  const reset = root.querySelector<HTMLElement>('[data-platform-show-all]');
 
-  let on = readPlatformPreference() ?? new Set<PlatformId>(PLATFORM_IDS);
+  let on = currentPlatforms();
 
   /* The sidebar's own markup is Starlight's, so the rows are found by matching each link's path
      against the map the build emitted. `closest('li')` is what actually hides: hiding the anchor
@@ -109,35 +115,29 @@ export function mountPlatformFilter(): void {
   }
 
   function apply(): void {
-    for (const chip of root.querySelectorAll<HTMLButtonElement>('[data-platform-chip]')) {
-      const id = chip.dataset.platformChip ?? '';
-      chip.setAttribute('aria-pressed', String(on.has(id as PlatformId)));
-    }
-
     for (const { row, platform } of sidebarRows()) {
       row.hidden = !on.has(platform as PlatformId);
     }
 
     /* A group whose every child is hidden is an empty heading with a caret that opens onto nothing.
        Fold the group away with its contents. */
+    let hiddenRows = 0;
+
     for (const group of document.querySelectorAll<HTMLElement>('#starlight__sidebar details')) {
       const rows = [...group.querySelectorAll('li')];
       const visible = rows.filter((r) => !r.hidden);
+      hiddenRows += rows.length - visible.length;
       group.hidden = rows.length > 0 && visible.length === 0;
     }
 
-    const hidden = PLATFORM_IDS.filter((id) => !on.has(id));
-    if (narrow && narrowText) {
-      narrow.hidden = hidden.length === 0;
-      if (hidden.length) {
-        const names = hidden.map(name);
-        const list =
-          names.length === 1
-            ? names[0]
-            : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
-        narrowText.textContent = `${list} ${names.length === 1 ? 'is' : 'are'} hidden.`;
-      }
-    }
+    /* THE RESET HIDES WHEN NOTHING IS HIDDEN — derived from the effect, not from a parallel count.
+       It used to compare the chosen set against `PLATFORM_IDS`, which is the five platform
+       IDENTITIES, while this sidebar only ever draws the three that have pages. So with all three
+       ticked the picker read `All platforms`, zero rows were hidden, and `Show all` stayed on screen
+       offering to undo a filter that was not narrowing anything — measured on
+       `/start/getting-started/?platform=airtable,clickup,notion`, 2026-08-21. Counting the rows the
+       filter actually hid cannot drift from the catalogue again, because it never reads it. */
+    if (reset) reset.hidden = hiddenRows === 0;
 
     /* In-page tab blocks obey the same filter. A tab for a platform the reader switched off is a
        promise the page cannot keep, and a strip with one tab left is a control that cannot act, so
@@ -170,49 +170,56 @@ export function mountPlatformFilter(): void {
     }
   }
 
-  function set(next: Set<PlatformId>): void {
-    on = next;
-    writePlatformPreference(on);
+  /**
+   * `?platform=` MIRRORS THE CHOICE, so the address bar is always shareable and always says what
+   * the reader is looking at. It is written from ONE place — the subscription below — rather than
+   * from each thing that can change the filter. It used to be written by this file's own setter,
+   * which was correct only for as long as the sidebar's own chips were the only way to change it;
+   * the moment the search modal grew the same filter, narrowing there left the URL saying something
+   * else. Mirroring on the CHANGE rather than on the CLICK cannot drift that way.
+   *
+   * It is deliberately not called on first paint. Doing so would rewrite a shared `?platform=` link
+   * with the recipient's own stored preference the instant they opened it, which is the precedence
+   * `readPlatformPreference` exists to protect.
+   */
+  function mirrorUrl(): void {
     const url = new URL(window.location.href);
     if (on.size === PLATFORM_IDS.length) url.searchParams.delete('platform');
     else url.searchParams.set('platform', [...on].join(','));
     window.history.replaceState(null, '', url);
-    apply();
   }
 
-  /* THE SEARCH MODAL SETS THE SAME PREFERENCE, and this is how the sidebar behind it catches up.
-     Without it a reader who narrows to Notion in search closes the dialog onto a sidebar still
-     showing everything — one filter that visibly disagrees with itself. `set` is not called back,
-     because that would write and re-broadcast what we have just been told. */
-  document.addEventListener(FILTER_EVENT, (e) => {
-    const ids = (e as CustomEvent<string[]>).detail;
-    if (!Array.isArray(ids)) return;
-    const next = new Set(ids.filter(isPlatform));
-    if (!next.size) return;
-    if (next.size === on.size && [...next].every((id) => on.has(id))) return;
+  /* Writing is all this does. The write dispatches the change, and the subscription below is what
+     moves this page — which is the same path a change made in the search modal or the chat takes,
+     so there is exactly one. */
+  function set(next: Set<PlatformId>): void {
+    writePlatformPreference(next);
+  }
+
+  /* EVERY CHANGE ARRIVES HERE, whoever made it — the picker above this tree, the picker in the
+     search modal, the picker in the chat, the amber notice's Show all, or the page-level "show it
+     anyway". Without this a reader who narrows to Notion in search closes the dialog onto a sidebar
+     still showing everything: one filter that visibly disagrees with itself. Nothing is written
+     back, because that would re-broadcast what we have just been told. */
+  onPlatformsChange((next) => {
+    if (samePlatforms(next, on)) return;
     on = next;
+    mirrorUrl();
     apply();
   });
 
   root.addEventListener('click', (e) => {
-    const chip = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-platform-chip]');
-    if (chip) {
-      const id = chip.dataset.platformChip;
-      if (!id || !isPlatform(id)) return;
-      const next = new Set(on);
-      if (next.has(id)) {
-        /* Never leave the reader with an empty documentation site. The last chip does not turn off. */
-        if (next.size === 1) return;
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      set(next);
-      return;
-    }
     if ((e.target as HTMLElement).closest('[data-platform-show-all]')) {
       set(new Set(PLATFORM_IDS));
     }
+  });
+
+  /* THE RESET DISAPPEARS UNDER THE POINTER THAT PRESSED IT, which is correct — nothing is hidden
+     any more, so the control has nothing left to do — but the reader has just lost the element
+     their focus was on, and focus would fall to `<body>`. Hand it to the trigger, which is the
+     thing the reset was acting on and is one Tab from where they were. */
+  reset?.addEventListener('click', () => {
+    root.querySelector<HTMLButtonElement>('[data-pk-trigger]')?.focus();
   });
 
   /* Tab clicks are delegated from the document because the blocks live inside prose this component

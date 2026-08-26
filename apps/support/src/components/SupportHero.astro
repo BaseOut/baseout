@@ -6,7 +6,7 @@
  * COMPONENT-SCOPED stylesheet, so the brand bridge's `--sl-text-h1: 32px` never reached it and the
  * title rendered at 64px — a variable map repaints Starlight but cannot re-proportion it. Replacing
  * the component is the only way to reach geometry that lives in scoped CSS. This closes open item 3
- * of the support list at the same time as it builds the new landing.
+ * of the support-portal list at the same time as it builds the new landing.
  *
  * THE DARK BAND IS DELIBERATE IN BOTH THEMES. The rays asset is a cyan burst FLATTENED ONTO BLACK
  * and composited with `mix-blend-mode: screen`; screen(a, white) === white, so on the light theme's
@@ -23,6 +23,28 @@
  * opens that modal, so the portal has ONE search surface and the landing gets the resting state
  * (recently viewed · suggested · ask) for free. `lib/ask.ts` was deleted with it.
  *
+ * THE PLATFORM CONTROL IS ABOVE THE FIELD, NOT INSIDE IT (Oleh, 2026-08-21). The search modal has
+ * carried a `PlatformPicker` since it was built, and that is the diagnosis: the control that SCOPES
+ * the search was hidden inside the thing it scopes, so a reader looking straight at a search box
+ * had no way of seeing that a hidden element was narrowing every result it would return. In his
+ * words: the user sees the search bar in front of them and must SEE, with their eyes, the options
+ * for where they back up — and the content below follows the choice.
+ *
+ * SO IT SITS IN THE BAND, DIRECTLY ABOVE THE FIELD, and it is the same shared control (`state`
+ * defaults to `shared`), writing the one `bo-platforms` preference the sidebar, the modal, the chat
+ * and the strip below all read. Nothing here is a second copy of that state: this is a third PLACE
+ * to set the one value, and setting it here repaints the rest live through `FILTER_EVENT`.
+ *
+ * IT DOES NOT REPLACE THE MODAL'S OWN PICKER, and that is deliberate rather than an oversight. Every
+ * page but this one has no hero, and ⌘K opens the modal from all of them; more to the point, while
+ * the dialog is open it is in the top layer and this control is behind a backdrop and unreachable,
+ * so a filter carried into the dialog would silently remove results with nothing on screen saying
+ * why. Two places, one value, and never both reachable at once.
+ *
+ * IT DOES NOT REPLACE THE PLATFORM CARDS BELOW EITHER: those are DOORS. This says "these are the
+ * platforms I care about" and scopes; a card says "take me there now" and narrows on the way out.
+ * Different acts, and the copy of each is written so the page is not asking one question twice.
+ *
  * SEARCH AND ASK SIT TOGETHER. The spec's funnel is docs first (cheapest — nobody's time is
  * spent), chat when the docs failed. The escape hatch therefore belongs INSIDE the result list, at
  * the moment of failure, rather than as a second control the visitor must notice and choose between.
@@ -30,6 +52,7 @@
  */
 import { Icon } from '@astrojs/starlight/components';
 import { POPULAR_QUESTIONS } from '../lib/questions';
+import PlatformPicker from './PlatformPicker.astro';
 
 const hero = Astro.locals.starlightRoute.entry.data.hero;
 const title = hero?.title ?? Astro.locals.starlightRoute.entry.data.title;
@@ -43,10 +66,18 @@ const tagline = hero?.tagline;
     <h1 id="_top" class="sh-title">{title}</h1>
     {tagline && <p class="sh-tagline" set:html={tagline} />}
 
+    {/* THE LABEL IS A QUESTION AND IT IS VISIBLE, because the whole defect being fixed here is a
+        scoping control nobody could see. `PlatformPicker`'s own `label` is the accessible name;
+        this is the sighted reader's half of the same sentence. */}
+    <div class="sh-plat">
+      <span class="sh-plat-label">Which platforms do you back up?</span>
+      <PlatformPicker label="Which platforms do you back up" />
+    </div>
+
     <div class="sh-ask">
       <button type="button" class="sh-field" data-search-open>
         <span class="sh-field-icon" aria-hidden="true"><Icon name="magnifier" /></span>
-        <span class="sh-field-text">Search the docs or ask a question</span>
+        <span class="sh-field-text">Search the docs</span>
         <kbd class="sh-kbd">⌘K</kbd>
       </button>
 
@@ -159,10 +190,65 @@ const tagline = hero?.tagline;
     color: var(--bo-muted-strong);
   }
 
+  /* ── The platform scope, and then the search it scopes ──────────────────────────────────────
+     THE TWO ARE ONE GROUP, and the spacing has to say so: 32px from the tagline to the group, 12px
+     inside it. Written the other way round — an equal gap above and below the picker — the control
+     reads as a third thing floating between the tagline and the field rather than as the label on
+     the field's scope.
+
+     CENTRED, because the band is. The field is a full-width block, so a left-aligned row above it
+     would be the only left-aligned thing in a centred column.
+
+     `flex-wrap` IS THE 390 BEHAVIOUR, and it is the whole responsive story here: the question is
+     ~29 characters and the trigger is a 36px-tall button, so below roughly 460px of measure the
+     trigger drops to its own line under the question, both still centred, and the pair costs one
+     extra ~48px row. Nothing is hidden and no breakpoint is written down. The trigger's own
+     `max-width: 100%` (`PlatformPicker.astro`) is what keeps a narrowed state — marks plus a count
+     — from pushing the band sideways at that width. */
+  .sh-plat {
+    margin-top: 32px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  /* Starlight's prose rhythm margins every sibling after the first inside any flex box it reaches,
+     and this row is exactly the two-child case that has already put a control 16px below its own
+     label in the search modal. `:global` on the child half deliberately: `PlatformPicker` renders
+     with its own scope hash, so a bare `> *` would ship as valid CSS matching nothing. */
+  .sh-plat > :global(*) {
+    margin-top: 0;
+  }
+
+  .sh-plat-label {
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    color: var(--bo-muted-strong);
+  }
+
+  /* THE TRIGGER NEEDS THE BAND'S VEIL, for the reason `.sh-field` has one three rules below: the
+     control paints itself `--bo-base-100`, which is #111111 in dark, and the band's own gradient
+     runs #0a0a0a → #111111 — so inside this section the button would be the same colour as the
+     thing behind it. A tint of the text colour reads as raised over the gradient and over the rays
+     alike. `:global` because the trigger is a child component's element and a scoped selector
+     cannot reach it. The popover keeps its own opaque surface: it is a menu, and a translucent
+     menu over a photographic band is unreadable. */
+  .sh :global(.pk-trigger) {
+    background: color-mix(in oklch, var(--bo-base-content) 7%, transparent);
+    border-color: color-mix(in oklch, var(--bo-base-content) 14%, transparent);
+  }
+
+  .sh :global(.pk-trigger:hover) {
+    border-color: var(--bo-primary);
+  }
+
   /* ── Search + Ask ── */
   .sh-ask {
     position: relative;
-    margin-top: 32px;
+    /* 12px, not 32: see `.sh-plat` — the scope control and the field it scopes are one group. */
+    margin-top: 12px;
     text-align: start;
     display: flex;
     align-items: center;
@@ -191,11 +277,50 @@ const tagline = hero?.tagline;
   .sh-ask-btn:hover { border-color: var(--bo-primary); }
   .sh-ask-btn-icon { display: flex; color: var(--bo-primary); }
 
-  @media (max-width: 40rem) {
-    .sh-ask { flex-direction: column; align-items: stretch; }
-    .sh-ask-btn { justify-content: center; }
-  }
+  /* ── ONE ROW AT EVERY WIDTH (Oleh, 2026-08-26) ───────────────────────────────────────────────
+     "Так як у нас все одно відкривається модалка для пошуку, давай кнопку Ask AI вмістимо в рядок
+     з інпутом серча."
 
+     It used to stack below 40rem, and the arithmetic is why it had to: the Ask AI button is 98px at
+     its natural width, and `Search the docs or ask a question` needs 219px of text — 279px of field
+     once the glyph, the gap and the padding are counted. 279 + 8 + 98 = 385 against a 366px column
+     at 390. Nineteen pixels short, so the row broke.
+
+     THE NINETEEN PIXELS CAME OUT OF THE COPY, NOT THE LAYOUT. `or ask a question` is a description of
+     the control sitting immediately beside it, and once the two share a line it is the caption of a
+     button the reader can already see. DESIGN.md's copy rule is that every word earns its place. The
+     label is `Search the docs` now, at every width — the same shortening the header pair made when
+     it collapsed, arrived at from the other direction. Measured after: the row needs 266px, the
+     column has 296 even at 320.
+
+     AND THE HEIGHT BUG GOES WITH THE BLOCK. That media query is where `.sh-field` painted 30px
+     instead of 52 — `flex: 1` is `flex-basis: 0%`, which sizes the MAIN axis, and the rule had just
+     turned that axis vertical. It was patched with `flex: none` on 2026-08-25; the patch is gone
+     with the cause, and `flex: 1` now means what it was written to mean. Re-measured: 52px at 320,
+     390, 430 and 720.
+
+     ── (the 2026-08-25 note, kept because the trap is worth finding twice) ──────────────────────
+     `.sh-field` declares `height: 52px` and painted 52 on a desktop. Measured at an emulated 390:
+     **30px** — the portal's single most-used control, three quarters of an inch of finger short of
+     anything tappable, on the page every visitor lands on.
+
+     Nothing overrode the height. `flex: 1` is `flex-grow:1 flex-shrink:1 flex-basis:0%`, and
+     `flex-basis` sizes the MAIN axis — which this rule has just turned from horizontal to vertical.
+     So below 40rem the field asked for a basis of 0 along its height, `.sh-ask` is sized by its
+     content and had no free space to distribute, and the box collapsed onto its line box. Both
+     declarations were correct; the direction under them changed what one of them meant.
+
+     `flex: none` restores the height, and it is stated here rather than by raising the height
+     somewhere else: the 52 is not wrong, it was never reached. The touch floor in `styles/
+     support.css` would also have clamped this to 44 — a control landing on the floor rather than at
+     its designed size is a symptom being treated, so the cause is fixed here and the floor stays
+     what it is, a floor. Re-measured after: 52.0 at 390, 375 and 320.
+
+     AND THE BLOCK MOVED DOWN THE FILE TO DO IT. It used to sit above the base `.sh-field` rule,
+     which declares the `flex: 1` this is correcting at the same specificity — so written in place
+     it would have lost on source order and computed 30 anyway, with the file reading as fixed.
+     `specs/16-responsive.md` §10.1: a narrow block goes after the last base declaration of every
+     selector it names. */
   .sh-field {
     display: flex;
     align-items: center;

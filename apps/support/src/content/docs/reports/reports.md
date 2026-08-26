@@ -14,7 +14,7 @@ This page will cover creating a report, choosing its sections and scope, and rea
 - What sections can a report contain?
 - What does "on each data backup" mean for a Space with several bases?
 - Who receives a delivered report, and how?
-- "Delivered 1/1" — what is the second number?
+- `Delivered 1/1` — what is the second number?
 - Can I re-run a report over an older backup?
 
 ## Not written yet

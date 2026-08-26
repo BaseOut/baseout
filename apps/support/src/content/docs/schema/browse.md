@@ -8,8 +8,8 @@ and view, with one global search and faceted filters over type, field type, heal
 status. Clicking a row opens a detail panel that drills base → table → field without losing your
 place.
 
-Each entity carries two descriptions: **Airtable**, which is the public one and the only one that
-syncs back, and **Internal**, which stays inside Baseout. This page will cover both, and the
+Each entity carries two descriptions: `Airtable`, which is the public one and the only one that
+syncs back, and `Internal`, which stays inside Baseout. This page will cover both, and the
 draft → publish lifecycle an edit goes through.
 
 ## Questions this page will answer
@@ -17,7 +17,7 @@ draft → publish lifecycle an edit goes through.
 - How do I find a field when I only remember part of its name?
 - What is the difference between the Airtable and Internal description?
 - Which of the two actually writes back to Airtable? (Airtable — Internal never leaves Baseout.)
-- What does the Draft badge on an entity mean?
+- What does the `Draft` badge on an entity mean?
 - Can I see fields and tables that were removed from Airtable?
 - What does the Tagged column count?
 

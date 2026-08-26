@@ -71,7 +71,41 @@
  * 1265px the drawer's leading edge sat at 897 while the prose ran to 977, 80px of text underneath
  * it. `--cd-w` is written on the root by the resize handle, so this reservation tracks the drag.
  */
-@media (min-width: 50rem) {
+/* ── AND ONLY WHERE THERE IS ROOM TO GIVE IT (2026-08-26) ─────────────────────────────────────
+ * Oleh, from a tablet: "на 1024, коли ми відкриваємо чат, він має оверлеїти, а не відсовувати
+ * контент, тому що вже замало місця." Measured on `/backups/how-backups-work/`, the reading column
+ * with the drawer closed against the same column with it open:
+ *
+ *     width   closed   open    lost    measure open
+ *      900     568      200    -368     ~25ch
+ *     1024     692      324    -368     ~40ch
+ *     1112     736      412    -324     ~51ch
+ *     1280     660      496    -164      61ch
+ *     1320     610      536    -214      66ch
+ *     1440     736      656     -80      80ch
+ *     1600     736      736       0      90ch
+ *
+ * Documentation prose is 16px and DOES NOT COMPACT — that is a named rule (DESIGN.md §3, the
+ * Docs-Never-Compact Rule), so a narrower column buys nothing back and simply shortens the line.
+ * At 1024 the drawer left the manual 40 characters a line; at 900, twenty-five. The cap this system
+ * states is 65–75ch, and the reservation is under it on every tablet width in the sweep.
+ *
+ * SO THE DRAWER DOCKS ABOVE THE BOUNDARY AND FLOATS BELOW IT. `1279.98px` is `specs/16-responsive.md`
+ * §1's declared boundary and the one number this design system turns on; nothing new is minted.
+ *
+ * WHAT IT COSTS, said plainly: at exactly 1280 the docked column is 61ch, four under the ideal, and
+ * the width where docking is genuinely free is 1600. The boundary is where it is because the cliff
+ * is below it, not at it — 61ch is a slightly tight line, 40ch is not a line at all. Docking is
+ * worth four characters and is not worth forty.
+ *
+ * AND BELOW THE BOUNDARY IT BECOMES MODAL, which the first draft of this rule got wrong. It said
+ * floating keeps the page readable, so no scrim was needed. Measured, it does not: a 368px drawer
+ * over a 692px column at 1024 covers 352px of it, and every line of prose is cut vertically at
+ * 340px. Half a line is not a readable line. So `ChatDock.astro` dims the page below 1280 and
+ * `lib/chat-panel.ts` inerts it, and the three statements agree — the drawer is over the page, it
+ * says so, and it behaves that way. Above the boundary none of it applies: the drawer docks, the
+ * column keeps its measure, and both are live at once, which is the whole reason to dock. */
+@media (min-width: 1280px) {
   html[data-chat='open'] .main-frame {
     padding-inline-end: var(--cd-w, 23rem);
   }
@@ -84,7 +118,11 @@
  * towards the left edge. Measured at 1265: content sat 324→793 inside a 300→897 space it should
  * have been centred in. `auto` on both sides centres it in whatever room is left.
  */
-@media (min-width: 50rem) {
+/* THE SAME BOUNDARY AS THE RESERVATION ABOVE, and for the same reason: both rules exist to
+ * COMPENSATE for the width the drawer takes out of the row. Below 1280 it takes none, so there is
+ * nothing to compensate and shrinking the contents rail to a 68px lane would be narrowing a column
+ * to make room for a drawer that is floating over it. */
+@media (min-width: 1280px) {
   html[data-chat='open'] .main-pane {
     /* Starlight pins the prose to the RIGHT of its pane in the two-column case
        (`--sl-content-margin-inline: auto 0`), which is right when a contents rail sits beside it and
@@ -115,19 +153,61 @@
 
 /* ── Prev / next are navigation, not headlines ──────────────────────────────────────────────────
  * Starlight sets these at `--sl-text-2xl`, which is the same size as a section heading — two link
- * labels were the loudest type on a finished article. */
+ * labels were the loudest type on a finished article.
+ *
+ * ── AND FOR A FORTNIGHT THIS RULE MISSED THE PART THAT WAS LOUD (fixed 2026-08-26) ─────────────
+ * Oleh, from a tablet: "текст занадто великий, шрифт великий, виглядає громіздко". He was right and
+ * the rule above says it was already fixed, which is the worse half of the report.
+ *
+ * `.pagination-links a > span` is a CHILD combinator, and `Pagination.astro` nests the title one
+ * level deeper than that:
+ *
+ *     <a> <Icon/> <span> Previous <br> <span class="link-title">Signing in</span> </span> </a>
+ *
+ * So the rule reached the wrapper — the word "Previous" — and never reached `.link-title`, which
+ * kept `font-size: var(--sl-text-2xl)`. Measured at 390, 834, 1024 and 1440, all four identical:
+ * wrapper 16px, `.link-title` **24px**, card 77px tall. The one word that did shrink was the one
+ * that was already small, and the headline the rule was written to demote never moved.
+ *
+ * WHAT THE TWO LINES ARE. "Previous" is a micro-label naming a direction, and it took the same 16px
+ * as the title it labels; it goes to 12 and muted. The title is a LINK LABEL, so it takes the body
+ * rung and carries the weight instead of the size — that is this system's hierarchy rule
+ * (DESIGN.md §3: scale and weight, nothing between the rungs).
+ *
+ * THE SHADOW GOES WITH THEM. Starlight gives each card `box-shadow: var(--sl-shadow-md)`, and these
+ * two are siblings sitting in the page rather than floating above it — DESIGN.md §4's Flat-Sibling
+ * Rule, and the hairline they already carry is the whole of the depth they need.
+ *
+ * THE ARROW FOLLOWS THE TYPE. `Icon size="1.5rem"` is 24px, set to match the 24px title; against a
+ * 16px label it was the largest thing in the card. 16px puts it on the label it sits beside. */
 .pagination-links a {
   padding: 12px 16px;
+  box-shadow: none;
 }
 
 .pagination-links a > span {
-  font-size: var(--sl-text-base);
+  font-size: var(--bo-t-12);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   line-height: 1.4;
+  color: var(--bo-muted);
+}
+
+.pagination-links a .link-title {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--bo-t-16);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.35;
+  color: var(--sl-color-white);
 }
 
 .pagination-links svg {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1rem;
+  height: 1rem;
 }
 
 /* ── The landing carries its own search, so the header must not carry a second one ──────────────
@@ -348,17 +428,27 @@ dialog.vote-dialog button[data-confirm] {
  * `:has()` on the frame rather than a body class, because a class would have to come from a page
  * that renders through `StarlightPage` and cannot set one. `.rb` is the board, `.sb` the form.
  *
+ * `.rq` and `.tk` JOINED 2026-08-21 — the ticket list and one case. Both were built as service
+ * pages and both arrived wearing the documentation chrome: the docs tree and the platform filter
+ * down the left, the page-rating block underneath, and `Documentation` lit in the header. This is
+ * the third and fourth time a new service page has had to be named here by hand, which is the
+ * standing cost of the mechanism — a selector list cannot know about a page nobody has added to it.
+ *
  * The `--sl-content-inline-start` reset is not optional: it is what indents the main frame past the
  * sidebar, and it is declared on `[data-has-sidebar]` at specificity (0,2,0) — an `html:has(...)`
  * selector is (0,1,1) and would lose silently, leaving a sidebar-width gutter with no sidebar in it.
  */
 .page:has(.rb) > .sidebar,
-.page:has(.sb) > .sidebar {
+.page:has(.sb) > .sidebar,
+.page:has(.rq) > .sidebar,
+.page:has(.tk) > .sidebar {
   display: none;
 }
 
 html[data-has-sidebar]:has(.rb),
-html[data-has-sidebar]:has(.sb) {
+html[data-has-sidebar]:has(.sb),
+html[data-has-sidebar]:has(.rq),
+html[data-has-sidebar]:has(.tk) {
   --sl-content-inline-start: 0;
 }
 
@@ -367,82 +457,10 @@ html[data-has-sidebar]:has(.sb) {
    title. Hiding the sidebar takes the button with it and leaves the hole: measured at 390 the nav
    row had 310px of a 358px bar and scrolled a label out of sight for no reason. */
 html[data-has-sidebar]:has(.rb) .header,
-html[data-has-sidebar]:has(.sb) .header {
+html[data-has-sidebar]:has(.sb) .header,
+html[data-has-sidebar]:has(.rq) .header,
+html[data-has-sidebar]:has(.tk) .header {
   padding-inline-end: var(--sl-nav-pad-x);
-}
-
-/* ── STATUS PAINT: one tone table, four surfaces ─────────────────────────────────────────────────
- * The board, its filter chips, its column heads and the request detail page all say the same five
- * words, and until 2026-08-19 they said them in four different paints — two of which were "no
- * paint". That is why the portal read monochrome while the palette under it held four solved hues:
- * the only soft pair a first-party component could reach was `--bo-soft-primary-*`, so anything
- * that wanted a colour got blue or got nothing.
- *
- * A TONE IS A PAIR PLUS AN INK, and the three of them are what the four surfaces differ on:
- *   --tone-bg   the tint a filled badge sits on
- *   --tone-fg   the label inside that tint, darkened toward the ink so it survives it
- *   --tone-ink  the hue at full strength, for a glyph on an UNFILLED surface (a resting chip, a
- *               column head) where there is no tint to darken against
- * Setting them on the element rather than reading them from a theme block is deliberate: a `var()`
- * inside a custom property is substituted where the property is DECLARED, so declaring the trio on
- * the badge itself is what makes it follow a nested `[data-theme]`.
- *
- * These live here, not in a component, because `lib/board.ts` builds some of this markup at click
- * time and an Astro scoped style never reaches runtime-built DOM.
- */
-.bo-i {
-  flex: none;
-  vertical-align: -0.125em;
-}
-
-.bo-tone-ghost {
-  --tone-bg: var(--bo-base-200);
-  --tone-fg: var(--bo-muted-strong);
-  --tone-ink: var(--bo-neutral);
-}
-
-.bo-tone-primary {
-  --tone-bg: var(--bo-soft-primary-bg);
-  --tone-fg: var(--bo-soft-primary-fg);
-  --tone-ink: var(--bo-primary);
-}
-
-.bo-tone-warning {
-  --tone-bg: var(--bo-soft-warning-bg);
-  --tone-fg: var(--bo-soft-warning-fg);
-  --tone-ink: var(--bo-warning);
-}
-
-.bo-tone-success {
-  --tone-bg: var(--bo-soft-success-bg);
-  --tone-fg: var(--bo-soft-success-fg);
-  --tone-ink: var(--bo-success);
-}
-
-/* THE BADGE IS SOFT, NEVER SOLID and never an outline. A solid fill is the emphasis treatment
-   reserved for counts; a column of solid pills reads as a row of alarms (the product corrected
-   exactly this in Backups on 2026-08-14). */
-.bo-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 999px;
-  background: var(--tone-bg);
-  color: var(--tone-fg);
-  font-size: var(--bo-t-12);
-  font-weight: 600;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-/* `Not planned` and `Planned` share the ghost tone because both mean "nothing is happening", and
-   they are told apart by the glyph plus one step of emphasis — NOT by red. Red means something
-   broke; a decision is not a fault, and painting a declined request red teaches people that asking
-   was the error. */
-.bo-badge[data-status='not-planned'] {
-  color: var(--bo-muted);
-  font-weight: 500;
 }
 
 /* ── A screenshot inside a documentation page ─────────────────────────────────────────────────────
@@ -508,13 +526,15 @@ html[data-has-sidebar]:has(.sb) .header {
 }
 
 /* ── Platform brand marks ─────────────────────────────────────────────────────────────────────────
- * Airtable and ClickUp carry their own fills in the SVG, taken from the vendors' own assets and
- * recorded with their provenance in `lib/platforms.ts`. Nothing here touches them.
+ * Airtable, ClickUp and monday.com carry their own fills in the SVG, taken from the vendors' own
+ * assets and recorded with their provenance in `lib/platforms.ts`. Nothing here touches them.
  *
- * NOTION IS THE ONLY ONE THIS FILE PAINTS, and only because its brand is genuinely monochrome:
- * black on light, white on dark. Its paths carry no fill, so `currentColor` reaches them, and the
- * three states below are the same pattern the screenshots use. Painting it in a hue to match the
- * other two would be the one invented colour in the set. */
+ * THIS FILE PAINTS THE TWO MONOCHROME BRANDS, Notion and Smartsheet, and only because each one is
+ * genuinely monochrome by its owner's own rule:
+ * Notion is black on light and white on dark; Smartsheet is their Blue 800 on light and white on
+ * dark. Neither one's paths carry a fill, so `currentColor` reaches them, and the three states each
+ * gets below are the same pattern the screenshots use. Painting either in a hue to match the
+ * full-colour marks would be the only invented colour in the set. */
 .bo-mark-notion {
   color: #191919;
 }
@@ -531,6 +551,29 @@ html[data-has-sidebar]:has(.sb) .header {
 
 :root[data-theme='light'] .bo-mark-notion {
   color: #191919;
+}
+
+/* SMARTSHEET IS THE SECOND, and for the same documented reason rather than by analogy. Every one of
+ * the six approved colorways in their 2023 visual guidelines is a single flat colour, and the pair
+ * below is two of those colorways by name: blue-800 on white, and white on a dark ground. The hexes
+ * are their Blue 800 and White MAX. Provenance, and the one thing it was not possible to verify,
+ * are recorded with the entry in `lib/platforms.ts`. */
+.bo-mark-smartsheet {
+  color: #00184d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bo-mark-smartsheet {
+    color: #ffffff;
+  }
+}
+
+:root[data-theme='dark'] .bo-mark-smartsheet {
+  color: #ffffff;
+}
+
+:root[data-theme='light'] .bo-mark-smartsheet {
+  color: #00184d;
 }
 
 /* ── A platform-tagged row in the documentation tree ──────────────────────────────────────────────
@@ -644,4 +687,475 @@ html[data-has-sidebar]:has(.sb) .header {
 #starlight__sidebar details details > summary svg {
   width: 0.75rem;
   height: 0.75rem;
+}
+
+
+/* THE HEADER OUT-PAINTS THE RIGHT RAIL WHILE THE ACCOUNT PANEL IS OPEN, AND ONLY THEN.
+ *
+ * `.right-sidebar-container` is raised to 30 a few rules above so the folded contents popover can
+ * out-paint the article; `.header` is Starlight's `--sl-z-index-navbar`, which is 10. The account
+ * panel hangs off the header, so its own `z-index` competes inside the header's stacking context
+ * and can never beat a 30 that sits outside it. Measured before this rule: the panel painted at
+ * 1196,54 with every row correct and the contents card drawn over the top of it.
+ *
+ * SCOPED TO THE OPEN STATE ON PURPOSE. Raising the navbar permanently is the other fix and it costs
+ * more than it looks: `--sl-z-index-skiplink` (20) sits between the two numbers, so a header above
+ * the rail is also a header above the skip link, which is the one control that must paint over
+ * everything when it is focused. `lib/account-menu.ts` stamps and clears the attribute, so this
+ * rule is inert on every page where nobody has opened the panel. */
+html[data-account-open] .header {
+  z-index: 40;
+}
+
+/* THE HERO STARTS AT THE HEADER, WITH NO STRIP OF PAGE ABOVE IT.
+ *
+ * Starlight gives every `.content-panel` `padding: 1.5rem var(--sl-content-pad-x)`, and on a
+ * documentation page the top half of that is right: it is the air between the header and the first
+ * line of an article. On the splash landing the first thing in the panel is a full-bleed band that
+ * paints its own gradient edge to edge, so those 24px read as a seam of page colour between two
+ * dark surfaces rather than as breathing room. Measured before this rule: header bottom 64,
+ * hero top 88.
+ *
+ * `data-has-hero` IS STARLIGHT'S OWN MARKER and it is on `<html>`, so this needs no `:has` and
+ * cannot reach a page that has no hero — one page in the built site carries it. Only the TOP is
+ * zeroed: the horizontal padding still positions everything the landing puts below the band, and
+ * the bottom still separates the panel from the footer. */
+html[data-has-hero] .content-panel {
+  padding-top: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   THE CONTROL FLOOR FOLLOWS THE POINTER — ported from `apps/web` (2026-08-25)
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+   `specs/16-responsive.md` §6 states this rule for the product and `apps/web/src/styles/global.css`
+   :508-620 implements it. The portal never got it, and the difference is measurable. Swept at an
+   emulated 390x844 with `pointer: coarse` across fifteen routes on 2026-08-25:
+
+     apps/web        0 undersized controls on 8 of 13 routes; the rest are content, not chrome
+     apps/support   10 to 17 undersized controls on EVERY route
+
+   The offenders were not exotic. They were the brand link (22x22 — under WCAG 2.2 SC 2.5.8's 24x24
+   AA floor, on every page of the site), Starlight's mobile menu button at 32x32, the header search
+   and ask pair at 38x40, the account trigger at 58x32, the page-feedback Yes/No at 37.6, the request
+   tabs at 34.8, the platform tabs at 40.2, the platform picker at 36, and — the one that matters
+   most — the landing's search field, the portal's single most-used control, at 358x30.
+
+   THE NUMBERS ARE THE PRODUCT'S, NOT NEW ONES. 44px is Apple HIG 44pt, WCAG 2.2 SC 2.5.5 (AAA), and
+   on the 4px grid. 28px is the cursor floor: WCAG 2.2 SC 2.5.8 (AA) asks 24x24 and 28 clears it with
+   margin while staying dense. Neither is minted here.
+
+   IT GOVERNS THE BOX, NEVER THE TYPE. A 13px label stays 13px and grows its box. The type ladder is
+   a separate rule and lifting a control must not quietly restate it.
+
+   `height: auto` SITS BESIDE EVERY `min-height` because several of these controls carry an explicit
+   height, and a bare `min-height` loses to it. That cost `apps/web` a day; it is not re-learned here.
+
+   WHY THIS FILE AND NOT `brand/baseout-bridge.css`. The bridge is shared by four public apps and its
+   own header says it must not grow per-app rules — but a touch floor is a house rule, not a portal
+   one, and it belongs there once the other three are swept and measured. Until somebody has done
+   that, a rule in the bridge would be an unverified claim about three apps. Filed, not forgotten. */
+:root {
+  --bo-touch-min: 44px;
+  --bo-control-min: 28px;
+}
+
+/* THE FLOOR IS THE CURSOR'S BY DEFAULT. A portal read in an Airtable extension panel or a narrow
+   desktop window is driven by a pointer, and `specs/16-responsive.md` §6 is explicit that narrow is
+   not the same question as touch: *"measured at 400, the Filter button, both view buttons, the
+   search, every tab and the rows select were all 44px tall, which is most of a toolbar spent on
+   reach nobody needs."* Width decides layout; the pointer decides reach.
+
+   ── EVERY SELECTOR IS DOUBLED, AND THAT IS NOT A TYPO ─────────────────────────────────────────
+   `specs/16-responsive.md` §10.2 direction B, met here on the first run of this rule. Astro scopes
+   every selector in a component `<style>` with `[data-astro-cid-…]`, so `.bt { min-width: 0 }` in
+   `SiteTitle.astro` computes **(0,2,0)** while a plain `.bt` in this shared sheet computes (0,1,0)
+   — the sheet everyone assumes is stronger is the weaker one. Written plain, this block set
+   `min-height` on things that had none and was silently discarded everywhere a component had an
+   opinion. Measured after the plain version: `.bt` 22x44 (the height took, the width lost to
+   `min-width: 0`), `.pk-trigger` 137x36 (lost to its own `min-height: 36px`). `html` plus a doubled
+   class is (0,2,1), which clears a one-class scoped rule without reaching for `!important`.
+
+   `apps/web` solves the same problem with an `#layout-content` prefix; this portal has no such
+   wrapper, so the strength has to come from the selector itself. Write an exception at the strength
+   of the rule it excepts. */
+html .bt.bt,
+html .hx-link.hx-link,
+html .hx-menu-item.hx-menu-item,
+html .hs-search.hs-search,
+html .hs-ask.hs-ask,
+html .bo-acct-trigger.bo-acct-trigger,
+html .bo-acct-item.bo-acct-item,
+html .fb-btn.fb-btn,
+html .rq-tab.rq-tab,
+html .pt-tab.pt-tab,
+html .pk-trigger.pk-trigger,
+html .sh-field.sh-field,
+html .sh-ask-btn.sh-ask-btn {
+  min-height: var(--bo-control-min);
+}
+
+/* ── `height: auto` IS A SEPARATE, SHORTER LIST, AND THE FIRST VERSION GOT THIS WRONG ────────────
+   `apps/web` pairs `height: auto` with every `min-height` because daisyUI sets an explicit height on
+   `.btn-sm`, and a bare `min-height` loses to it. Copied wholesale onto this list, it did damage the
+   product's own rule was never exposed to: `.sh-field` and `.sh-ask-btn` DECLARE `height: 52px`,
+   which is above the floor, and `height: auto` threw it away — so the touch floor SHRANK the
+   landing's search field from 52 to 44. Measured: 358x44 where the design says 52.
+
+   A `min-height` only ever raises a box, so a declared height above the floor needs no help and must
+   not be touched. `height: auto` belongs only where a declared height is BELOW the floor and is
+   therefore the thing blocking it. Three controls are in that state, each measured at 390:
+
+     .bo-acct-trigger              height: 32px    (SessionControl.astro:127)
+     .hs-search, .hs-ask           height: 2.5rem  (Search.astro:141) — 40px
+     starlight-menu-button button  32x32           Starlight's own
+
+   Anything else on the list is sized by padding and reaches the floor on `min-height` alone. */
+html .bo-acct-trigger.bo-acct-trigger,
+html .hs-search.hs-search,
+html .hs-ask.hs-ask {
+  height: auto;
+}
+
+/* SQUARE CONTROLS STATE BOTH AXES. A glyph-only button given one axis gets sized by its content on
+   the other and comes out a pill — `apps/web` shipped a 44x26.5 one exactly this way. */
+html .bt.bt,
+html .hs-search.hs-search,
+html .hs-ask.hs-ask {
+  min-width: var(--bo-control-min);
+}
+
+@media (pointer: coarse) {
+  html .bt.bt,
+  html .hx-link.hx-link,
+  html .hx-menu-item.hx-menu-item,
+  html .hs-search.hs-search,
+  html .hs-ask.hs-ask,
+  html .bo-acct-trigger.bo-acct-trigger,
+  html .bo-acct-item.bo-acct-item,
+  html .fb-btn.fb-btn,
+  html .rq-tab.rq-tab,
+  html .pt-tab.pt-tab,
+  html .pk-trigger.pk-trigger,
+  html .sh-field.sh-field,
+  html .sh-ask-btn.sh-ask-btn {
+    min-height: var(--bo-touch-min);
+  }
+
+  html .bt.bt,
+  html .hs-search.hs-search,
+  html .hs-ask.hs-ask {
+    min-width: var(--bo-touch-min);
+  }
+
+  /* THE MENU BUTTON TAKES STARLIGHT'S OWN VARIABLE, NOT A `min-height` ON THE BUTTON.
+     `MobileMenuToggle.astro` sizes the button `width: var(--sl-menu-button-size); height: var(--sl-
+     menu-button-size)` AND positions it `top: calc((var(--sl-nav-height) - var(--sl-menu-button-
+     size)) / 2)`, so the size and the centring arithmetic read the same number. Floored on the
+     button alone, the button grew to 44 and the `top` stayed computed from 32 — measured at 390:
+     a 44px circle sitting at y=10 in a 52px first row, hanging 2px into the nav row below it and
+     painting its white ground over the header's bottom hairline. Move the variable and both move.
+
+     32px is Starlight's default and clears WCAG 2.2 SC 2.5.8 (AA, 24x24); this is the AAA/HIG lift
+     that everything else in the portal's chrome now takes, applied at the one place that owns it. */
+  :root {
+    --sl-menu-button-size: var(--bo-touch-min);
+  }
+
+  /* The brand mark is the site's home link and it is 22x22 of glyph. Growing the box without
+     centring the mark inside it leaves the glyph pinned to the start of a 44px square. */
+  html .bt.bt {
+    justify-content: center;
+  }
+
+  /* A KEYBOARD SHORTCUT ON A DEVICE WITH NO KEYBOARD. `⌘K` is a hint, and a hint that names a key
+     the reader does not have is worse than no hint: it is 33px of the search field spent telling a
+     phone user about a control they cannot reach. Measured at 390: the badge sat at x=324 inside a
+     358px field, so removing it also gives the placeholder its last two words back. */
+  html .sh-kbd,
+  html .hs-kbd {
+    display: none;
+  }
+
+  /* THE HEADING ANCHOR IS A POINTER AFFORDANCE. Starlight reveals it on hover, which on a touch
+     device means it is revealed permanently — measured at 390 on ten docs routes: `opacity: 1`,
+     19.9x28.8, beside every `<h2>`. It is a 20px tap target that copies a URL the address bar is
+     already showing, drawn as a permanent chain glyph in the middle of the reading column. The
+     heading keeps its `id`, so every deep link into this page still resolves. */
+  html .sl-markdown-content .sl-anchor-link {
+    display: none;
+  }
+}
+
+/* ── A STANDALONE LINK TAKES THE AA FLOOR, NOT THE AAA ONE ───────────────────────────────────────
+   The sweep left four links between 18 and 24.5px tall on a touch device: the related-docs links
+   and the "Not seeing your platform?" jump on a roadmap card, and "See the whole roadmap" on the
+   landing. None of them is inside a sentence, so WCAG 2.2 SC 2.5.8's text-block exception does not
+   cover them and 18px is below its 24x24 AA floor.
+
+   THEY TAKE 28, NOT 44, AND THE DIFFERENCE IS ARGUED RATHER THAN SPLIT. 44 is the reach standard
+   for a CONTROL — something you press to make the interface do a thing. These are prose links in a
+   card that already carries a Vote button and a status, and giving three of them 44px each adds
+   most of a card's height to every row of a list read by scrolling. 28 is this system's own cursor
+   floor, it clears AA with margin, and it is on the 4px grid. A rule that costs a list its density
+   to satisfy a level nobody claimed is a rule that gets deleted later.
+
+   `display: flex` with `align-items: center` rather than `padding`: these sit in stacked lists whose
+   gaps are already measured, and padding would move every neighbour. */
+@media (pointer: coarse) {
+  html .rb-docs.rb-docs,
+  html .rb-jump.rb-jump,
+  html .vb-more.vb-more {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--bo-control-min);
+  }
+}
+
+/* ── THE READING COLUMN IS CENTRED BELOW 72rem TOO ───────────────────────────────────────────────
+ * Oleh, 2026-08-26, from a tablet: "контейнер не по центру".
+ *
+ * `ContentPanel.astro` writes `margin-inline: var(--sl-content-margin-inline, auto)` inside a
+ * `@media (min-width: 72rem)` block and nowhere else, so below 1152px the column takes the default
+ * `margin-inline: 0` and sits hard against the start edge. Measured on `/contact/` at 1024:
+ *
+ *     .content-panel     x=0    w=1024
+ *     .sl-container      x=16   w=704   right edge 720
+ *
+ * 304px of empty page to the right of a column that is 704px wide. It is most obvious on the three
+ * service pages, which have no left sidebar to explain the offset, and it is what the tablet
+ * screenshot showed.
+ *
+ * Starlight's reason for the 72rem gate is sound and is preserved: above it the right-hand contents
+ * rail exists, and `TwoColumnContent.astro` sets `--sl-content-margin-inline: auto 0` to pin the
+ * prose NEXT TO that rail rather than in the middle of the pane. Centring below the gate cannot
+ * disturb that, because below the gate there is no rail — which is exactly why the column had
+ * nothing to be aligned against.
+ *
+ * `max-width: 71.999rem` rather than a `:not()`, so the two rules cannot both be live at 1152.
+ * Below 50rem it is inert: the column's 704px cap is wider than the page, so `auto` resolves to 0.
+ */
+@media (max-width: 71.999rem) {
+  .content-panel .sl-container {
+    margin-inline: auto;
+  }
+}
+
+/* ── THE CHAT SCRIM, BELOW THE BOUNDARY ONLY ─────────────────────────────────────────────────────
+ * Above 1280 the drawer docks, the article keeps its measure and both are live at once — nothing to
+ * dim. Below it the drawer floats over the page, and at 1024 a 368px panel covers 352px of a 692px
+ * reading column: every line of prose is cut vertically at 340px. Half a line is not a readable
+ * line, so the page is dimmed and `lib/chat-panel.ts` inerts it. The drawer already declares itself
+ * `aria-modal` there; a modal with nothing dimmed behind it tells a screen reader one thing and an
+ * eye another.
+ *
+ * ON `body::before`, AND THE FIRST VERSION WAS ON `.cd::before` AND PAINTED NOTHING. `.cd` carries a
+ * `transform` for its entry animation, which makes it the containing block for any `position: fixed`
+ * descendant — so `inset: 0` resolved against the drawer's own 368px box and the scrim sat behind
+ * the drawer's opaque background at exactly its size. Verified in both themes before this moved:
+ * the page behind was undimmed white at 1024. `body` is not transformed, so the same declaration
+ * finally means the viewport. It is the same class of defect as `.ph-panels` in
+ * `specs/16-responsive.md` §8 — a length that reads as absolute and is measured against the box
+ * that just sized itself.
+ *
+ * `z-index: 999`, one under the drawer's 1000, so it covers the page and never the panel.
+ */
+@media (max-width: 1279.98px) {
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgb(0 0 0 / 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  html[data-chat='open'] body::before {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { transition-duration: 0s; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   THE TYPE LADDER STEPS AT THE BOUNDARY — ported from `apps/web` (Oleh, 2026-08-26)
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+   "Бажано, щоб це було схоже на те, як поводить себе основний застосунок… щоб якщо юзер відкрив
+   документацію з застосунку, в нього були абсолютно ті самі відчуття."
+
+   This is `apps/web/src/styles/global.css:203-212` — the seven-declaration boundary remap that
+   `specs/16-responsive.md` §2 prints as a table — applied to the portal's copy of the same ladder.
+   Nothing here is invented: same seven rungs, same seven values, same 1279.98px boundary.
+
+     token        ≥ 1280    ≤ 1279.98
+     --bo-t-11      11         11      ← does not move
+     --bo-t-12      12         12      ← does not move: the floor
+     --bo-t-13      13         12
+     --bo-t-14      14         13
+     --bo-t-16      16         14
+     --bo-t-18      18         16
+     --bo-t-20      20         18
+     --bo-t-24      24         20
+     --bo-t-32      32         24
+
+   THE FLOOR IS 12 AND IT IS OLEH'S OWN RULING, quoted in §2: «все, що читає юзер очима … все має
+   бути мінімум 12». `--bo-t-11` is the only rung under it and nothing a person reads as prose lands
+   there; it is for uppercase micro-labels, which is what PRODUCT.md's Twelve-Pixel Floor allows.
+
+   WHAT IT MEANS FOR THE DOCS, said plainly because it reverses a named rule. `PRODUCT.md` and
+   `specs/16-responsive.md` §2 both carried **the Docs-Never-Compact Rule** — "16px stays 16px at
+   every width". Both are amended in the same change rather than left to contradict this sheet. The
+   rule's own stated reason was about 1280 on a 13" laptop and it never measured a phone; what
+   overrules it is the parity argument, which it did not weigh.
+
+   Measured on `/start/what-baseout-is/` at 390 before: h1 32 · lede 18 · prose 16 · h2 24, every
+   one of them identical to 1440. After: h1 24 · lede 16 · prose 14 · h2 20.
+
+   FOUR RUNGS THE BRIDGE NEVER MAPPED come with it. `--sl-text-base`, `-lg`, `-xl` and `-2xl` were
+   left at Starlight's own rem values, so anything sized with them would have stayed put while
+   everything around it moved — a scale that steps in one half of itself is worse than one that does
+   not step at all. They are pointed at the ladder here so there is one map and one step. */
+@media (max-width: 1279.98px) {
+  :root {
+    --bo-t-13: 12px;
+    --bo-t-14: 13px;
+    --bo-t-16: 14px;
+    --bo-t-18: 16px;
+    --bo-t-20: 18px;
+    --bo-t-24: 20px;
+    --bo-t-32: 24px;
+  }
+}
+
+/* The four Starlight rungs the bridge left un-mapped, pointed at the ladder so they step with it. */
+:root,
+[data-theme='light'],
+[data-theme='baseout-light'],
+:root[data-theme='dark'],
+[data-theme='dark'],
+[data-theme='baseout'] {
+  --sl-text-base: var(--bo-t-16);
+  --sl-text-lg: var(--bo-t-18);
+  --sl-text-xl: var(--bo-t-20);
+  --sl-text-2xl: var(--bo-t-24);
+}
+
+/* ── AND THE READING SIZE HAS TO BE APPLIED, BECAUSE STARLIGHT NEVER APPLIES IT ──────────────────
+ * `--sl-text-body` is DECLARED in `props.css:74` and then used by nothing: no rule in Starlight's
+ * own sheets sets a font size from it, so the prose was simply inheriting the browser's 16px.
+ * Measured after the ladder started stepping and before this rule: every token correct
+ * (`--sl-text-body` resolving to 14px at 390) and `.sl-markdown-content` still painting 16 — a
+ * variable that is right and reaches nothing, which is §10's whole subject.
+ *
+ * ON `body`, WHICH IS THE PARITY THE ASK WAS ABOUT. `apps/web` compacts the whole surface below the
+ * boundary, not the article inside it, and the request was that the manual feel like the same
+ * product. Scoping this to `.sl-markdown-content` would step the prose and leave everything that
+ * merely inherits — a form label, a card's sentence, a footer line — at the browser default, which
+ * is the half-stepped scale the block above refuses.
+ *
+ * Nothing that sets its own size is affected: the portal's components size themselves from
+ * `--bo-t-*`, so they were already stepping one line earlier.
+ */
+body {
+  font-size: var(--sl-text-body);
+}
+
+/* ── THE PAGE FRAME IS 24 → 12, THE SAME MOVE AND THE SAME NUMBER AS THE PRODUCT ─────────────────
+ * `apps/web/src/styles/global.css` below the boundary: `#layout-content { padding: 12px }`, with
+ * the reason stated beside it — "Type alone is half of density. The page frame, the panels and the
+ * rows all carry desktop padding, so shrinking the words inside a 20px gutter just makes the words
+ * smaller."
+ *
+ * Starlight gives every `.content-panel` `padding: 1.5rem var(--sl-content-pad-x)`, and a docs page
+ * stacks TWO of them — the title block and the article — so 96px of that padding is spent above the
+ * first sentence. Measured at 390 before this rule: the first paragraph began at y=326, **39% of an
+ * 844px screen gone before any content**, against 290 on `/backups` in the product, which spends its
+ * share on a toolbar rather than on air.
+ *
+ * 12 is on the 4px grid and is the number the product already uses; nothing is minted. The two
+ * remaining costs above the fold are the 104px header and the contents bar, and both are structure
+ * rather than padding.
+ */
+@media (max-width: 1279.98px) {
+  .content-panel {
+    padding: 12px;
+  }
+}
+
+/* ── PREV / NEXT SIT SIDE BY SIDE AS SOON AS THEY FIT ────────────────────────────────────────────
+ * Oleh, 2026-08-26: "давай якось поставимо ці штуки в один ряд, коли в нас є багато місця".
+ *
+ * `Pagination.astro` writes `grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr))`.
+ * 18rem is 288px, so two columns need 592px of reading column — and the result was not merely
+ * conservative, it was NON-MONOTONIC, because the docs sidebar appears at Starlight's 50rem and
+ * takes the column back down. Measured on `/backups/how-backups-work/`:
+ *
+ *     viewport   column   layout
+ *       600       576      1-up
+ *       700       676      2-up
+ *       800       476      1-up      ← the sidebar arrives and they stack again
+ *       900       576      1-up
+ *      1024       700      2-up
+ *
+ * Widening the window made the pager worse twice on the way.
+ *
+ * 288 WAS TUNED TO STARLIGHT'S TYPE, NOT OURS. It sized a 24px `.link-title`; ours is 16px since the
+ * pagination pass earlier today, so the same card needs far less. Measured directly — the width at
+ * which each real title wraps to at most two lines:
+ *
+ *     Signing in · Attachments · Welcome · Glossary        200px
+ *     How Baseout is organized                             204px
+ *     Platform differences at a glance                     276px
+ *     An API and MCP manual, separate from the product one 380px   ← one changelog entry
+ *
+ * 15rem = 240px. It keeps every ordinary docs title on two lines, lets the two longest take three
+ * (a nav label, not prose — three lines is a taller card, not an unreadable one), and asks for a
+ * 496px column, which every width above a phone has. Chasing the 380px outlier would mean sizing
+ * the whole pager for one changelog entry.
+ *
+ * At 390 the column is 366 and they still stack, which is correct: two 175px cards is not a row.
+ */
+.pagination-links {
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+}
+
+/* ── THE CHANGELOG HUB IS GROUPED BY MONTH ───────────────────────────────────────────────────────
+ * Dan, 2026-08-26: "maybe it's more grouped by the year and month on this page. Be able to dive
+ * down into them and newest first."
+ *
+ * The rows themselves are unchanged — `LinkCard` is Starlight's, and re-implementing a card to gain
+ * a heading above a run of them would be owning three states to add one. What is new is the
+ * divider, and the whole job of these two rules is to make it read as a divider rather than as a
+ * section of the document: a changelog is one list with dates cut into it, not a page with chapters.
+ *
+ * IT IS NOT UPPERCASE, and that is the rule rather than a preference. `--bo-t-11` is this portal's
+ * uppercase-micro-label rung and nothing else is allowed to be; "August 2026" is a name a reader
+ * reads, so it is set in the same case they would say it in.
+ *
+ * THE HAIRLINE CARRIES THE GROUPING, not the weight. Starlight's own `h2` in prose is 24px, which
+ * on a hub of three cards would out-shout every entry title under it — the month is the shelf, the
+ * entry is the thing on it. 16px at 700 sits one rung above the card titles' 16/600 and reads as
+ * their heading without competing. It takes `--bo-base-content` — the strongest text, which is what
+ * the bridge points `--sl-color-white` at — rather than a grey: a shelf label quieter than the
+ * things on the shelf stops working as a label.
+ *
+ * The first month gets no top gap because the sentence above it already spent one; Starlight's
+ * general-sibling rhythm (`* + *`) is what would otherwise stack two. */
+.sl-markdown-content .cl-month-label {
+  margin: 40px 0 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--bo-base-300);
+  font-size: var(--bo-t-16);
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--bo-base-content);
+}
+
+.sl-markdown-content .cl-month:first-of-type .cl-month-label {
+  margin-top: 24px;
 }

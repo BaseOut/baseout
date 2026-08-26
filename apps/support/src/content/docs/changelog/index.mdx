@@ -1,0 +1,36 @@
+---
+title: Changelog
+description: What shipped in Baseout, and what changed in its documentation and this support portal.
+sidebar:
+  label: All updates
+  order: 0
+---
+
+import { LinkCard } from '@astrojs/starlight/components';
+import { changelogEntries, groupByMonth, formatEntryDate } from '../../../lib/changelog';
+
+export const months = groupByMonth(await changelogEntries());
+export const count = months.reduce((total, month) => total + month.entries.length, 0);
+
+This is the record of what changed: what shipped in the product, what was written in the
+documentation, what moved, and where to find it now. Each entry is a page of its own, with one
+section per change.
+
+{count} entries, newest first.
+
+{months.map((month) => (
+  <section class="cl-month">
+    {month.label && <h2 class="cl-month-label" id={month.key}>{month.label}</h2>}
+    {month.entries.map((entry) => (
+      <LinkCard
+        href={entry.href}
+        title={entry.title}
+        description={[
+          entry.date ? formatEntryDate(entry.date) : null,
+          `${entry.readingMinutes} min read`,
+          entry.description,
+        ].filter(Boolean).join(' · ')}
+      />
+    ))}
+  </section>
+))}

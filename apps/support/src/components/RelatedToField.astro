@@ -19,7 +19,14 @@
  * the board's "Suggest a platform" tile: that reader's request is a platform NAME, and every other
  * option on this list is wrong for them.
  */
-import { PLATFORMS } from '../lib/platforms';
+/* THE DOCUMENTED SUBSET, NOT THE IDENTITY CATALOGUE. `lib/platforms.ts` carries every platform we
+   have a mark and a vocabulary for, including ones the product does not support yet — the
+   `/handoff` comparison needs them to show how the portal scales. Offering one of those here would
+   invite somebody to report a broken Smartsheet backup for a product that does not back up
+   Smartsheet, and the form already has the honest home for that reader: the `new-platform` option
+   below, with a name field. Measured 2026-08-21, the hour two identities were added: both appeared
+   in this radio list as supported platforms. See `lib/documented-platforms.ts`. */
+import { DOCUMENTED_PLATFORMS } from '../lib/documented-platforms';
 import PlatformMark from './PlatformMark.astro';
 import Icon from './Icon.astro';
 
@@ -46,7 +53,7 @@ const group = `about-${kind}`;
     </label>
 
     {
-      PLATFORMS.map((p) => (
+      DOCUMENTED_PLATFORMS.map((p) => (
         <label class="rt-opt">
           <input type="radio" name="about" value={p.id} data-related-opt />
           <span class="rt-face">

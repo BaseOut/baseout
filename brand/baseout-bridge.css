@@ -289,17 +289,23 @@
   --sl-text-h2: var(--bo-t-24);
   --sl-text-h1: var(--bo-t-32);
 
-  /* 2.3 THE ONE DECISION IN THIS FILE THAT IS A JUDGEMENT CALL, AND IT IS OPEN.
-     `--sl-text-body` is deliberately NOT `var(--bo-t-16)`. The product's 16px rung COMPACTS to 14px
-     below 1280px, which is correct for a dense admin tool and wrong for documentation — it would set
-     prose at 14px on a 13" laptop, which is most laptops. So the reading size is pinned at 16px and
-     does not step.
+  /* 2.3 CLOSED BY OLEH, 2026-08-26. The pin is gone and this is the one line that block predicted.
 
-     This is my assumption, not Oleh's ruling — he has the question open. Reverting it is this one
-     line. If he chooses to let docs compact with the product, the trade he is accepting is smaller
-     prose on the machine most people read on; if he keeps the pin, the trade is that a docs page and
-     an app page show different body sizes at the same width. Neither is free. */
-  --sl-text-body: 16px;
+     What stood here: `--sl-text-body` was deliberately NOT `var(--bo-t-16)`, because the product's
+     16px rung compacts to 14px below 1280 and that would set prose at 14px on a 13" laptop. It was
+     written as an assumption with the question left open, and it named the two trades: let the docs
+     compact and accept smaller prose on the machine most people read on, or keep the pin and accept
+     that a docs page and an app page show different body sizes at the same width.
+
+     Oleh took the first, and gave the reason the block did not have: a reader who opens the
+     documentation FROM the app should not feel they have changed products. Measured on a phone, the
+     pin was not a subtle difference — the manual rendered its page title at 32px and its prose at
+     16px at 390 exactly as at 1440, beside an app whose title is 14 and whose body is 13.
+
+     The rungs themselves step in `apps/support/src/styles/support.css`; this line only stops
+     exempting prose from them. `--sl-text-body-sm`, `--sl-text-code` and `--sl-text-code-sm` were
+     already on the ladder and needed no change — they simply start moving with it. */
+  --sl-text-body: var(--bo-t-16);
   --sl-text-body-sm: var(--bo-t-14);
   --sl-text-code: var(--bo-t-14);
   --sl-text-code-sm: var(--bo-t-13);

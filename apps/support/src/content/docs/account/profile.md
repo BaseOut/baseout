@@ -7,6 +7,12 @@ Your profile is the part of Baseout that is about you rather than about your wor
 an email address, and the preferences that follow you between Spaces. It is identical whichever
 platform you back up, and nothing on this page changes if you connect a second one.
 
+In this guide, you will:
+
+- Change your display name, and know what depends on it
+- Change the email address your sign-in links go to
+- See what changing the address deliberately does not touch
+
 ## Your name
 
 The display name is what teammates see beside anything you did: who invited whom, who started an
@@ -15,14 +21,19 @@ depends on it.
 
 ## Your email address is your account
 
-Baseout identifies you by email address, and that has one consequence worth stating up front:
+Baseout identifies you by email address, and that has one consequence worth stating up front.
+
+:::note
 `you@company.com` and `you@personal.com` are two accounts, not two addresses for one person. They
 have separate organizations, separate Spaces and separate history.
+:::
 
 Because there is no password, the address is also the credential. A magic link goes to it, and
 whoever reads the inbox can sign in. See [Sign-in methods](/account/sign-in-methods/).
 
-So changing it is not an edit in the ordinary sense. It moves where sign-in links are sent, which
+### Changing it
+
+Changing it is not an edit in the ordinary sense. It moves where sign-in links are sent, which
 means it is confirmed from the new address before it takes effect, and it does not change what your
 account contains.
 
@@ -42,7 +53,7 @@ account contains.
 **Space** settings belong to a Space, and **Notifications** are per person per Space, so two people
 watching the same Space can be told about different things. See [Settings](/account/settings/).
 
-## Next
+## Next steps
 
 - [Sign-in methods](/account/sign-in-methods/): how you get in, and what to do when you cannot
 - [Sessions and devices](/account/sessions/): where you are currently signed in

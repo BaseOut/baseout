@@ -10,10 +10,48 @@
  * documentation rather than pinning a control the reader has already used. The notice it raises
  * when something is hidden is the part that must not scroll out of reach, and that one is repeated
  * on the page itself.
+ *
+ * IT USED TO BE ABSENT IN THE API/MCP MANUAL, AND OLEH OVERRULED THAT ON 2026-08-25: "the client
+ * asked for it, because the content there can differ per platform." The old argument is kept below
+ * because it is the one to re-read if this ever looks wrong, and because the objection it raised is
+ * real and still unpaid:
+ *
+ *   "`routeData.ts` gives that manual its own two-group tree, and not one page in it carries a
+ *    `platform` frontmatter field — so the control would render, accept a choice, and change nothing
+ *    visible. A filter that demonstrably does nothing teaches a reader that the filter does nothing,
+ *    which is a lesson they then carry back into the product manual where it is false."
+ *
+ * WHAT ACTUALLY ANSWERS IT is that the filter is a SCOPE, not a promise that this page varies. Of the
+ * ninety pages in the product manual, fifteen name no platform at all and the control has always
+ * coexisted with them: a reader standing on one of those sets a scope and sees nothing move, and that
+ * has never taught anybody the control is broken. The API manual is the same situation with a
+ * different count, and the count changes the day an authorization page is written per platform, which
+ * is the change the client is asking us to be ready for. Nothing here has to change then.
+ *
+ * SO THE HONEST STATEMENT OF WHAT SHIPS TODAY: the control appears above the product and API/MCP
+ * trees and filters nothing in the API one, because no page there declares a `platform` yet. Verify
+ * that with a count rather than by eye — `grep -rl '^platform:' src/content/docs/api
+ * src/content/docs/mcp` is zero today and is the thing to re-run before assuming this is broken.
+ *
+ * ── IT IS STILL ABSENT IN THE CHANGELOG, AND FOR A REASON THE ARGUMENT ABOVE DOES NOT COVER ────
+ * The scope argument works because a documentation page CAN be about one platform, so a reader
+ * narrowing the manual is asking a question the manual can answer. A changelog entry cannot be: it
+ * is a dated record of something that happened, and a release either happened or it did not. There
+ * is no version of it that is true for Airtable and false for Notion, so there is nothing for a
+ * scope to select. That is a different claim from "no page carries the field yet" — this one does
+ * not become false when somebody writes more pages.
+ *
+ * SUPPRESSED BY MANUAL, NOT BY PREFIX. `manualForPath` is the registry three other files already
+ * agree through (`lib/api-docs.ts` carries the argument); testing `!== 'changelog'` here rather than
+ * matching `/changelog` means a fourth manual has to opt IN, which is the safer direction to be
+ * wrong in for a control whose failure mode is silently filtering nothing.
  */
 import Default from '@astrojs/starlight/components/Sidebar.astro';
 import PlatformFilter from './PlatformFilter.astro';
+import { manualForPath } from '../lib/api-docs';
+
+const showFilter = manualForPath(Astro.url.pathname) !== 'changelog';
 ---
 
-<PlatformFilter />
+{showFilter && <PlatformFilter />}
 <Default><slot /></Default>

@@ -4,7 +4,7 @@ description: What an admin can do that a member cannot, and which settings the s
 ---
 
 An organization has more than one person in it, and not everything in it should be changeable by
-everybody. Baseout expresses that as a split between ordinary members and admins.
+everybody. Baseout expresses that as a split between two roles, `member` and `admin`.
 
 ## Where the split shows up
 
@@ -20,9 +20,10 @@ The clearest statement of it is in Settings, which is divided by **what a settin
 | **Space** | The Space's. Scope, schedule, destination, retention. |
 | **Notifications** | Yours, per Space. Two people watching one Space can be told different things. |
 
-That is the answer to the most common question here, which is why a setting you can see is not one
-you can change. The panel is visible so the organization's configuration is legible to everyone in
-it; changing it is an admin act.
+:::note
+A setting you can see is not always one you can change. The panel is visible so the organization's
+configuration is legible to everyone in it; changing it is an admin act.
+:::
 
 ## What an admin does
 
@@ -47,14 +48,14 @@ private ClickUp Space cannot back it up either. See
 
 ## What is not settled yet
 
-The full list of roles, whether there is anything between member and admin, and the screen for
+The full list of roles, whether there is anything between `member` and `admin`, and the screen for
 changing somebody's role are not decided. What is settled is the split above, which the product
 already enforces.
 
 This page will name the roles once they exist rather than inventing a hierarchy that then has to be
 un-invented.
 
-## Next
+## Next steps
 
 - [Invitations](/account/organization/invitations/): bringing somebody in
 - [Transferring ownership](/account/organization/transferring-ownership/): handing it over

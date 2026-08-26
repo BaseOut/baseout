@@ -1,0 +1,221 @@
+---
+/**
+ * One case on the list.
+ *
+ * A CARD, NOT A TABLE ROW. A customer holds one to five cases, this portal owns no table vessel, and
+ * `RequestCard.astro` already proved the anatomy on the board: a context rail, a body, a record rail.
+ * This is a SIBLING of that component on the same grid — not a call into it. `RequestCard` is
+ * `FeatureRequest`-typed and speaks the roadmap's vocabulary; a case is a different noun with a
+ * different state machine, and widening either type to carry both would let a board render
+ * `Awaiting your reply`.
+ *
+ * THE WHOLE CARD IS THE LINK, done with an overlay on the subject's own anchor rather than by
+ * wrapping the card in one — the same technique `RequestCard` uses, and for the same reason: a card
+ * that lights up on hover while only its title takes the click is a promise the card does not keep.
+ *
+ * ── A PAPERCLIP AND A COUNT. NEVER FILENAMES ───────────────────────────────────────────────────
+ * `pattern-changelog-timeline` settled this from competitor evidence that was unanimous both ways:
+ * "nobody puts filenames in a dense row; the most Mercury and ClickUp do is a COUNT". Chips live on
+ * the case, a count lives here, and never both.
+ *
+ * ARGUED DEVIATION, stated rather than drifted: the catalog puts the filenames in the row's TOOLTIP.
+ * This app has no tooltip component and carries no native `title=` anywhere — `pages/handoff.astro:
+ * 1046-1048` already ruled that its hints are printed rather than hovered. Printing five filenames in
+ * a row is exactly what the rule above forbids, so the names stay on the case, one click away, where
+ * the chips already are. Nothing is lost that the row was ever allowed to show.
+ *
+ * ── `Awaiting your reply` IS THE ONLY WARNING-TONED THING ON THIS PAGE ─────────────────────────
+ * B's Snowflake finding — "the 'your turn' marker belongs on the row, next to the subject, not buried
+ * in a status column" — DISSOLVES in a card layout rather than being obeyed or rejected: there is no
+ * status column to bury it in. The badge is carried once, in the record rail.
+ *
+ * ── THE SNIPPET STEPS BACK PAST AN AUTO-REPLY ──────────────────────────────────────────────────
+ * A row summarised by somebody's out-of-office tells the reader nothing about their case, so the
+ * snippet is the last message a PERSON wrote. The auto-reply is still on the thread, still stamped,
+ * still counted as activity — it is only disqualified from speaking for the case.
+ */
+import Icon from './Icon.astro';
+import TicketStatusBadge from './TicketStatusBadge.astro';
+import type { Ticket } from '../data/tickets';
+import { lastHumanMessage } from '../data/tickets';
+import { fmtDay, isoAttr } from '../lib/ticket-time';
+import type { IconName } from '../lib/icons';
+
+interface Props {
+  ticket: Ticket;
+}
+
+const { ticket: t } = Astro.props;
+
+const last = lastHumanMessage(t);
+const snippet = last?.body ?? '';
+const who = last?.sender === 'support' ? (last.senderName ?? 'Baseout Support') : 'You';
+
+const attachments = t.messages.reduce((n, m) => n + m.attachments.length, 0);
+
+const ABOUT_GLYPH: Record<'space' | 'run', IconName> = {
+  space: 'folder',
+  run: 'database-backup',
+};
+---
+
+<article class="tr" data-ticket-status={t.status}>
+  <div class="tr-body">
+    <h3 class="tr-subject">
+      <a class="tr-link" href={`/requests/${t.ref}/`}>{t.subject}</a>
+    </h3>
+    <p class="tr-snippet"><span class="tr-who">{who}:</span> {snippet}</p>
+    <p class="tr-meta">
+      <span class="tr-ref">{t.ref}</span>
+      {
+        /* THE OBJECT IT IS ABOUT — where there is one. A row that invents an object to fill a slot
+           is worse than a row with an empty one, so most cases show nothing here. */
+        t.about && (
+          <span class="tr-about">
+            <span class="tr-about-ic"><Icon name={ABOUT_GLYPH[t.about.kind]} size={14} /></span>
+            {t.about.label}
+          </span>
+        )
+      }
+      {
+        attachments > 0 && (
+          <span class="tr-atts">
+            <span class="tr-about-ic"><Icon name="paperclip" size={14} /></span>
+            {attachments}
+          </span>
+        )
+      }
+    </p>
+  </div>
+
+  <div class="tr-rail">
+    <TicketStatusBadge status={t.status} size={13} />
+    {/* LAST ACTIVITY, never raised. A customer opens this page to find the one that MOVED. */}
+    <time class="tr-when" datetime={isoAttr(t.lastActivityAt)}>{fmtDay(t.lastActivityAt)}</time>
+  </div>
+</article>
+
+<style>
+  .tr {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+  }
+
+  .tr:hover {
+    border-color: var(--bo-primary);
+  }
+
+  .tr:has(.tr-link:focus-visible) {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  .tr-body {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .tr-subject {
+    margin: 0;
+    font-size: var(--bo-t-14);
+    font-weight: 650;
+    line-height: 1.4;
+  }
+
+  .tr-link {
+    color: var(--bo-base-content);
+    text-decoration: none;
+  }
+
+  /* The overlay is what makes the whole card the target. It is on the ANCHOR rather than around the
+     card, so nothing here has to be a link containing another control. */
+  .tr-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--bo-r-12);
+  }
+
+  .tr-link:focus-visible {
+    outline: none;
+  }
+
+  .tr-snippet {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    margin: 4px 0 0;
+    font-size: var(--bo-t-13);
+    line-height: 1.5;
+    color: var(--bo-muted);
+  }
+
+  .tr-who {
+    font-weight: 600;
+    color: var(--bo-muted-strong);
+  }
+
+  .tr-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 8px 0 0;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  /* The quotable id, in the mono-ish register a string meant to be copied deserves. */
+  .tr-ref {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+
+  .tr-about,
+  .tr-atts {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* ds-ok: 6px optical icon↔label gap, matching the file chip. */
+  }
+
+  /* A wrapper this file owns — a scoped selector ending inside `<Icon>` would match nothing. */
+  .tr-about-ic {
+    display: inline-flex;
+    opacity: 0.7;
+  }
+
+  .tr-rail {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .tr-when {
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 34rem) {
+    .tr {
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .tr-rail {
+      flex-direction: row;
+      align-items: center;
+      align-self: stretch;
+      justify-content: space-between;
+    }
+  }
+</style>

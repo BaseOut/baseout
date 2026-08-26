@@ -36,26 +36,44 @@
  * chips do on a documentation page, where the reader is mid-task and already knows what they want.
  * On the one screen a first visitor sees, subtracting is the wrong instrument.
  *
- * TWO VARIANTS SHIP TOGETHER behind the floating switch at the foot of this file, and
- * `lib/shot-switch.ts` carries the argument for each. They differ by ONE thing: what clicking a
- * platform card does. `reactive` — the card is a door and takes you to that platform's connecting
- * page. `filter` — the card selects, the page stays, the steps take that platform's nouns and its
- * own ten pages join the documentation directory below. Both write the SAME preference, so
- * switching variant mid-session cannot leave a reader in a contradictory state.
+ * ── ONE LANDING. THE `filter` VARIANT IS DELETED (Oleh, 2026-08-21) ─────────────────────────
+ * From 2026-08-19 two treatments shipped together behind a floating switch, differing by exactly
+ * one thing: what a click on a platform card did. `reactive` — the card is a DOOR, it narrows the
+ * shared preference and takes the reader into that platform's documentation. `filter` — the card
+ * was a SELECTOR, the page stayed, and the strip below re-read the preference in place.
  *
- * Both are server-rendered and the stylesheet decides which is seen, so switching costs no
- * navigation; a pre-paint inline script stamps the choice on `<html>` BEFORE this markup is parsed,
- * so the page cannot flash the other one. All of it is built to be deleted in one commit the moment
- * the client picks.
+ * Dan, on the live portal: V2 will not work at three-plus platforms, and the first option with
+ * quick access to a platform's documentation is the one to keep. `reactive` wins, and the switch,
+ * `lib/shot-switch.ts`, the `?shots=` parameter and the losing markup went in one commit — which is
+ * what a comparison instrument is built for.
+ *
+ * THE MEASURED REASON `filter` LOSES, and it is not a matter of taste: it was a SINGLE-SELECT
+ * CONTROL WRITING A MULTI-SELECT PREFERENCE. Every other platform control in this portal — the docs
+ * sidebar, the search modal, the chat, and the roadmap since 2026-08-21 — is a checkbox list that
+ * can say "Airtable and Notion". The filter cards could say exactly one, so at three-plus platforms
+ * the home page would state LESS than every other surface, and a reader who had ticked two
+ * elsewhere would meet, on the front page, a control that could not represent their own choice.
+ *
+ * WHAT REPLACES ITS ONE GOOD IDEA — a control that scopes without navigating — is the shared
+ * `PlatformPicker` in the hero (`components/SupportHero.astro`), which is that same multi-select
+ * every other surface draws. So the page now carries two DIFFERENT ACTS rather than two versions
+ * of one: the picker says "these are the platforms I care about" and scopes; a card says "take me
+ * there now" and narrows on the way out because it is a door.
+ *
+ * The pre-paint inline script below survives the deletion, minus its variant half: it still stamps
+ * the named platform on `<html>` before this markup is parsed, so the re-labelling below is never
+ * seen flipping. The attribute is `data-bo-platform` — it was `data-bo-platform`, named after a
+ * switch that no longer exists, and the platform reactivity was never part of the variant.
  */import { getCollection } from 'astro:content';
 import { BANDS, PLATFORM_TOPICS, ROADMAP_TILES, WAYS_OUT } from '../../lib/landing';
 import { STEPS, GLOSSARY_ROWS, bodyParts, nounReadings } from '../../lib/landing-steps';
-import { PLATFORMS } from '../../lib/platforms';
 import Icon from '../Icon.astro';
 import PlatformMark from '../PlatformMark.astro';
+/* DOCUMENTED SUBSET, NOT THE IDENTITY CATALOGUE — see `lib/documented-platforms.ts`. A chip for a
+   platform with no pages is a filter that hides everything and offers nothing back. */
+import { DOCUMENTED_PLATFORMS } from '../../lib/documented-platforms';
 import RequestCard from '../RequestCard.astro';
 import PlatformStart from '../PlatformStart.astro';
-import ShotSwitch from './ShotSwitch.astro';
 import type { IconName } from '../../lib/icons';
 
 /** See the header: on while A is a candidate would make it lose on the content, not the layout. */
@@ -124,7 +142,10 @@ const EXITS = WAYS_OUT.filter((w) => w.href !== '/roadmap/');
    same frame, because there is no ClickUp or Notion product screen and there will not be one: the
    features do not exist yet, and a fabricated screenshot of a feature that does not exist is the
    one mistake a support portal cannot recover from. */
-const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
+/* Airtable is the reader's assumed default, so the glossary teaches the OTHER vocabularies — and
+   only the ones with pages behind them. Derived, because `PLATFORMS` now carries identities the
+   product does not support: at five it would teach a reader two vocabularies they can never use. */
+const GLOSSARY_PLATFORMS = DOCUMENTED_PLATFORMS.filter((p) => p.id !== 'airtable');
 
 
 /* NO COUNT IN THE SUBHEAD. It said "22 pages", which is the number of links this block draws and
@@ -139,12 +160,14 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
     `margin-top: 4px` and step 01 did not, so the row of three sat 4px out of true and the cause was
     nowhere in this file. It is the same rule that made the roadmap board look crooked in August. */}
 {/* THE PRE-PAINT STAMP, and it is `is:inline` for the one reason that justifies an unchecked
-    script: a module script is deferred, so it runs AFTER this markup has painted, and both the
-    treatment switch and the platform re-labelling would be visible flipping. Stamped here, before
-    the strip below is even parsed, the browser has the answer at first paint and the stylesheet
-    does the rest. `lib/shot-switch.ts` and `lib/landing-strip.ts` are the authority a moment later
-    and will correct anything this cheap read got wrong; the two storage keys are repeated verbatim
-    because an inline script cannot import them.
+    script: a module script is deferred, so it runs AFTER this markup has painted, and the platform
+    re-labelling would be visible flipping. Stamped here, before the strip below is even parsed, the
+    browser has the answer at first paint and the stylesheet does the rest. `lib/landing-strip.ts`
+    is the authority a moment later and will correct anything this cheap read got wrong; the storage
+    key is repeated verbatim because an inline script cannot import it.
+
+    ITS VARIANT HALF IS GONE with the `filter` treatment (2026-08-21). What is left is the half that
+    was never about the variant: which platform the reader has named.
 
     Two platforms selected leaves the stamp OFF, which is the neutral copy: "which Bases or Spaces
     to back up" is not a sentence, and a reader with two platforms on has not told us whose nouns
@@ -152,21 +175,43 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
 <script is:inline>
   (function () {
     var r = document.documentElement;
+    /* The three that have documentation, repeated verbatim because an inline script cannot import
+       `DOCUMENTED_PLATFORM_IDS`. Same admitted duplication as the storage key below, same absence
+       of a gate that would catch it drifting. */
+    var DOC = ['airtable', 'clickup', 'notion'];
     try {
       var q = new URLSearchParams(window.location.search);
-      var s = q.get('shots');
-      if (s !== 'filter' && s !== 'reactive') s = window.localStorage.getItem('bo-landing-shots');
-      r.dataset.shots = s === 'filter' || s === 'reactive' ? s : 'reactive';
 
-      var p = q.get('platform');
-      if (!p) {
-        var raw = window.localStorage.getItem('bo-platforms');
-        var list = raw ? JSON.parse(raw) : null;
-        p = Array.isArray(list) && list.length === 1 ? list[0] : null;
+      var raw = window.localStorage.getItem('bo-platforms');
+      var stored = raw ? JSON.parse(raw) : null;
+      var fromUrl = q.get('platform');
+      var chosen = fromUrl
+        ? fromUrl.split(',')
+        : Array.isArray(stored)
+          ? stored
+          : [];
+
+      /* THE ONE-PLATFORM STAMP, unchanged: the steps take a platform's nouns only when the reader
+         has named exactly one, because "which Bases or Spaces to back up" is not a sentence. */
+      var only = chosen.length === 1 ? chosen[0] : null;
+      if (DOC.indexOf(only) !== -1) r.dataset.boPlatform = only;
+
+      /* THE STRIP'S NARROWING. `?cards=` is the layout-review parameter and it OWNS the strip while
+         it is present — presence, not value, so this and `lib/landing-strip.ts` cannot disagree.
+         Nothing chosen, everything chosen, or a choice that names no documented platform all leave
+         the block drawing every card: an empty selection means no filter (the picker's own rule),
+         and a block that empties itself is the one failure this must not have. */
+      if (!q.has('cards')) {
+        var shown = DOC.filter(function (id) {
+          return chosen.indexOf(id) !== -1;
+        });
+        if (shown.length && shown.length < DOC.length) {
+          r.dataset.boPlatforms = shown.join(' ');
+          r.style.setProperty('--ps-shown', String(shown.length));
+        }
       }
-      if (p === 'airtable' || p === 'clickup' || p === 'notion') r.dataset.shotPlatform = p;
     } catch (e) {
-      r.dataset.shots = 'reactive';
+      /* No stamp is the neutral reading: every noun ordinary, every card drawn. */
     }
   })();
 </script>
@@ -287,7 +332,7 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
               ))}
             </ul>
 
-            {PLATFORMS.map((p) => {
+            {DOCUMENTED_PLATFORMS.map((p) => {
               const topics = platformTopics(band.key, p.id);
               return topics.length ? (
                 <div class="ja-plat" data-plat={p.id}>
@@ -348,7 +393,7 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
     <ul class="vb-road">
       {ROADMAP_TILES.map(({ item }) => (
         <li>
-          <RequestCard r={item} />
+          <RequestCard r={item} teaser />
         </li>
       ))}
     </ul>
@@ -378,11 +423,6 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
     </ul>
   </section>
 </div>
-
-{/* OUTSIDE `.vb`, and last in the document. Outside because `.vb` caps the measure and pads the
-    block, and a fixed control has no business inheriting either. Last so it is last in the tab
-    order: a demo toggle must not sit between the reader and the page's real links. */}
-<ShotSwitch />
 
 <script>
   import { mountLandingStrip } from '../../lib/landing-strip';
@@ -680,13 +720,13 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
     display: inline;
   }
 
-  :root[data-shot-platform] .vb-noun[data-for='neutral'] {
+  :root[data-bo-platform] .vb-noun[data-for='neutral'] {
     display: none;
   }
 
-  :root[data-shot-platform='airtable'] .vb-noun[data-for='airtable'],
-  :root[data-shot-platform='clickup'] .vb-noun[data-for='clickup'],
-  :root[data-shot-platform='notion'] .vb-noun[data-for='notion'] {
+  :root[data-bo-platform='airtable'] .vb-noun[data-for='airtable'],
+  :root[data-bo-platform='clickup'] .vb-noun[data-for='clickup'],
+  :root[data-bo-platform='notion'] .vb-noun[data-for='notion'] {
     display: inline;
   }
 
@@ -718,8 +758,8 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
     background: var(--bo-base-100);
   }
 
-  :root[data-shot-platform='clickup'] .vb-glo[data-plat='clickup'],
-  :root[data-shot-platform='notion'] .vb-glo[data-plat='notion'] {
+  :root[data-bo-platform='clickup'] .vb-glo[data-plat='clickup'],
+  :root[data-bo-platform='notion'] .vb-glo[data-plat='notion'] {
     display: flex;
   }
 
@@ -727,8 +767,8 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
      purpose and not by accident: those decide WHICH raster a theme gets, this decides whether a
      raster belongs in this frame at all, and that question is asked first. (0,3,1) against (0,3,0),
      so it would still win if the two blocks were ever reordered. */
-  :root[data-shot-platform='clickup'] .vb-shot > img,
-  :root[data-shot-platform='notion'] .vb-shot > img {
+  :root[data-bo-platform='clickup'] .vb-shot > img,
+  :root[data-bo-platform='notion'] .vb-shot > img {
     display: none;
   }
 
@@ -932,8 +972,15 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
    * they are about ONE platform and appeared because you said so — would be carried by nothing.
    * The heading states it in words; the mark states it before the words are read.
    *
-   * BOTH ATTRIBUTES ARE ON `:root`, so this is (0,3,0) against `.ja-plat`'s (0,1,0) and wins
-   * regardless of order. `data-shot-platform` is set only when the preference names exactly one
+   * IT NO LONGER ASKS WHICH VARIANT IS ON (Oleh, 2026-08-21). It used to require
+   * `data-shots='filter'`, which tied the one genuinely useful idea in that variant to the variant
+   * itself. The directory does not care HOW the reader chose a platform, only that they have — the
+   * hero picker, a card on its way out, or a preference carried in from last week all reach it the
+   * same way. That un-gating is what let the `filter` treatment be deleted whole without losing
+   * anything: this block is the part of it that was worth keeping, and it had already moved out.
+   *
+   * `data-bo-platform` ON `:root` makes this (0,2,0) against `.ja-plat`'s (0,1,0), so it still
+   * wins regardless of order. That attribute is set only when the preference names exactly ONE
    * platform (`lib/landing-strip.ts`), which is why a reader with two on sees the neutral
    * directory rather than an arbitrary half of their choice.
    */
@@ -942,9 +989,9 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
     margin-top: 24px;
   }
 
-  :root[data-shots='filter'][data-shot-platform='airtable'] .ja-plat[data-plat='airtable'],
-  :root[data-shots='filter'][data-shot-platform='clickup'] .ja-plat[data-plat='clickup'],
-  :root[data-shots='filter'][data-shot-platform='notion'] .ja-plat[data-plat='notion'] {
+  :root[data-bo-platform='airtable'] .ja-plat[data-plat='airtable'],
+  :root[data-bo-platform='clickup'] .ja-plat[data-plat='clickup'],
+  :root[data-bo-platform='notion'] .ja-plat[data-plat='notion'] {
     display: block;
   }
 
@@ -980,13 +1027,17 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
    * one shared y and their own heights, which is exactly how the same card behaves in a board
    * column. Measured: y identical on all three, heights 168 · 188 · 168 at 1440.
    */
+  /* STRETCH, NOT START. Three cards side by side that each end where their own summary ran out
+     read as three unrelated blocks; squared off they read as one row of the same thing, which is
+     what a showcase strip is for (Oleh, 2026-08-21). A board COLUMN keeps `start`, because there
+     the cards are stacked and a shared height would mean nothing. */
   .vb-road {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
+    align-items: stretch;
     gap: 16px;
   }
 
@@ -995,7 +1046,11 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
      a `flex: 1` on the CARD, which this file cannot write — a scoped rule for a child component's
      class matches nothing. `min-width: 0` because a grid item's default `auto` minimum is its
      content, and one unbreakable title would otherwise push the row sideways at 390px. */
+  /* `grid` rather than nothing, so the card inside can take `height: 100%` against a definite box.
+     The card's own half of this lives in `RequestCard.astro`, because a rule for a child
+     component's class written here would carry this file's scope hash and match nothing. */
   .vb-road > li {
+    display: grid;
     min-width: 0;
   }
 
@@ -1146,6 +1201,67 @@ const GLOSSARY_PLATFORMS = PLATFORMS.filter((p) => p.id !== 'airtable');
       flex-direction: column;
       align-items: flex-start;
       gap: 8px;
+    }
+  }
+
+  /* ── THE SCREENSHOT STOPS BEING A SCREENSHOT LONG BEFORE A PHONE (2026-08-25) ──────────────────
+   * The three step rasters are 1040x650 and the frame is `aspect-ratio: 16 / 10` of whatever column
+   * it is in. Measured on the built page:
+   *
+   *     width      frame     scale     UI text in the raster
+   *     1440       357.3     34%       ~4px      three-across
+   *     ~960       ~880      85%       ~9px      stacked, one column
+   *     800        ~720      69%       ~8px
+   *     390        356.0     34%       ~4px      measured on an emulated 390x844
+   *
+   * At 390 the whole run panel — its column heads, its five base names, its record counts — is
+   * drawn about four pixels tall. It is not small, it is not there. PRODUCT.md §3: *"If an element
+   * communicates neither state, identity nor affordance, it does not earn its space."* This one is
+   * paying 222px of a 844px screen, three times over, plus ~430KB of raster, to communicate nothing.
+   * Oleh, 2026-08-25: hide it below 50rem.
+   *
+   * WHAT IS NOT HIDDEN, and this is the whole reason the rule is written this way. `.vb-shot` is not
+   * a picture, it is a FRAME with two occupants: the raster for Airtable, and `.vb-glo` — the
+   * platform vocabulary card — for ClickUp and Notion, which is text and is perfectly legible at any
+   * width. Hiding the frame would have taken the card with it and cost a ClickUp reader four rows of
+   * their own words. So the RASTER goes, the frame stops being a frame, and the card becomes an
+   * ordinary block that draws its own edge.
+   *
+   * With Airtable selected the frame then has no visible child and no aspect ratio, so it collapses
+   * to zero and the step is number, title, sentence — measured after: 356x0 at 390.
+   *
+   * AT THE FOOT OF THE SHEET, per this file's own rule four blocks up, and after every base
+   * declaration of `.vb-shot` and `.vb-glo` — `specs/16-responsive.md` §10.1. */
+  @media (max-width: 50rem) {
+    .vb-shot {
+      aspect-ratio: auto;
+      border: 0;
+      background: none;
+      overflow: visible;
+    }
+
+    /* THE SELECTOR IS LONG BECAUSE IT HAS TO OUT-RANK THE THEME SWAP, and it was measured twice
+       before it did. Astro stamps `[data-astro-cid-…]` onto the last compound of every selector in
+       this block, so the real competition is:
+
+         :root[data-theme='dark'] .vb-shot-light[cid]        (0,4,0)   the theme swap
+         .vb-shot > img[cid]                                 (0,2,1)   ← first try, computed `block`
+         :root .vb-shot > img[cid]                            (0,3,1)   ← second try, also `block`
+         :root .vb-step .vb-shot > img[cid]                   (0,4,1)   this one
+
+       A class-count of four with one element beats a class-count of four with none, at every theme
+       and both platform states, without an `!important` and without depending on source order. The
+       platform-swap rule below the theme block wins the same fight the same way and says so. */
+    :root .vb-step .vb-shot > img { display: none; }
+
+    /* Out of the absolute frame and into the flow. The `inset: 0` it carried was how it filled a box
+       with a fixed ratio; there is no box now. */
+    .vb-glo {
+      position: static;
+      inset: auto;
+      margin-top: 16px;
+      border: 1px solid var(--bo-base-300);
+      border-radius: var(--bo-r-8);
     }
   }
 </style>

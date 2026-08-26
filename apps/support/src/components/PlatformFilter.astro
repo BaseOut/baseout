@@ -1,6 +1,6 @@
 ---
 /**
- * "Show docs for" — the platform chips above the documentation tree.
+ * "Show docs for" — the platform control above the documentation tree.
  *
  * IT SUBTRACTS, IT NEVER SUBSTITUTES, and that distinction is the whole design. A platform DROPDOWN
  * scopes the site: pick ClickUp and the docs claim to be ClickUp's, which is false for the 15 of our
@@ -11,7 +11,19 @@
  *
  * A multi-select that starts with everything ON has neither problem. The first visit shows the whole
  * documentation, so nothing is hidden from someone who has not chosen; narrowing removes noise and
- * never replaces a page with another platform's.
+ * never replaces a page with another platform's. `PlatformPicker` has exactly one behaviour now and
+ * that is it — the roadmap's single-select `scope` mode was deleted on 2026-08-21 rather than kept
+ * beside it.
+ *
+ * AND NOTHING TICKED IS NOTHING NARROWED, since the same pass. The control used to refuse to switch
+ * the last platform off; it now lets a reader empty it, which shows the whole manual again — the
+ * same view they started from, reached from the other end. `All` and `None` are in the list.
+ *
+ * THE CONTROL IS NOW SHARED, AND IT IS COLLAPSED HERE — as it is everywhere, since the inline chip
+ * row was deleted. It was three chips wide here and wrapped to two lines from the day it shipped:
+ * this sidebar is roughly 190px and one chip is a 13px mark, a 6px gap, a 12px name and 20px of
+ * padding, so "Airtable" alone is 88px. Dan asked about it twice. This surface is the reason the
+ * disclosure exists; it is now what every surface gets.
  *
  * WHY IT LIVES ABOVE THE TREE rather than above the content: it governs what EXISTS, and the
  * sidebar is where "what exists" is answered. Over the content it would compete with the page title
@@ -23,7 +35,7 @@
  */
 import { getCollection } from 'astro:content';
 import { PLATFORMS, FILTER_KEY } from '../lib/platforms';
-import PlatformMark from './PlatformMark.astro';
+import PlatformPicker from './PlatformPicker.astro';
 
 const docs = await getCollection('docs');
 const pages: Record<string, string> = {};
@@ -34,7 +46,7 @@ for (const entry of docs) {
 
 /* The whole mark travels with the map so the client can draw one on each row it finds: viewBox,
    gradient defs and every path with its own fill. Sending the geometry rather than a class name
-   means the sidebar's rows and the chips above them come from one source; a second copy of these
+   means the sidebar's rows and the control above them come from one source; a second copy of these
    paths in a stylesheet would be a second thing to keep in step with `lib/platforms.ts`. */
 const marks = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.mark]));
 ---
@@ -42,29 +54,37 @@ const marks = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.mark]));
 <div class="pf" data-platform-filter data-storage-key={FILTER_KEY}>
   <span class="pf-h" id="pf-h">Show docs for</span>
 
-  <div class="pf-chips" role="group" aria-labelledby="pf-h">
-    {
-      PLATFORMS.map((p) => (
-        <button
-          type="button"
-          class="pf-chip"
-          data-platform-chip={p.id}
-          aria-pressed="true"
-          title={`Show ${p.name} pages`}
-        >
-          <PlatformMark id={p.id} size={13} />
-          <span>{p.name}</span>
-        </button>
-      ))
-    }
-  </div>
+  {/* ONE ROW, AND THE WAY BACK IS ON IT. An amber sentence used to sit under this control saying
+      which platforms were hidden. It went on 2026-08-21, on Dan's argument: the only person who
+      ever read it was the person who had just set the filter, the trigger already carries the marks
+      of what is on, and it was spending three lines of a 300px rail to report a choice back to its
+      own author. What it carried that nothing else does is the ONE-CLICK WAY BACK, so that is the
+      part that stayed. The per-page notice in `DocsPageTitle.astro` is a different thing and is
+      untouched: that one fires when a reader lands on a page their own filter hides, which is the
+      case this argument does not cover, because nothing on screen explains it.
 
-  {/* Shown only while something is hidden. A filter set weeks ago and then forgotten is how a
-      reader concludes we never wrote the page, so it is never allowed to go quiet. */}
-  <p class="pf-narrow" data-platform-narrow hidden>
-    <span data-platform-narrow-text></span>
-    <button type="button" data-platform-show-all>Show all</button>
-  </p>
+      THE RESET IS A GRID TRACK, NOT A FLEX ITEM PUSHED RIGHT, and that is load bearing. As a flex
+      item the picker would shrink to the width of its own trigger, and the list it opens is
+      positioned and width-capped against that box — so a trigger reading "Airtable" would drag the
+      popover in to match. A `minmax(0, 1fr)` track holds the picker at the full column width
+      whatever the trigger currently says.
+
+      IT CANNOT MAKE THE ROW JUMP. Its height is the trigger's by construction: the same 12px at
+      1.4, the same 4px of padding, and a 1px border that is transparent until hover rather than
+      absent until hover. Measured at 26.8px against the trigger's 26.8px, so the tree below does
+      not twitch each time the filter changes. */}
+  <div class="pf-row">
+    <PlatformPicker label="Show docs for" />
+    <button
+      type="button"
+      class="pf-reset"
+      data-platform-show-all
+      aria-label="Show all platforms"
+      hidden
+    >
+      Show all
+    </button>
+  </div>
 
   {/* `is:inline` says out loud what Astro would do anyway with an attribute present, and stops the
       compiler warning that this script will not be processed. It is data, not code. */}
@@ -91,6 +111,15 @@ const marks = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.mark]));
     border-bottom: 1px solid var(--bo-base-300);
   }
 
+  /* Starlight's prose rhythm is a general-sibling rule that reaches inside any flex OR grid box,
+     and every child after the first would take 16px of margin it was never given here. `:global(*)`
+     on the child half because the picker is another component and carries no scope hash of ours;
+     a bare `> *` would have ours appended and would ship as valid CSS matching nothing. */
+  .pf > :global(*),
+  .pf-row > :global(*) {
+    margin-top: 0;
+  }
+
   /* 11px is the floor, and it is spent here rather than on anything read in sequence: an uppercase
      tracked micro-label is a signpost, not prose. */
   .pf-h {
@@ -101,30 +130,30 @@ const marks = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.mark]));
     color: var(--bo-muted);
   }
 
-  .pf-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+  /* Two tracks: the picker takes what is left, the reset takes what it needs. `minmax(0, 1fr)`
+     rather than `1fr` so the first track can go below its own min-content width instead of pushing
+     the reset out of the rail. */
+  .pf-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
   }
 
-  /* THE CHIP IS NEUTRAL AND THE LOGO IS NOT. Painting the whole chip in the accent made three
-     different products look like three states of one thing, and buried the only part that carries
-     recognition (Oleh, 2026-08-20). So the chip states itself in greys and the mark keeps its own
-     brand colour: on, the chip has a ground and the mark is in full colour; off, the ground goes and
-     the mark goes grey. Pressed is the DEFAULT here, because everything starts on. */
-  .pf-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border: 1px solid var(--bo-base-300);
-    border-radius: 999px;
+  /* TERTIARY, because it undoes rather than does. Ghost at rest with a border that is already
+     there and merely transparent, so hover paints it instead of inserting it and the row keeps its
+     height to the pixel. */
+  .pf-reset {
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--bo-r-6);
     background: none;
     color: var(--bo-muted);
     font: inherit;
     font-size: var(--bo-t-12);
     font-weight: 600;
     line-height: 1.4;
+    white-space: nowrap;
     cursor: pointer;
     transition:
       background-color 150ms ease-out,
@@ -132,70 +161,27 @@ const marks = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.mark]));
       color 150ms ease-out;
   }
 
-  .pf-chip:hover {
-    border-color: var(--bo-primary);
-    color: var(--bo-base-content);
-  }
-
-  .pf-chip[aria-pressed='true'] {
+  .pf-reset:hover {
     border-color: var(--bo-base-300);
     background: var(--bo-base-200);
     color: var(--bo-base-content);
   }
 
-  .pf-chip:focus-visible {
-    outline: 2px solid var(--bo-primary);
-    outline-offset: 1px;
-  }
-
-  /* Off is DESATURATED, not faded away. A row where one logo vanishes reads as a rendering fault,
-     and the silhouette is what makes the row scannable without reading it; draining the colour says
-     "not now" while keeping the shape that says which one. */
-  /* A MONOCHROME BRAND CANNOT DESATURATE, so a small dim carries the off-state for Notion, whose
-     mark is already grey. It is 0.8 and not the 0.55 this shipped with: at 0.55 the ClickUp mark —
-     two gradients that grayscale to a mid tone — composited into the dark ground and disappeared
-     entirely, which is the exact failure the paragraph above forbids. Measured, not guessed. */
-  .pf-chip[aria-pressed='false'] :global(.bo-mark) {
-    filter: grayscale(1);
-    opacity: 0.8;
-  }
-
-
-  /* Amber, because this is "read this before you draw a conclusion". Not red: nothing is broken,
-     and the reader chose it. */
-  .pf-narrow {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin: 0;
-    padding: 8px 10px;
-    border-radius: var(--bo-r-8);
-    background: var(--bo-soft-warning-bg);
-    color: var(--bo-soft-warning-fg);
-    font-size: var(--bo-t-12);
-    line-height: 1.45;
-  }
-
-  .pf-narrow[hidden] {
+  /* Restated rather than left to the UA sheet. A grid item is blockified, and any author `display`
+     that ever lands on this button would outrank `[hidden]` and leave a reset on screen for a
+     filter that is not narrowed. This portal has shipped that failure before. */
+  .pf-reset[hidden] {
     display: none;
   }
 
-  .pf-narrow button {
-    margin-left: auto;
-    flex: none;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: inherit;
-    font: inherit;
-    font-size: var(--bo-t-12);
-    font-weight: 700;
-    text-decoration: underline;
-    cursor: pointer;
+  .pf-reset:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
   }
 
-  .pf-narrow button:focus-visible {
-    outline: 2px solid var(--bo-primary);
-    outline-offset: 2px;
+  @media (prefers-reduced-motion: reduce) {
+    .pf-reset {
+      transition-duration: 0s;
+    }
   }
 </style>

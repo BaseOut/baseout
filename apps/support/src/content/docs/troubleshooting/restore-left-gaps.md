@@ -7,6 +7,13 @@ A restore that finished with things to fix is not a restore that went wrong. It 
 behaviour: records come back, structure comes back only as far as the platform's API can create it,
 and the difference is reported rather than hidden.
 
+In this guide, you will:
+
+- Read the outcome report, which names every gap before you go looking for one
+- Follow most of the list back to one cause: every restored row is a new row
+- See what your platform's API will not create, and what to prepare before you restore
+- Run the restore again without risk to the original
+
 ## Read the outcome report first
 
 A restore ends on an outcome report listing the tables recreated, the records that landed, and every
@@ -41,9 +48,11 @@ somewhere different:
 | **ClickUp** | Statuses and Custom Field definitions, which have to exist at the target first |
 | **Notion** | Blocks captured as `unsupported`, and new comment threads |
 
-The ClickUp one is worth acting on **before** you restore rather than after: create the statuses and
-the Custom Fields at the target, and the values have somewhere to land. See
+:::caution
+Create the ClickUp statuses and Custom Field definitions at the target **before** you restore, not
+after. A value whose definition does not exist yet has nowhere to land. See
 [Restoring ClickUp data](/platforms/clickup/restoring/).
+:::
 
 ## Things that were never in the backup
 
@@ -63,7 +72,7 @@ restore brings them back. Retry them on the run first, then restore. See
 Restore never overwrites. It writes into new tables, so running it again with different choices
 creates another set rather than changing the one you have, and the original is untouched throughout.
 
-## Next
+## Next steps
 
 - [Restoring a base](/restore/restoring-a-base/): the flow, step by step
 - [Restoring attachments](/restore/attachments/): files back, or links to your storage

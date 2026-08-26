@@ -13,6 +13,9 @@
  */
 import Default from '@astrojs/starlight/components/Footer.astro';
 import PageFeedback from './PageFeedback.astro';
+import DocsSource from './DocsSource.astro';
+import DocsApi from './DocsApi.astro';
+import { isServicePath } from '../lib/service-routes';
 
 /* `template: splash` is the landing. The services opt out by PATH rather than by entry slug: two of
    them (`/contact`, `/roadmap`) are `.astro` pages rendered through `StarlightPage`, so they have no
@@ -20,9 +23,20 @@ import PageFeedback from './PageFeedback.astro';
    parent. */
 const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash';
 const path = Astro.url.pathname;
-const isService = path.startsWith('/contact') || path.startsWith('/roadmap');
+const isService = isServicePath(path);
 const showFeedback = !isSplash && !isService;
 ---
 
+{/* ABOVE THE RATING because it belongs to the article: the rating is the first thing down here that
+    is ABOUT the page rather than in it. It carries no `showFeedback` condition of its own — a page
+    that declares `api` in its frontmatter is a documentation page by construction, and a second
+    condition would be a second place for the answer to drift. */}
+<DocsApi api={Astro.locals.starlightRoute.entry.data.api} />
 {showFeedback && <PageFeedback />}
 <Default><slot /></Default>
+{/* The machine-readable note goes BELOW Starlight's footer, not above it, and it shares
+    `showFeedback` rather than carrying a second condition: both blocks answer "is this a
+    documentation page", and two copies of that question drift. It is last because it is the least
+    of the three things down here: the rating asks the reader for something, the pagination offers
+    somewhere to go, and this only says the page exists in another form. */}
+{showFeedback && <DocsSource id={Astro.locals.starlightRoute.entry.id} />}

@@ -1,0 +1,104 @@
+---
+/**
+ * "In the API" — the operations that do, from your own code, what this page describes in words.
+ *
+ * Dan, 2026-08-24: "I also think we do need this section as well, because there will be some items
+ * that are specific, like API endpoints that are specific to a doc. Most of them I think will be
+ * generic, but there will be some where we should add that."
+ *
+ * ── IT NAMES OPERATIONS, NOT PATHS, AND THAT IS NOT AN OMISSION ────────────────────────────────
+ * `docs/api/index.md` carries the ruling this component obeys, and it is worth quoting because the
+ * obvious way to build this violates it: "Inventing a plausible set would be worse than a banner,
+ * because a banner is detectable and an invented endpoint is not: a reader has no way to tell
+ * `GET /v1/runs` from something we made up to fill a table, and neither has the next person to edit
+ * this file."
+ *
+ * The API surface is not settled — there are no paths, parameter names or error codes to write down
+ * yet. What IS settled is the object model the glossary publishes and what each page's subject
+ * DOES, so this section says the second in words. The day a reference page exists, the author adds
+ * `slug` to the frontmatter entry and the row becomes a link. Nothing here has to be corrected then;
+ * something is added.
+ *
+ * ── WHY IT SITS IN THE FOOTER RATHER THAN IN THE PROSE ─────────────────────────────────────────
+ * An author would otherwise have to import a component into a `.md` file, which none of the other
+ * ninety pages do and which would not survive the first author who forgot. Frontmatter plus a
+ * footer render means the section cannot be half-added: declare the field and it is there, in the
+ * same place, on every page that declares it. It is ABOVE the rating block because it belongs to the
+ * article, and the rating is the first thing that is about the article rather than in it.
+ *
+ * ── THE FIELD AND ITS READER SHIP TOGETHER, AND A GATE WATCHES ─────────────────────────────────
+ * `content.config.ts` records two frontmatter flags that were declared, read by nothing, and left
+ * pages silently unchanged at HTTP 200 with every gate green. `smoke-support` asserts that every
+ * page whose frontmatter declares `api` renders this block, and that no page renders it without.
+ */
+import Icon from './Icon.astro';
+
+interface Props {
+  api?: { summary: string; slug?: string }[];
+}
+
+const { api } = Astro.props;
+---
+
+{
+  api && api.length > 0 && (
+    <section class="bo-docsapi" data-docs-api aria-labelledby="bo-docsapi-h">
+      <h2 class="bo-docsapi-h" id="bo-docsapi-h">
+        <Icon name="plug" size={16} />
+        <span>In the API</span>
+      </h2>
+      <p class="bo-docsapi-lede">
+        What this page describes, done from your own code. The{' '}
+        <a href="/api/">API reference</a> is where these are written up.
+      </p>
+      <ul class="bo-docsapi-list">
+        {api.map((op) => (
+          <li>{op.slug ? <a href={`/${op.slug}/`}>{op.summary}</a> : op.summary}</li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+<style>
+  .bo-docsapi {
+    margin-top: 2.5rem;
+    padding: 20px 24px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-200);
+  }
+
+  .bo-docsapi-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--bo-base-content);
+    border: 0;
+  }
+
+  .bo-docsapi-lede {
+    margin: 8px 0 0;
+    font-size: var(--bo-t-13);
+    line-height: 1.6;
+    color: var(--bo-muted);
+  }
+
+  /* THE ROWS ARE A LIST, NOT A TABLE. A table needs a second column, and the second column is the
+     path, which is the thing this section is forbidden to guess at. When paths exist the row becomes
+     a link and the shape does not have to change. */
+  .bo-docsapi-list {
+    margin: 12px 0 0;
+    padding: 0 0 0 20px;
+    font-size: var(--bo-t-14);
+    line-height: 1.7;
+    color: var(--bo-base-content);
+  }
+  .bo-docsapi-list li + li {
+    margin-top: 4px;
+  }
+</style>

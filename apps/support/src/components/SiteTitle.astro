@@ -56,7 +56,26 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
     color: var(--sl-color-white);
   }
 
-  @media (min-width: 50rem) {
+  /* ── 50rem → 870px, MEASURED (2026-08-26) ─────────────────────────────────────────────────────
+     The rule above is still the rule: the word yields, the nav does not. What changed is where.
+     50rem was Starlight's `md` borrowed as a stand-in, and it put the wordmark back 70px before the
+     row could afford it — so between 800 and 870 the 127px this word costs was paid for by the nav
+     fitter folding TWO items into `More`. Widening the window from 788 to 800 gained the brand name
+     and lost `Roadmap` and `Contact`, which is the trade this rule exists to prevent, running
+     backwards.
+
+     Swept on `/changelog/` with the word forced on, counting the nav items that survive one line:
+
+                       cursor    touch
+                860     4 of 5    3 of 5
+                870     5 of 5    3 of 5
+                880     5 of 5    5 of 5   ← affordable on both
+
+     So the word comes back at the first width where it costs the nav nothing. One number for both
+     pointers, and it is the touch one, for the reason `Header.astro`'s boundary note gives: a coarse
+     pointer widens the search, ask and menu controls to their 44px floor and the row pays about
+     30px for it. */
+  @media (min-width: 880px) {
     .bt-word { display: inline; }
   }
 

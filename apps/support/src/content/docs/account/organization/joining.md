@@ -3,12 +3,18 @@ title: Joining an organization
 description: What happens when somebody at your email domain already has a Baseout organization, and why the choice is offered rather than made for you.
 ---
 
-An **Organization** is the top-level customer entity. It holds the Spaces, the Sources, the
+An *Organization* is the top-level customer entity. It holds the Spaces, the Sources, the
 Destinations, the backup history and the billing. See
 [How Baseout is organized](/start/how-baseout-is-organized/).
 
 Most people never think about this, because they are the first person from their company to sign up
 and the organization is created around them. This page is about the other case.
+
+In this guide, you will:
+
+- Choose between joining an existing organization and creating your own
+- Carry on with onboarding while a request waits for an admin
+- See what joining changes, and what stays yours
 
 ## The fork at signup
 
@@ -18,8 +24,10 @@ offers two choices:
 - **Request to join** that organization, which an admin approves.
 - **Create my own account**, which gives you an organization of your own.
 
-The screen is the same whether you arrived by magic link or by Continue with Airtable, because the
-fork belongs to the domain rather than to the sign-in method.
+:::note
+The screen is the same whether you arrived by magic link or by Continue with Airtable. The fork
+belongs to the domain rather than to the sign-in method.
+:::
 
 ## Why you are asked rather than routed
 
@@ -49,7 +57,7 @@ settings are yours and travel with you. See [Profile and email](/account/profile
 Leaving an organization removes you from it and does not remove the organization or anything it
 owns. See [Deleting your account](/account/deleting-your-account/).
 
-## Next
+## Next steps
 
 - [Members and roles](/account/organization/members-and-roles/): who is in it and what they can do
 - [Invitations](/account/organization/invitations/): the other direction, bringing somebody in

@@ -101,7 +101,10 @@ const { toc } = Astro.locals.starlightRoute;
       border: 1px solid var(--bo-base-300);
       border-radius: var(--bo-r-8);
       background: var(--bo-base-100);
-      max-height: calc(100vh - var(--sl-nav-height) - 4rem);
+      /* `dvh`: `vh` is the address-bar-retracted height on mobile browsers and does not move when
+         the bar is showing, so this cap overstates the room by the bar and the card's last entries
+         fall under it. See the same correction in `Search.astro`. */
+      max-height: calc(100dvh - var(--sl-nav-height) - 4rem);
       overflow-y: auto;
     }
 

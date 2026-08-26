@@ -1,6 +1,8 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import markdoc from '@astrojs/markdoc';
+import { pruneSitemap } from './integrations/prune-sitemap.mjs';
 
 // The docs IA is organised by what a reader is TRYING TO DO, not by the app's own
 // navigation. Sections map to jobs (back something up · get it back · look inside it ·
@@ -27,10 +29,48 @@ export default defineConfig({
       '/platforms/notion/connecting/#sharing-with-the-connection',
   },
   integrations: [
+    /* MARKDOC IS THE PORTAL'S COMPONENT SYNTAX (Oleh, 2026-08-24, deciding §5 of
+       `openspec/changes/support-portal/research-docs-language-2026-08-20.md`). `markdoc.config.mjs`
+       beside this file holds the ruling, the three tags and the version pins; read it before
+       touching either.
+       TWO THINGS DEPEND ON THIS LINE BEING HERE, and both fail silently without it. Starlight's
+       `docsLoader()` adds `mdoc` to its content glob only when it finds an integration NAMED
+       `@astrojs/markdoc` in `context.config.integrations`, so removing this does not error — it
+       deletes every `.mdoc` page from the site. And a `{% %}` tag in a file the integration does not
+       claim is not a build failure either: it is printed to the reader as literal text. Order in
+       this array does not matter; the loader reads the resolved config, not the position. */
+    markdoc(),
+    /* `/handoff` IS A META PAGE ABOUT THIS PORTAL, NOT A PAGE OF IT, and four places would
+       otherwise absorb it. Three of the four exclusions are elsewhere and named here so the set is
+       findable from one place: it is never added to `components/Header.astro`'s NAV list (three
+       destinations is the measured budget at 390); it is not a content-collection entry so it never
+       reaches the docs sidebar; and `lib/search-modal.ts` carries `handoff` in NOT_DOCS beside
+       `tickets`. This is the fourth: it will be public, and it should not be FOUND. The page also
+       carries `noindex`, which is the other half — `noindex` asks a crawler not to keep the page, a
+       sitemap entry asks it to come and look, and shipping one without the other says both. */
+    pruneSitemap(['/handoff/', '/handoff/emails/']),
     starlight({
       title: 'Baseout Support',
       description: 'Documentation, help, and the public roadmap for Baseout.',
-      social: [{ icon: 'external', label: 'Baseout', href: 'https://baseout.com' }],
+      /* TWO MANUALS, ONE CONFIGURED TREE. Starlight 0.40 has no per-section `sidebar` option — the
+         config below is one global tree, and the only per-page override it documents is the
+         `sidebar` prop on `<StarlightPage>`, which is for hand-written `.astro` pages and cannot
+         reach a content-collection entry. Route middleware is the supported mechanism for a content
+         page: it runs on every render with the built route data in hand and `starlightRoute.sidebar`
+         is writable. `src/routeData.ts` partitions THIS array by top-level group label — the product
+         manual on one side, the `API` and `MCP` groups at the foot of it on the other — so a reader
+         inside the API manual never sees the ten product chapters and vice versa. Read that file
+         before renaming either group: the partition is by label, and a rename here alone puts the
+         API group back into the product sidebar with every gate green. */
+      routeMiddleware: './src/routeData.ts',
+      /* THE ONE ICON BESIDE THE THEME PICKER POINTS AT `/handoff`, not at baseout.com (Oleh,
+         2026-08-21). It used to be a way OUT of the portal, which is the one thing a support
+         site does not need another of — the brand is already a link in the site title. It is
+         now the way into the scenario catalogue, which is the page this portal is reviewed
+         from. Consequence, stated once: `/handoff` stays out of the nav, the sidebar, the
+         search and the sitemap, but this makes it REACHABLE by anyone who opens the portal.
+         Accepted — it carries no secrets and the portal is a pre-launch demo. */
+      social: [{ icon: 'external', label: 'Portal handoff', href: '/handoff/' }],
       /* The brand bridge — one sheet, four public apps (Oleh, 2026-08-17: the portal must be built
          from Baseout's own elements so a user sees one product). It maps Starlight's `--sl-*` surface
          onto Baseout tokens and is UNLAYERED, which is why it wins over Starlight's layered styles
@@ -40,8 +80,44 @@ export default defineConfig({
       /* The bridge first (shared by four public apps), then the portal's own sheet on top. Keep
          per-app rules OUT of the bridge — it is the one sheet the other three read too. */
       customCss: ['../../brand/baseout-bridge.css', './src/styles/support.css'],
+      /* THE SESSION STAMP, BEFORE THE FIRST PAINT AND ON EVERY PAGE.
+         `lib/portal-session.ts` is the authority on whether somebody is here, and until now only
+         `/requests/` and `/contact/` stamped it — they were the only surfaces that cared. The header
+         cares now, and the header is on all 128 pages, so the stamp has to be too.
+
+         IT IS INLINE IN `head` RATHER THAN A MODULE, for the reason that file already argues: a
+         module cannot run before the document is parsed, and a header that paints "Sign in" at a
+         reader who is signed in has already told them the wrong thing. This is the third copy of
+         those four lines (the other two are `contact.astro` and `portal-session.ts` itself) and the
+         duplication is deliberate and noted in all three: pre-paint code cannot be imported.
+
+         ABSENT OR MALFORMED READS AS `in`, matching `readSession()` exactly. Change one, change all
+         three. */
+      head: [
+        {
+          tag: 'script',
+          content:
+            "var s=new URLSearchParams(location.search).get('session');" +
+            "document.documentElement.setAttribute('data-portal-session',s==='out'?'out':'in');",
+        },
+      ],
       components: {
         Banner: './src/components/DraftBanner.astro',
+        /* THE COMPACT TOGGLE REPLACES THE LABELLED SELECT EVERYWHERE IT IS RENDERED, not only in our
+           header. Our `Header.astro` imports `ThemeToggle` directly (a `components:` override cannot
+           reach inside it — that file's own header comment says so), but Starlight renders
+           `ThemeSelect` a SECOND time in `MobileMenuFooter.astro`, which our header does not replace.
+           Measured after wiring the header and before this line: 125 pages carried both controls, one
+           of them still reading `Auto ▾`. Two controls for one preference is the variance this repo
+           fights, and the one nobody meant to keep is the one that would drift. */
+        ThemeSelect: './src/components/ThemeToggle.astro',
+        /* THE MOBILE SHEET'S FOOTER RENDERS NOTHING (Oleh, 2026-08-26). It carried two unlabelled
+           glyphs under the navigation tree: the `/handoff/` social link — an internal, `noindex`
+           page written for whoever designs this portal, which keeps its place in the desktop header
+           and has none in a customer's menu — and a THIRD copy of the theme toggle. The block above
+           records catching that same footer once already and only making the two copies look alike.
+           The component says the rest. */
+        MobileMenuFooter: './src/components/MobileMenuFooter.astro',
         /* The landing's dark band + the one search-or-ask input. Overriding Hero rather than
            putting a component in the mdx is what reaches the h1 size: Starlight's own Hero styles
            it in a COMPONENT-SCOPED sheet, so `--sl-text-h1` never applied and it rendered 64px. */
@@ -320,7 +396,70 @@ export default defineConfig({
             { label: 'Platform differences at a glance', slug: 'reference/platform-differences' },
             { label: 'FAQ', slug: 'reference/faq' },
           ],
-        }
+        },
+        /* ── THE SECOND MANUAL ────────────────────────────────────────────────────────────────────
+           EVERYTHING BELOW THIS LINE IS HIDDEN FROM THE TEN CHAPTERS ABOVE IT, and they from it, by
+           `src/routeData.ts`. It is declared here rather than built by hand in that file so that
+           Starlight resolves the slugs, hrefs, labels, `isCurrent` flags and collapse state exactly
+           as it does for every other group; the middleware only chooses which half a reader sees.
+
+           Dan, 2026-08-21: "API and MCP documentation is a little different than 'how to use the
+           app' documentation… I think we could create 1 new menu for 'API/MCP' and then have
+           sections for both." One header item (`API`, see `components/Header.astro` for why the
+           label is one word) leading to two groups is that shape.
+
+           NOT COLLAPSED, against every chapter above. A collapsed chapter is right when the tree
+           holds ten of them and you want the one you came for; this tree holds two groups and four
+           rows in total, and folding four rows away leaves a sidebar that shows a reader nothing
+           about the manual they just opened. */
+        {
+          label: 'API',
+          items: [
+            { label: 'Overview', slug: 'api' },
+            { label: 'Anatomy of a reference page', slug: 'api/anatomy-of-a-reference-page' },
+          ],
+        },
+        {
+          label: 'MCP',
+          items: [
+            { label: 'Overview', slug: 'mcp' },
+            { label: 'Anatomy of a tool page', slug: 'mcp/anatomy-of-a-tool-page' },
+          ],
+        },
+        /* ── THE THIRD MANUAL ─────────────────────────────────────────────────────────────────────
+           Same mechanism as the two groups above it: declared here, hidden from the other manuals by
+           `src/routeData.ts`, which asks `lib/api-docs.ts` which manual a group label and a path
+           belong to. That file stopped being a boolean on 2026-08-25 for exactly this entry.
+
+           AUTOGENERATED, AND THAT IS THE WHOLE POINT OF THE YEAR DIRECTORIES. Starlight turns each
+           subdirectory of `content/docs/changelog/` into a nested group named after it, so `2026`
+           is a group because `2026/` is a folder, and January makes `2027` one without anybody
+           editing this file. Writing the years out here would be a list that has to be remembered
+           once a year, in the one place nothing tells you it was forgotten — the hub page derives
+           its rows from the collection (`lib/changelog.ts`), so the two surfaces would simply
+           disagree, both of them rendering.
+
+           THE YEARS ARE NESTED RATHER THAN TOP-LEVEL because the partition in `routeData.ts` is by
+           TOP-LEVEL LABEL: a year at the top level would be a label to register in `api-docs.ts`
+           every January, and forgetting it puts that year's entries into the product manual's
+           sidebar with every gate green. One stable label above the years costs nothing and cannot
+           be forgotten.
+
+           ORDERING INSIDE A YEAR IS DERIVED, AND SO IS THE MONTH LEVEL BELOW IT (2026-08-26).
+           `sidebar.order` used to carry the rank and had drifted from the dates beside it — 1, 2, 3
+           against 20, 24 and 21 August — so the sidebar was not newest-first while every comment
+           said it was. `src/routeData.ts` now re-nests this group by month and sorts each month by
+           the entry's own date; `lib/changelog.ts` carries both arguments. Nothing here declares a
+           rank any more, and alphabetical filenames stay irrelevant, which was always the point of
+           not using them: a slug is a URL, not a place to keep a number. */
+        {
+          label: 'Changelog',
+          /* THE `autogenerate` IS NESTED IN `items` BECAUSE IT HAS TO BE: Starlight removed support
+             for `{ label, autogenerate }` on a group in 0.39.0, and it is a hard config error rather
+             than a silent one. A group with a label and an `items` array containing the autogenerate
+             config is the replacement it names. */
+          items: [{ autogenerate: { directory: 'changelog' } }],
+        },
       ],
     }),
   ],

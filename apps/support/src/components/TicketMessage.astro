@@ -1,0 +1,304 @@
+---
+/**
+ * One message on a case, drawn as a chat bubble.
+ *
+ * `pattern-message-thread`. REBUILT 2026-08-21 after Oleh read the previous version: it was a
+ * comment LOG — one left rail, every message on the same edge, sender carried only by a 13px label
+ * — and he asked for the register this product's own chats already use, "бульбашки… десь синенькі,
+ * десь чорний, і зрозуміло, хто пише, хто відповідає".
+ *
+ * ── THE TREATMENT IS COPIED, NOT INVENTED. TWO CHATS ALREADY SHIP IT ───────────────────────────
+ * `components/ChatDock.astro` (`.msg` / `.msg.user` / `.msg.bot`) is the portal's own chat and is
+ * the one taken here, because it is the surface a visitor of THIS app has already seen:
+ *
+ *     visitor's side   right-aligned · `--bo-soft-primary-bg` fill · `--bo-soft-primary-fg` text
+ *     the other side   left-aligned  · `--bo-base-200` fill        · body text
+ *     both             8px 12px padding · 13px / 1.55 · `white-space: pre-wrap` · ~90% max-width
+ *
+ * `apps/web`'s `SchemaChat.astro` agrees on every axis and adds one thing worth taking: the corner
+ * nearest the speaker is `--bo-r-4` while the other three are `--bo-r-12`, so the bubble points at
+ * its author without a drawn tail. Its widths are 78% (user) / 90% (assistant), and those are used
+ * here — the customer's own message is the shorter one on both surfaces.
+ *
+ * THE CUSTOMER IS THE VISITOR HERE, so the customer takes the tinted right-hand side and Baseout
+ * takes the neutral left. That is the opposite assignment to a support agent's console, and it is
+ * the right one for a customer-facing portal: the tint marks YOUR words, not ours.
+ *
+ * WHAT IS *NOT* TAKEN: no avatars, no gradients, no drawn tails, no per-message channel badge. The
+ * catalog's "no bubble decoration" is a ban on consumer-chat ornament, not on a tinted plate — both
+ * chats above tint one side, and `pattern-schema-chat` says "weaker fill than the user bubble" in so
+ * many words. `pattern-message-thread` was corrected in the same pass to say so.
+ *
+ * TWO THINGS THE OLD LAYOUT NEEDED AND THIS ONE DOES NOT. The empty-but-preserved 24px initials slot
+ * and the 32px reply indent both existed to give a single-column log one left edge; alignment now
+ * carries the sender, so a preserved-but-empty box would ragged nothing and align nothing. The
+ * initials chip goes with them — it was an avatar in all but name, and this register has none.
+ *
+ * ── A REAL NAME, OR `Baseout Support`. NEVER AN INVENTED PERSON ────────────────────────────────
+ * The "Author not captured" ruling, one step more dangerous here because a support reply is
+ * accountable: a plausible first name the customer can quote back at us, attached to nobody, is a
+ * debt we cannot pay. So `senderName === null` on our side renders `Baseout Support` in the muted
+ * worded-absence register — same slot, lighter weight, not styled as a person. The choice is made on
+ * the FIELD BEING NULL, never by string-comparing a label against the fallback. The name stays
+ * VISIBLE rather than screen-reader-only (`SchemaChat` hides it, because "You" and "Assistant" are
+ * the only two speakers it can ever have): a thread can change agents mid-case, and which human
+ * answered is the fact a customer quotes back.
+ *
+ * ── NO CHANNEL MARKER. THE AXIS THAT EARNS ONE IS VERIFIED vs ASSERTED ─────────────────────────
+ * Whether this arrived in the portal or by email is our plumbing; no peer portal carries it, the
+ * reader cannot act on it, and marking it invites a question with no good answer. What IS marked is
+ * a different claim that merely correlates: a message from a signed-in account is VERIFIED, and a
+ * message that arrived from the case's address with no session behind it is ASSERTED. On a thread
+ * that may hold another organisation's data, that distinction is load-bearing.
+ *
+ * THE MARKER IS PRINTED, NOT HOVERED. The catalog says "with a tooltip saying what it means"; this
+ * app carries no native `title=` and has no tooltip component (`pages/handoff.astro:1046-1048`
+ * already ruled on exactly this), so a hover-only hint is a hint no touch reader ever sees. The word
+ * is on the message and its meaning is printed once at the head of the thread, by the page.
+ *
+ * `kind: 'auto'` IS MARKED TOO, AND IT IS ALSO NOT A CHANNEL. An out-of-office is a real message
+ * that really arrived; it is kept and shown. Marking it is what explains why a case with a fresh
+ * customer message is still `Open` rather than back with us.
+ *
+ * ── QUOTED HISTORY COLLAPSES. IT IS NEVER DELETED ──────────────────────────────────────────────
+ * `<details>`, closed by default, at the foot of the message it belongs to, reading
+ * `Show quoted text · N lines`. The obvious move — strip it — is wrong for a mechanical reason
+ * rather than an aesthetic one: there is no standard for quote markers, so a stripper tuned on Gmail
+ * over-strips on Outlook, and what it eats is the sentence the customer typed UNDER the quote.
+ * Collapsed is reversible; stripped is not. The line count lets the reader tell a two-line signature
+ * from a forty-line thread without opening either. `<details>` is used because the platform already
+ * owns the disclosure's keyboard and its accessible name.
+ *
+ * ── THE ATTACHMENT ROW IS ALWAYS RENDERED, AND THAT IS DELIBERATE ──────────────────────────────
+ * `.tm-atts` ships on every message and is hidden by a class when it holds nothing. A message sent
+ * during a session is CLONED from a server-rendered copy of this component (`[ref].astro`'s
+ * `data-tpl-message`), and a container the clone does not carry is a container the client would have
+ * to build with `createElement` — which a scoped Astro style never reaches. This app has already
+ * shipped that bug once. Building nothing at runtime is the fix; an empty div is its price.
+ */
+import Icon from './Icon.astro';
+import FileChip from './FileChip.astro';
+import type { TicketMessage } from '../data/tickets';
+import { fmtStamp, isoAttr } from '../lib/ticket-time';
+
+interface Props {
+  message: TicketMessage;
+}
+
+const { message: m } = Astro.props;
+
+const isSupport = m.sender === 'support';
+/* THE PREDICATE, not a string comparison against the fallback label. */
+const isNamed = m.senderName !== null && m.senderName.length > 0;
+const label = isNamed ? m.senderName : 'Baseout Support';
+
+/* DERIVED, NEVER DECLARED. The fixture carried a `lines: 31` beside a 30-line quote, and the whole
+   justification for printing a count is telling a two-line signature from a forty-line thread —
+   a count that can drift from the text it counts is worse than none. CRLF is split too, because
+   this text arrives from a mail client and most of them send it. */
+const lineCount = (text: string) => text.split(/\r?\n/).length;
+---
+
+<article
+  class:list={['tm', isSupport ? 'tm-support' : 'tm-customer']}
+  id={`m-${m.id}`}
+  data-message
+>
+  <p class="tm-head">
+    <span class:list={['tm-who', !isNamed && 'tm-who-absent']}>{label}</span>
+    <time class="tm-at" datetime={isoAttr(m.at)}>{fmtStamp(m.at)}</time>
+    {m.kind === 'auto' && <span class="tm-mark">Automatic reply</span>}
+    {!m.verified && <span class="tm-mark">Unverified sender</span>}
+  </p>
+
+  <div class="tm-body">{m.body}</div>
+
+  {/* ALWAYS PRESENT — see the header. The class, not the absence of the node, is what hides it. */}
+  <div class:list={['tm-atts', m.attachments.length === 0 && 'tm-atts-none']}>{m.attachments.map((f) => <FileChip file={f} />)}</div>
+
+  {
+    m.quoted && (
+      <details class="tm-quote">
+        <summary class="tm-quote-sum">
+          <span class="tm-quote-chev"><Icon name="chevron-down" size={14} /></span>
+          Show quoted text · {lineCount(m.quoted.text)} lines
+        </summary>
+        <pre class="tm-quote-text">{m.quoted.text}</pre>
+      </details>
+    )
+  }
+</article>
+
+<style>
+  /* THE BUBBLE COLUMN. The thread itself is a flex column (`.tk-thread`), so `align-self` is what
+     puts a message on its side — not a float and not a margin. */
+  .tm {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  /* Baseout: the neutral left. 90%, matching SchemaChat's assistant. */
+  .tm-support {
+    align-self: flex-start;
+    align-items: flex-start;
+    max-width: 90%;
+  }
+
+  /* The customer: the tinted right, and the shorter measure. Both chats make the visitor's own
+     message the narrower one — it is usually the shorter text, and the asymmetry is what keeps the
+     two columns readable as two. */
+  .tm-customer {
+    align-self: flex-end;
+    align-items: flex-end;
+    max-width: 78%;
+  }
+
+  .tm-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0 4px;
+  }
+
+  .tm-customer .tm-head {
+    justify-content: flex-end;
+  }
+
+  .tm-who {
+    font-size: var(--bo-t-13);
+    font-weight: 650;
+    color: var(--bo-base-content);
+  }
+
+  /* THE WORDED-ABSENCE REGISTER. `Baseout Support` is not a person and must not be painted as one:
+     same slot, lighter weight, muted. Never the name register. */
+  .tm-who-absent {
+    font-weight: 500;
+    color: var(--bo-muted);
+  }
+
+  .tm-at {
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  /* ONE quiet marker shape for both facts a message can carry about its AUTHOR. No hue: neither is
+     a failure, and an amber pill per message would drown the one amber thing on these surfaces. */
+  .tm-mark {
+    padding: 1px 6px; /* ds-ok: 1px vertical — a marker that matches the 13px name's line box. */
+    border-radius: var(--bo-r-4);
+    background: var(--bo-base-200);
+    font-size: var(--bo-t-12);
+    font-weight: 500;
+    color: var(--bo-muted);
+  }
+
+  /* THE BUBBLE. Geometry and type are shared; only the fill and the pointed corner differ. */
+  .tm-body {
+    max-width: 100%;
+    padding: 8px 12px;
+    font-size: var(--bo-t-13);
+    line-height: 1.55;
+    /* The message is text a person typed, newlines included; `anywhere` is what stops a pasted URL
+       widening the whole thread. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* THE POINTED CORNER IS THE TAIL. `--bo-r-4` on the corner nearest the speaker, `--bo-r-12` on
+     the other three — SchemaChat's shape, and the reason neither side needs a drawn tail. */
+  .tm-support .tm-body {
+    border-radius: var(--bo-r-12) var(--bo-r-12) var(--bo-r-12) var(--bo-r-4);
+    background: var(--bo-base-200);
+    color: var(--bo-muted-strong);
+  }
+
+  .tm-customer .tm-body {
+    border-radius: var(--bo-r-12) var(--bo-r-12) var(--bo-r-4) var(--bo-r-12);
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+  }
+
+  .tm-atts {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  /* Rendered but empty. See the header: the node exists so a runtime clone never has to build one. */
+  .tm-atts-none {
+    display: none;
+  }
+
+  .tm-quote {
+    align-self: stretch;
+    margin-top: 4px;
+  }
+
+  .tm-quote-sum {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* ds-ok: 6px optical icon↔label gap, the same one the file chip takes. */
+    padding: 4px 8px;
+    border-radius: var(--bo-r-6);
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  /* Safari draws its own disclosure triangle through this pseudo-element; ours is the Lucide chevron
+     inside the summary, so the UA's has to go or there are two. */
+  .tm-quote-sum::-webkit-details-marker {
+    display: none;
+  }
+
+  .tm-quote-sum:hover {
+    color: var(--bo-base-content);
+  }
+
+  .tm-quote-sum:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 2px;
+  }
+
+  /* ONE glyph, rotated — not two, which would be two things to keep pointing the right way.
+     THE ROTATION IS ON A WRAPPER I OWN, not on the `<Icon>`. An Astro scoped selector whose LAST
+     element sits inside a child component matches nothing: the parent's hash is appended to that
+     element and the element carries the child's. Valid CSS, ships, selects zero elements. */
+  .tm-quote-chev {
+    display: inline-flex;
+    transition: transform 0.15s ease;
+  }
+
+  .tm-quote[open] .tm-quote-chev {
+    transform: rotate(180deg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tm-quote-chev {
+      transition: none;
+    }
+  }
+
+  /* KEPT, VERBATIM, INCLUDING THE FOOTERS. It is quieter than the message it hangs off and it
+     scrolls rather than widening the thread — a legal footer is often the longest line on the page. */
+  .tm-quote-text {
+    margin: 4px 0 0;
+    padding: 8px 12px;
+    border-radius: var(--bo-r-6);
+    background: var(--bo-base-200);
+    font-family: inherit;
+    font-size: var(--bo-t-12);
+    line-height: 1.55;
+    color: var(--bo-muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+</style>

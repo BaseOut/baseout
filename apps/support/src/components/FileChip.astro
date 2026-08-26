@@ -1,0 +1,105 @@
+---
+/**
+ * One attached file, on one line: type glyph + filename + size. No thumbnail.
+ *
+ * `pattern-file-attach`, half two — and that half is LIFTED rather than re-decided. It already
+ * ships as `RecordPanel.astro`'s `.rp-cm-att*` block, and the verdict behind it is
+ * `pattern-changelog-timeline`'s, taken on competitor evidence that was unanimous BOTH ways (Mobbin:
+ * Notion · Circle · Twist · Mercury · Twenty · ClickUp): a compact chip on a detail surface, and
+ * never filenames in a dense row.
+ *
+ * NO THUMBNAIL. Vertical space in a stacked thread is the scarce thing, and a preview of a
+ * screenshot of somebody's Airtable base is also the one image we least want rendered by default.
+ *
+ * THE GLYPH IS BY TYPE, from the one Lucide mapping, so a PDF and a screenshot are distinguishable
+ * without reading the filename.
+ *
+ * THE AFFORDANCE IS CONDITIONAL, AND THAT IS THE POINT. `openable` is false everywhere in this app
+ * because there is no object store behind it, so the chip renders as a `<span>` with `cursor:
+ * default` and no hover. A chip that looks interactive and opens nothing is a dead link, and the
+ * catalog forbids it explicitly. When the store exists, the anchor branch below is what turns on —
+ * it does not get bolted on at the call site.
+ *
+ * THE FILENAME TRUNCATES AND THE SIZE IS PINNED RIGHT WITH `tabular-nums`, so a column of chips has
+ * one right edge to read down rather than a ragged one.
+ *
+ * NOT USED ON A DENSE LIST ROW. That row gets a paperclip and a COUNT, with the names in the
+ * tooltip — `TicketRow.astro` carries it. Chips in the thread, a count on the list. Never both.
+ */
+import Icon from './Icon.astro';
+import type { TicketAttachment } from '../data/tickets';
+import type { IconName } from '../lib/icons';
+import { fmtBytes } from '../lib/ticket-time';
+
+interface Props {
+  file: TicketAttachment;
+}
+
+const { file } = Astro.props;
+
+/* Three buckets, and `other` is honest rather than a guess dressed as a type. */
+const GLYPH: Record<TicketAttachment['kind'], IconName> = {
+  image: 'image',
+  document: 'file-text',
+  other: 'file',
+};
+
+const size = fmtBytes(file.bytes);
+---
+
+<span class:list={['fc', file.openable && 'fc-open']}>
+  <span class="fc-ic"><Icon name={GLYPH[file.kind]} size={14} /></span>
+  <span class="fc-name">{file.name}</span>
+  <span class="fc-size">{size}</span>
+</span>
+
+<style>
+  .fc {
+    display: flex;
+    align-items: center;
+    /* 6px, optical: the gap between a 14px glyph and the word it labels. The same exception
+       `RecordPanel`'s `.rp-cm-att` takes, for the same measurement. */
+    gap: 6px;
+    min-width: 0;
+    padding: 4px 8px;
+    border-radius: var(--bo-r-6);
+    background: var(--bo-base-200);
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+    /* Not a control unless it is one. */
+    cursor: default;
+  }
+
+  /* A WRAPPER I OWN, not a class handed to `<Icon>`: a scoped selector ending on an element inside
+     a child component gets this file's hash appended and matches nothing. */
+  .fc-ic {
+    display: inline-flex;
+    flex: none;
+    opacity: 0.7;
+  }
+
+  /* The name yields; the size never does. */
+  .fc-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--bo-muted-strong);
+  }
+
+  .fc-size {
+    flex: none;
+    margin-left: auto;
+    padding-left: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Turned on only where the asset is genuinely reachable. Nothing in this app sets it today. */
+  .fc-open {
+    cursor: pointer;
+  }
+
+  .fc-open:hover .fc-name {
+    color: var(--bo-base-content);
+  }
+</style>

@@ -8,6 +8,12 @@ nothing to store, nothing to leak and nothing to reset. This page is about choos
 and understanding what each one implies; [Signing in](/start/signing-in/) walks through the flow
 itself.
 
+In this guide, you will:
+
+- Choose between a magic link and Continue with Airtable
+- See what each one implies about who can reach your account
+- Recognize the wrong-address case, and fix it
+
 ## A magic link
 
 Type your email address and Baseout sends a link that signs you in. It is the default, and the field
@@ -30,9 +36,13 @@ that is the entire extent of it.
 later, from [Sources](/connections/sources/), and signing in this way grants Baseout no access to
 any base.
 
-The thing to watch is which address it carries. If the address on your Airtable account differs from
-the one you signed up with, this button lands you in a second, empty account rather than yours. The
-fix is the magic link on the original address.
+The thing to watch is which address it carries.
+
+:::note
+If the address on your Airtable account differs from the one you signed up with, this button lands
+you in a second, empty account rather than yours. The fix is the magic link on the original
+address.
+:::
 
 ## Which to use
 
@@ -49,7 +59,7 @@ in to be independent of a platform you might stop using.
 There is no password, no security question, no SSO and no API key that signs a person in. If a
 sign-in screen asks you for a Baseout password, it is not ours.
 
-## Next
+## Next steps
 
 - [Two-factor authentication](/account/two-factor/): the step that makes the inbox not enough
 - [Sessions and devices](/account/sessions/): what is currently signed in

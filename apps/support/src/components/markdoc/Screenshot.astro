@@ -1,0 +1,55 @@
+---
+/**
+ * One product screenshot inside a documentation page — `{% screenshot %}`.
+ *
+ * THIS COMPONENT INVENTS NO STYLING. It emits exactly the `<figure class="bo-shot">` markup that
+ * `backups/how-backups-work.md`, `backups/schedule-and-scope.md` and `backups/retention-and-cleanup.md`
+ * already hand-write, and `styles/support.css` dresses it there as it does here. The header comment
+ * on that sheet says the pages write raw markup "because the pages are `.md`, which cannot import
+ * one" — that constraint is what Markdoc removes, and this is the component that constraint was
+ * blocking. Those three pages are a separate conversion, not this one's business.
+ *
+ * TWO IMAGES, NOT ONE. A raster cannot follow a theme, so every shot exists twice and the sheet
+ * swaps them across all four states Starlight can be in (bare default, system preference, and each
+ * explicit `data-theme`). `src` is therefore the path with NO suffix and NO extension:
+ * `/screens/docs/how-backups-work-1` becomes `-light.png` and `-dark.png`.
+ *
+ * ONE `alt` FOR BOTH, because they are the same picture. Whichever one is displayed, exactly one is
+ * `display: none`, and a hidden `<img>` is not announced — so there is no duplicate description.
+ *
+ * `width` and `height` are REQUIRED. They are the intrinsic pixel size and they are what stops the
+ * page reflowing under the reader when a lazy image arrives; the CSS overrides the rendered size to
+ * `100%` / `auto` regardless, so these only ever buy the aspect ratio.
+ */
+interface Props {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  caption?: string;
+}
+
+const { src, alt, width, height, caption } = Astro.props;
+---
+
+<figure class="bo-shot">
+  <img
+    class="bo-shot-light"
+    src={`${src}-light.png`}
+    alt={alt}
+    width={width}
+    height={height}
+    loading="lazy"
+    decoding="async"
+  />
+  <img
+    class="bo-shot-dark"
+    src={`${src}-dark.png`}
+    alt={alt}
+    width={width}
+    height={height}
+    loading="lazy"
+    decoding="async"
+  />
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

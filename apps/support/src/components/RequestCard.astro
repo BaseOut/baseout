@@ -61,6 +61,17 @@ import Icon from './Icon.astro';
 interface Props {
   r: FeatureRequest;
   /**
+   * The landing's showcase strip, where three cards sit side by side rather than down a column.
+   *
+   * It does two things because they are one idea. It STRETCHES to the row's shared height, so the
+   * three cards square off instead of ending wherever their own summary ran out; a column on the
+   * board has no such obligation, which is why this is opt-in rather than the default. And it drops
+   * the documentation link, because that link is a third destination on a card that already offers
+   * two, and because it is the one thing that made a foot two lines tall and knocked the status
+   * badges out of line with each other.
+   */
+  teaser?: boolean;
+  /**
    * A platform candidate. The card IS the platform, so "ClickUp, related to ClickUp" would be the
    * title twice: the subject band becomes a mark TILE instead, which is the shape the "Suggest a
    * platform" doorway beside it already had. Everything below is identical, which is the point.
@@ -68,7 +79,7 @@ interface Props {
   candidate?: boolean;
 }
 
-const { r, candidate = false } = Astro.props;
+const { r, candidate = false, teaser = false } = Astro.props;
 const rel = r.platform ? platform(r.platform as PlatformId) : null;
 
 /* The estimate reads differently before and after the work. `Shipped` drops the word entirely,
@@ -85,7 +96,7 @@ const byName = r.author === 'Baseout' ? 'Baseout' : r.author;
 ---
 
 <article
-  class:list={['rb-card', candidate && 'rb-pcard']}
+  class:list={['rb-card', candidate && 'rb-pcard', teaser && 'rb-teaser']}
   data-slug={r.slug}
   data-status={r.status}
   data-platform={r.platform}
@@ -139,7 +150,7 @@ const byName = r.author === 'Baseout' ? 'Baseout' : r.author;
   <div class="rb-foot">
     <span class="rb-state">
       <StatusBadge status={r.status} size={13} />
-      {r.docs && (
+      {r.docs && !teaser && (
         <a class="rb-docs" href={r.docs.href}>
           <Icon name="book-open-check" size={12} />
           {r.docs.label}
@@ -409,6 +420,20 @@ const byName = r.author === 'Baseout' ? 'Baseout' : r.author;
       grid-template-columns: minmax(0, 1fr);
       row-gap: 8px;
     }
+  }
+
+  /* ── The teaser ─────────────────────────────────────────────────────────────────────────────
+     THE STRETCH HAS TO BE DECLARED HERE, in the card's own file. A rule written against `.rb-card`
+     in the landing's stylesheet would carry the LANDING's scope hash on the class the card does
+     not have, so it would ship, read correctly, and match nothing, with both gates green. The
+     landing's half of this is the two lines it CAN own: stretching its own track and its own `li`.
+
+     `1fr` on the middle row is what puts the foot on the floor. Without it the three rows size to
+     their content, the extra height lands after the foot, and squaring the cards would leave three
+     hairlines at three different heights, which is worse than the ragged bottoms it replaced. */
+  .rb-teaser {
+    height: 100%;
+    grid-template-rows: auto 1fr auto;
   }
 
   /* ── The platform candidate ─────────────────────────────────────────────────────────────────

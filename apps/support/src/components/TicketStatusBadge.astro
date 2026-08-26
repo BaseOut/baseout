@@ -1,0 +1,47 @@
+---
+/**
+ * A case's state as a glyph, a word and — for exactly one of the three — a colour.
+ *
+ * A SIBLING OF `StatusBadge.astro`, NOT A CALL INTO IT. That component is `RequestStatus`-typed and
+ * speaks the roadmap's six words; this one is `TicketStatus`-typed and speaks the three a customer
+ * reads on a case. What transfers is the MECHANISM — one vessel, one meta lookup, a glyph and a word
+ * and a tone, never a surface deciding for itself what `Closed` looks like. What does not transfer is
+ * the vocabulary. Widening the roadmap's type to carry ticket states would put two unrelated state
+ * machines in one union and let a board render `Awaiting your reply`.
+ *
+ * THE VESSEL IS SHARED. `.bo-badge` and `.bo-tone-*` live in `styles/support.css`, globally, so the
+ * portal has ONE badge shape. This file adds exactly one thing on top: the quieter weight that
+ * separates `Closed` from `Open` — because there is no `info` variant to reach for and that absence
+ * is a ruling, not an omission.
+ *
+ * THE LABEL IS RENDERED HERE AND NOWHERE ELSE — the last possible moment, as the pattern requires.
+ * Every filter, count and sort upstream carries the stored enum.
+ */
+import Icon from './Icon.astro';
+import { ticketStatusMeta } from '../lib/ticket-status';
+
+interface Props {
+  /** The STORED enum. A `string`, because the map is total and a store can return anything. */
+  status: string;
+  size?: number;
+}
+
+const { status, size = 14 } = Astro.props;
+const meta = ticketStatusMeta(status);
+---
+
+<span class:list={['bo-badge', `bo-tone-${meta.tone}`, 'tsb']} data-ticket-status={meta.slug}>
+  <Icon name={meta.icon} size={size} />
+  {meta.label}
+</span>
+
+<style>
+  /* `Closed` is separated from `Open` by WEIGHT, not by hue. Both are the ghost pair; the finished
+     one is lighter, because a finished case asks nothing of the reader. `Unknown` takes the same
+     treatment: it is not asking for anything either, and it must never look like an alarm. */
+  .tsb[data-ticket-status='closed'],
+  .tsb[data-ticket-status='unknown'] {
+    color: var(--bo-muted);
+    font-weight: 500;
+  }
+</style>

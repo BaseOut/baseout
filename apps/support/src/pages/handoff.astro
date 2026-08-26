@@ -1,0 +1,1458 @@
+---
+/**
+ * /handoff — the scenario catalogue for the support portal, written for the person who designs it.
+ *
+ * REBUILT 2026-08-21, AND THE REBUILD IS THE POINT. This page was an engineering defect register
+ * wearing a design handoff's label: 268 edge rows, 21 open engineering questions, 407 badges in two
+ * competing taxonomies, and 222 links that said `reproduce` while pointing at 45 distinct URLs — 28
+ * of them at the same contact form. The reader it was written for could not act on any of it, and
+ * the half they could act on was buried under the half they could not.
+ *
+ * SO IT RENDERS THREE THINGS PER FLOW AND NOTHING ELSE:
+ *   1 · what happens here, in one sentence and in the reader's own words;
+ *   2 · the states you can open — and every link genuinely produces the state it names;
+ *   3 · what is missing or wrong, in plain sentences.
+ *
+ * NOTHING WAS DELETED. The enumeration, the probes, the dispositions, the `file:line` evidence and
+ * the decisions moved to `openspec/changes/support-handoff/edge-register.md`, linked once at the
+ * foot of this page in a line addressed to whoever builds. `handoff-registry.ts` still holds all of
+ * it, `edges` is still on the type, and this page simply stops rendering the engineering half.
+ *
+ * THE LINK RULE, WHICH IS WHAT THE `reproduce` COUNT WAS ABOUT. A state gets a link only if that
+ * URL genuinely produces THAT state. Two things therefore lose their link and say why:
+ *   · a step with no URL at all — `no URL yet`, which means it is not built;
+ *   · a step whose URL another state in the same flow already claimed — `no URL of its own`, which
+ *     means it is reached by clicking on the page above. Twenty-one of the eighty-four steps are
+ *     this case, and printing a link on each of them is exactly how 45 URLs became 222 promises.
+ *
+ * EVERY OUTBOUND LINK OPENS A NEW TAB, AND NO IN-PAGE ANCHOR DOES — Oleh, 2026-08-21: "коли я в
+ * хендофі щось клікаю, я хочу, щоб все відкривалось в новій вкладці." The reason is this page's
+ * job: it is a checklist you walk while keeping your place, and a same-tab navigation loses the
+ * place every time.
+ *
+ * THE EXCEPTION IS DECIDED RATHER THAN GUARDED. In-page anchors — the section nav's chips, and a
+ * cross-cutting friction linking to a flow further down THIS page — must not open a new tab: a new
+ * tab of the same page is a bug, not a feature, and it would also drop the `<details>` this page
+ * opens for you on arrival. It is enforced by there being NO SELECTOR: `target` is written by hand
+ * on the three anchors that leave (a state chip, a step link, a comparison card's URL), and the two
+ * that stay (`.hf-nav-a`, `.hf-x-flow`) simply do not carry it. A rule like `a[href^="/"]` applied
+ * at runtime would be one regex away from catching them, and every registry `href` starts with `/`
+ * while every in-page one starts with `#` — a distinction a broad selector is free to lose later.
+ *
+ * STANDALONE CHROME, ON PURPOSE. It is a meta page ABOUT the portal, not a page OF it, so it does
+ * not use `StarlightPage`: no docs sidebar, no header nav, no prev/next, no reading position. Four
+ * places would otherwise absorb it, and each is closed deliberately:
+ *
+ *   header nav      simply never added to `components/Header.astro`'s `NAV` list — three
+ *                   destinations is the measured budget at 390
+ *   docs sidebar    it is not a content-collection entry, so it never appears
+ *   search          `lib/search-modal.ts` NOT_DOCS carries `handoff` beside `tickets`
+ *   sitemap         pruned by the local integration in `astro.config.mjs`, plus the `noindex`
+ *                   below. It will be public; it should not be FOUND.
+ *
+ * IT DEPLOYS PUBLICLY AND THERE IS NO AUTH ON THIS APP. Anyone with the URL can open it. That is
+ * accepted rather than solved: it carries no credentials, and the portal it indexes is itself a
+ * pre-launch demo. If that stops being true the page moves behind whatever gate tickets end up
+ * using.
+ *
+ * THE BRIDGE IS IMPORTED DIRECTLY because Starlight is not rendering this page and would otherwise
+ * be the only thing loading it. That is also why the theme is stamped by a pre-paint script here:
+ * `brand/baseout-bridge.css` keys its dark palette off `data-theme` on the root element, which
+ * Starlight's own provider normally sets, and a standalone page with no provider would render light
+ * for everybody regardless of what they chose next door.
+ */
+import '../../../../brand/baseout-bridge.css';
+import Icon from '../components/Icon.astro';
+import HandoffEmails from '../components/HandoffEmails.astro';
+import { EMAIL_PREVIEWS } from '../lib/email-previews';
+import type { IconName } from '../lib/icons';
+import {
+  HANDOFF_FLOWS,
+  HANDOFF_COMPARISONS,
+  HANDOFF_FRICTIONS,
+  type HandoffFlow,
+} from '../lib/handoff-registry';
+
+type Surface = HandoffFlow['surface'];
+
+const SURFACE_LABEL: Record<Surface, string> = {
+  landing: 'Landing',
+  docs: 'Documentation',
+  search: 'Search',
+  chat: 'Chat',
+  contact: 'Contact',
+  roadmap: 'Roadmap',
+  tickets: 'Tickets',
+  header: 'The header',
+};
+
+const SURFACE_ICON: Record<Surface, IconName> = {
+  landing: 'play',
+  docs: 'book-open',
+  search: 'search',
+  chat: 'message-circle-question-mark',
+  contact: 'life-buoy',
+  roadmap: 'map',
+  tickets: 'list-checks',
+  header: 'circle-user',
+};
+
+// Group by surface, preserving the order the registry declares.
+const groups: { surface: Surface; flows: HandoffFlow[] }[] = [];
+for (const flow of HANDOFF_FLOWS) {
+  let g = groups.find((x) => x.surface === flow.surface);
+  if (!g) {
+    g = { surface: flow.surface, flows: [] };
+    groups.push(g);
+  }
+  g.flows.push(flow);
+}
+
+/**
+ * ONE AXIS. `planned` and `discussion` both mean "you cannot open it", and drawing them as two
+ * different colours asked the reader to hold a taxonomy in their head to learn one bit.
+ */
+const isBuilt = (flow: HandoffFlow): boolean => flow.status === 'built';
+
+/**
+ * A flow with no declared shape is a SEQUENCE. The registry states the test that assigns it
+ * (`handoff-registry.ts`, `HandoffShape`); this only reads the answer, because a page that decided
+ * the shape itself would be a second place for the decision to live.
+ */
+const shapeOf = (flow: HandoffFlow): 'sequence' | 'states' => flow.shape ?? 'sequence';
+
+/**
+ * THE STATES OF ONE FLOW, EACH WITH AN HONEST ANSWER TO "CAN I OPEN THIS".
+ *
+ * `open` — this URL produces this state, so it is a link.
+ * `same-page` — this state lives on a URL an earlier state already claimed. It is reached by
+ *               clicking on that page, and a second link to the same address would be a promise the
+ *               address cannot keep. It is the 21-of-84 case.
+ * `not-built` — no URL produces it, and none is invented.
+ */
+type StateRow = {
+  label: string;
+  caption: string;
+  href: string | null;
+  kind: 'open' | 'same-page' | 'not-built';
+};
+
+const statesOf = (flow: HandoffFlow): StateRow[] => {
+  const claimed = new Set<string>();
+  return flow.steps.map((step) => {
+    if (step.href === null) {
+      return { label: step.label, caption: step.caption, href: null, kind: 'not-built' as const };
+    }
+    const kind = claimed.has(step.href) ? ('same-page' as const) : ('open' as const);
+    claimed.add(step.href);
+    return { label: step.label, caption: step.caption, href: step.href, kind };
+  });
+};
+
+const openable = (flow: HandoffFlow): number =>
+  statesOf(flow).filter((s) => s.kind === 'open').length;
+
+/**
+ * WHAT IS WRONG HERE, IN THE READER'S TERMS. Only the rows the walk called a DEFECT — something
+ * that is wrong today — and only their `case` sentence, which the registry declares is written in
+ * the user's terms. The probe, the severity, the disposition, the line number and the evidence note
+ * are the engineer's half and are in the register.
+ *
+ * SIX IS THE CAP, and the remainder is counted rather than hidden: two flows carry nine and
+ * fourteen, and a fourteen-item list under a heading called "what is wrong here" is the wall this
+ * page was rebuilt to remove.
+ */
+const WRONG_SHOWN = 6;
+const wrongsOf = (flow: HandoffFlow): string[] =>
+  flow.steps
+    .flatMap((s) => s.edges ?? [])
+    .filter((e) => e.disposition === 'defect')
+    .map((e) => e.case);
+
+const flowLabel = (id: string): string => HANDOFF_FLOWS.find((f) => f.id === id)?.label ?? id;
+
+const builtCount = HANDOFF_FLOWS.filter(isBuilt).length;
+const notBuiltCount = HANDOFF_FLOWS.length - builtCount;
+const totalStates = HANDOFF_FLOWS.reduce((n, f) => n + f.steps.length, 0);
+const totalOpenable = HANDOFF_FLOWS.reduce((n, f) => n + openable(f), 0);
+const totalWrong = HANDOFF_FLOWS.reduce((n, f) => n + wrongsOf(f).length, 0);
+
+/**
+ * THE SECTION NAV IS A STICKY BAR, NOT A RAIL, AND THE CHOICE IS FORCED RATHER THAN TASTEFUL.
+ *
+ * SUPERSEDED 2026-08-24 — IT IS A RAIL NOW, AND THE OLD REFUSAL WAS ARGUED WITHOUT NUMBERS.
+ * What it said: a rail cannot stand in the 144px gutter left by a 1152px column. True, and the wrong
+ * question — the gutter was never where a rail goes. The column is. `apps/design`'s own handoff had
+ * already solved it at 1320 wide with a 212px rail, and this page is derived from that one, so it is
+ * now the same shape: the measure widened to 82.5rem and the rail took a track out of it. The
+ * arithmetic is on `.hf-layout`.
+ *
+ * WHAT SURVIVED THE REFUSAL IS ITS SECOND HALF, and it was the correct half: a rail has nowhere to
+ * live at 390. So below 1160px it becomes exactly the bar described here — one sticky horizontal row
+ * of chips that scrolls rather than wrapping. Two layouts, one markup, one nav.
+ *
+ * CHOSEN — one sticky bar directly under the page header. It costs ~44px of height and ZERO width,
+ * so the reading column is untouched at every size; at 390 the chip row becomes its own horizontal
+ * scroller rather than wrapping to four stacked rows and eating a third of the viewport.
+ *
+ * THE CHIP LABEL IS SHORTER THAN THE SECTION TITLE. Measured at 1440: the scroller had 942px of
+ * room and the chips wanted 1170, so `Tickets` was cut mid-word with nothing to say a scroll
+ * existed. A nav label's job is to be recognised in a row of ten, not to repeat the heading it
+ * jumps to. Section headings are unchanged.
+ */
+const NAV_LABEL: Record<string, string> = {
+  'cross-cutting': 'Cross-cutting',
+  'platform-comparison': 'Platforms',
+  docs: 'Docs',
+};
+
+/**
+ * THE `Emails` CHIP SITS BETWEEN `Contact` AND `Tickets`, AND THE POSITION IS THE ARGUMENT.
+ * An acknowledgement is what `Contact` produces and a reply is what a case in `Tickets` produces, so
+ * by subject the emails are the join between those two. Appending the chip to the end would have put
+ * it after `Platforms`, which is a section about something else entirely, and told the reader the
+ * emails were an afterthought rather than the middle of the journey.
+ *
+ * TEN CHIPS DO NOT FIT AT 1440, AND THE ROW IS ALLOWED TO SCROLL — measured, not assumed. See the
+ * `.hf-nav-list` rule for the numbers and the ruling.
+ */
+interface NavEntry {
+  id: string;
+  label: string;
+  icon: IconName;
+  /** The jumpable things INSIDE the section. Empty where a section has no addressable parts. */
+  items: { id: string; label: string }[];
+}
+
+const NAV: NavEntry[] = [
+  /* `Cross-cutting` and `Platforms` carry no items, and that is a fact about them rather than an
+     omission: a friction is a paragraph that links INTO a flow, and a comparison row is a question
+     with four cards under it. Neither is a destination a reader hunts for by name, so listing them
+     would pad the filter with rows that answer nothing. Both still match on their own label. */
+  { id: 'cross-cutting', label: NAV_LABEL['cross-cutting'], icon: 'bug', items: [] },
+  ...groups.flatMap((g): NavEntry[] => {
+    const chip: NavEntry = {
+      id: `surface-${g.surface}`,
+      label: NAV_LABEL[g.surface] ?? SURFACE_LABEL[g.surface],
+      icon: SURFACE_ICON[g.surface],
+      /* THE TWENTY FLOW LABELS ARE THE POINT OF THE SEARCH. Ten section names is a list a reader can
+         already see; `Reopen something closed` is the thing they came looking for and it is three
+         levels down inside a closed `<details>`. `wireHashOpen` is what makes the jump land — it
+         opens a closed flow on arrival — so these hrefs work without any new machinery. */
+      items: g.flows.map((f) => ({ id: f.id, label: f.label })),
+    };
+    return g.surface === 'contact'
+      ? [
+          chip,
+          {
+            id: 'surface-emails',
+            label: 'Emails',
+            icon: 'mail',
+            items: EMAIL_PREVIEWS.map((m) => ({ id: `email-${m.slug}`, label: m.title })),
+          },
+        ]
+      : [chip];
+  }),
+  { id: 'platform-comparison', label: NAV_LABEL['platform-comparison'], icon: 'table-2', items: [] },
+];
+
+/* CAPTIONS CARRY CODE SPANS, AND THEY WERE PRINTING THEIR OWN BACKTICKS. Measured on the rendered
+   page: 30 literal marks, because a caption naming a URL parameter was written in markdown and
+   rendered as text. Stripping the backticks would be the wrong repair — monospace is what tells a
+   reader that `all` is a value rather than an English word. So they are rendered, and nothing else
+   is: escaping runs FIRST and the only tag this can ever emit is <code>, which is what keeps
+   `set:html` on an authored string safe. */
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const withCode = (s: string) =>
+  escapeHtml(s).replace(/`([^`]+)`/g, '<code class="hf-code">$1</code>');
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Portal handoff · Baseout Support</title>
+    <script is:inline>
+      /* Pre-paint, so the page cannot flash the wrong theme. Same storage key and same fallback as
+         Starlight's own provider, which is what makes this page agree with the portal next door. */
+      const stored = typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+      const theme =
+        stored === 'light' || stored === 'dark'
+          ? stored
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+      document.documentElement.dataset.theme = theme;
+    </script>
+  </head>
+
+  <body>
+    <main class="hf">
+      {/* THE GRID IS THE RAIL. Header and body sit in column one, the nav spans both rows in column
+          two. DOM order stays header → nav → body, which is what the bar mode below 64rem needs: a
+          nav placed after the content in the source would be a bar at the FOOT of the page there,
+          and grid placement cannot fix a document that is read linearly. */}
+      <div class="hf-layout">
+      <header class="hf-head" id="hf-top">
+        <p class="hf-eyebrow">Baseout support portal</p>
+        <h1 class="hf-h1">Portal handoff</h1>
+        <p class="hf-lede">
+          Every flow a person can walk in the portal. Each one says <strong>what happens there</strong>,
+          <strong>which states you can open</strong> and <strong>what is missing or wrong</strong> — and
+          nothing else. Open a state and you are in the real portal, in a new tab.
+        </p>
+        <p class="hf-lede">
+          <strong>A link here always produces the state it names.</strong> Where a state has no
+          address of its own it says so rather than sending you to a page that is not it: either it
+          is not built yet, or it is reached by clicking on the state above it.
+        </p>
+
+        <div class="hf-legend">
+          <span class="hf-pill" data-built="true">
+            <Icon name="circle-check" size={14} />
+            {builtCount} built
+          </span>
+          {notBuiltCount > 0 && (
+            <span class="hf-pill" data-built="false">
+              <Icon name="circle-dashed" size={14} />
+              {notBuiltCount} not built
+            </span>
+          )}
+          <span class="hf-count">
+            {HANDOFF_FLOWS.length} flows · {groups.length} surfaces · {totalOpenable} of {totalStates}
+            states have a link · {totalWrong} things wrong
+          </span>
+        </div>
+
+        {/* THE FIELD IS IN THE CONTENT COLUMN AND NOT IN THE RAIL, copied from the app's own handoff
+            for the reason that page discovered: a search that filters the page belongs beside the
+            page, and a 212px rail cannot hold a field whose placeholder has to say what it searches.
+            `/` focuses it, which is what the placeholder advertises; Escape clears it.
+
+            IT FILTERS BOTH — the page's flows and the rail's rows — because hiding one without the
+            other leaves a rail pointing at things that are no longer on screen. The way back is
+            explicit: a count while it is filtering, and a clear control in the empty state. */}
+        <div class="hf-find">
+          <Icon name="search" size={16} />
+          <input
+            class="hf-find-input"
+            type="search"
+            id="hf-q"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Search sections, flows and ids — name, id, area…  (press /)"
+            aria-label="Search sections, flows and ids"
+            data-hf-search
+          />
+          <span class="hf-find-n" data-hf-count data-hf-hide="true"></span>
+        </div>
+        <p class="hf-find-none" data-hf-empty data-hf-hide="true">
+          Nothing matches that — <button type="button" class="hf-find-clear" data-hf-clear>clear the search</button>.
+        </p>
+      </header>
+
+      {/* THE RAIL IS `apps/design/src/pages/handoff.astro`'s `.ho-rail`, ported. That page is the
+          original this one was derived from and it solved this already: a sticky column of section
+          rows, each carrying a COUNT, nested one level where a section has parts. The count is what
+          makes a rail an index rather than a menu — a developer reads "Tickets 5" and knows the size
+          of what they are about to open.
+
+          IT IS ENTIRELY IN-PAGE ANCHORS, so not one of them carries `target`. The page's rule is
+          held by hand-written attributes on exactly the anchors that leave, and adding a selector
+          that swept this row is how it would break. */}
+      <aside class="hf-rail">
+        <nav class="hf-toc" aria-label="Jump to a section" data-hf-nav>
+          <p class="hf-toc-h">On this page</p>
+          {NAV.map((n) => (
+            <div class="hf-toc-grp" data-hf-item data-hf-for={n.id}>
+              <a class="hf-nav-a" href={`#${n.id}`} data-hf-nav-a={n.id}>
+                <Icon name={n.icon} size={14} />
+                <span class="hf-nav-a-t">{n.label}</span>
+                {/* Absent, not empty. A section with no addressable parts gets no badge — an empty
+                    pill is a count that reads as zero, and `Cross-cutting` has plenty in it. */}
+                {n.items.length > 0 && <span class="hf-n">{n.items.length}</span>}
+              </a>
+              {n.items.length > 0 && (
+                <div class="hf-subnav">
+                  {n.items.map((it) => (
+                    <a
+                      class="hf-nav-a hf-sub"
+                      href={`#${it.id}`}
+                      data-hf-sub-item
+                      data-hf-hide="true"
+                      data-hf-for={it.id}
+                    >
+                      <span class="hf-nav-a-t">{it.label}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+
+        </nav>
+
+        {/* OUTSIDE the jump list, so that at narrow widths — where the list is a horizontal
+            scroller — these two are not scrolled off the end of it. */}
+        <div class="hf-nav-act">
+          <button type="button" class="hf-nav-btn" data-hf-expand="open">Open all</button>
+          <button type="button" class="hf-nav-btn" data-hf-expand="close">Close all</button>
+        </div>
+      </aside>
+
+      <div class="hf-body">
+      <section class="hf-surface" id="cross-cutting" data-hf-section data-hf-name="cross-cutting runs through everything">
+        <h2 class="hf-h2">
+          <Icon name="bug" size={18} />
+          Runs through everything
+          <span class="hf-h2-n">{HANDOFF_FRICTIONS.length} of them</span>
+        </h2>
+
+        <p class="hf-lede">
+          Everything under a flow below belongs to that flow. These do not — each one happens in
+          three or more of them, so fixing it in one place would leave it standing in the others.
+          They are the half worth reading first.
+        </p>
+
+        <ul class="hf-x">
+          {HANDOFF_FRICTIONS.map((fr) => (
+            <li class="hf-x-item">
+              <p class="hf-x-title">{fr.title}</p>
+              <p class="hf-x-flows">
+                <span class="hf-x-key">Happens in</span>
+                {fr.flows.map((id) => (
+                  <a class="hf-x-flow" href={`#${id}`}>{flowLabel(id)}</a>
+                ))}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {groups.map((g) => (
+        <Fragment>
+        <section
+          class="hf-surface"
+          id={`surface-${g.surface}`}
+          data-hf-section
+          data-hf-name={`${SURFACE_LABEL[g.surface]} ${NAV_LABEL[g.surface] ?? ''}`.toLowerCase()}
+        >
+          <h2 class="hf-h2">
+            <Icon name={SURFACE_ICON[g.surface]} size={18} />
+            {SURFACE_LABEL[g.surface]}
+            <span class="hf-h2-n">{g.flows.length} {g.flows.length === 1 ? 'flow' : 'flows'}</span>
+          </h2>
+
+          <div class="hf-flows">
+            {g.flows.map((flow) => (
+              <details
+                class="hf-flow"
+                id={flow.id}
+                data-hf-flow
+                data-hf-row
+                data-hf-name={`${flow.label} ${flow.id}`.toLowerCase()}
+                data-shape={shapeOf(flow)}
+              >
+                <summary class="hf-flow-head">
+                  <span class="hf-flow-chev" aria-hidden="true">
+                    <Icon name="chevron-right" size={16} />
+                  </span>
+                  <span class="hf-flow-title">
+                    <h3 class="hf-h3">{flow.label}</h3>
+                  </span>
+                  <span class="hf-flow-meta">
+                    <span class="hf-pill" data-built={String(isBuilt(flow))}>
+                      <Icon name={isBuilt(flow) ? 'circle-check' : 'circle-dashed'} size={14} />
+                      {isBuilt(flow) ? 'Built' : 'Not built'}
+                    </span>
+                    <span class="hf-completeness">
+                      {openable(flow)} of {flow.steps.length} states have a link
+                    </span>
+                    {wrongsOf(flow).length > 0 && (
+                      <span class="hf-completeness">
+                        {`${wrongsOf(flow).length} ${
+                          wrongsOf(flow).length === 1 ? 'thing' : 'things'
+                        } wrong here`}
+                      </span>
+                    )}
+                    <span class="hf-completeness" data-shape={shapeOf(flow)}>
+                      {shapeOf(flow) === 'states' ? 'states of one screen' : 'steps in order'}
+                    </span>
+                  </span>
+                </summary>
+
+                <p class="hf-what">{flow.summary}</p>
+
+                {shapeOf(flow) === 'states' ? (
+                  <ul class="hf-chips" aria-label={`States of ${flow.label}`}>
+                    {statesOf(flow).map((s) => (
+                      <li>
+                        {s.kind === 'open' ? (
+                          <a class="hf-chip" href={s.href} target="_blank" rel="noopener noreferrer">
+                            {s.label}
+                            <Icon name="external-link" size={13} />
+                          </a>
+                        ) : (
+                          <span class="hf-chip" data-nolink={s.kind}>
+                            {s.label}
+                            <span class="hf-chip-why">
+                              {s.kind === 'not-built' ? 'no URL yet' : 'no URL of its own'}
+                            </span>
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ol class="hf-seq">
+                    {statesOf(flow).map((s, i) => (
+                      <li class="hf-step" data-kind={s.kind}>
+                        <span class="hf-step-n" aria-hidden="true">{i + 1}</span>
+                        <div class="hf-step-body">
+                          <p class="hf-step-label">
+                            {s.kind === 'open' ? (
+                              <a class="hf-step-link" href={s.href} target="_blank" rel="noopener noreferrer">
+                                {s.label}
+                                <Icon name="external-link" size={13} />
+                              </a>
+                            ) : (
+                              <Fragment>
+                                <span>{s.label}</span>
+                                <span class="hf-chip-why">
+                                  {s.kind === 'not-built' ? 'no URL yet' : 'no URL of its own'}
+                                </span>
+                              </Fragment>
+                            )}
+                          </p>
+                          <p class="hf-step-caption" set:html={withCode(s.caption)} />
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+
+                {wrongsOf(flow).length > 0 && (
+                  <div class="hf-wrong">
+                    <p class="hf-wrong-h">What is missing or wrong</p>
+                    <ul>
+                      {wrongsOf(flow).slice(0, WRONG_SHOWN).map((w) => (
+                        <li>{w}</li>
+                      ))}
+                    </ul>
+                    {wrongsOf(flow).length > WRONG_SHOWN && (
+                      <p class="hf-wrong-more">
+                        {wrongsOf(flow).length - WRONG_SHOWN} more are written up in the engineering
+                        register, linked at the foot of this page.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </details>
+            ))}
+          </div>
+        </section>
+        {/* The emails follow the surface that produces them. `Emails` is a SECTION and not an
+            eighth surface in `handoff-registry.ts` — the argument is at the top of
+            `components/HandoffEmails.astro`, and the precedent is `Cross-cutting` and `Platforms`,
+            which are both sections that are not flows. This is an ASTRO comment, so it does not
+            ship; an HTML one would put our own reasoning in the served page. */}
+        {g.surface === 'contact' && <HandoffEmails />}
+        </Fragment>
+      ))}
+
+      <section class="hf-surface" id="platform-comparison" data-hf-section data-hf-name="platforms platform comparison">
+        <h2 class="hf-h2">
+          <Icon name="table-2" size={18} />
+          Platform comparison
+          <span class="hf-h2-n">{HANDOFF_COMPARISONS.length} surfaces</span>
+        </h2>
+
+        <p class="hf-lede">
+          The surfaces where the number of platforms could change what a reader sees. Each row says
+          <strong>what these addresses actually do to that surface</strong> and then gives one card
+          per address: its URL, and what you would find there. The rows are not all asking the same
+          question — the first asks <strong>how many cards the chooser draws</strong>
+          (<code class="hf-code">?cards=</code>, a review parameter), and the four below it ask what
+          <code class="hf-code">?platform=</code> narrows once a reader has chosen. Two of those four
+          answer to it and two do not, and the cards say which is which rather than implying a
+          difference by standing next to each other.
+        </p>
+
+        <p class="hf-lede">
+          <strong>The <code class="hf-code">?platform=</code> rows were four live frames of the
+          portal until 2026-08-21, and the frames were removed because the comparison could not
+          work.</strong> The element being compared sat below the fold of a 560px cell, so every cell
+          showed the same site header; two of the four surfaces do not read the parameter at all; and
+          the filter is applied in the browser, so the served HTML of all four addresses in a row is
+          identical by design. A sentence you can read is worth more than a picture of two identical
+          headers.
+        </p>
+
+        {HANDOFF_COMPARISONS.map((cmp) => (
+          <div class="hf-cmp" id={`cmp-${cmp.id}`}>
+            <h3 class="hf-h3 hf-cmp-q" set:html={withCode(cmp.question)} />
+            <p class="hf-cmp-find" set:html={withCode(cmp.finding)} />
+
+            <ul class="hf-cmp-row">
+              {cmp.columns.map((col) => (
+                <li class="hf-cell">
+                  <p class="hf-cell-label">{col.label}</p>
+                  <a class="hf-open" href={col.href} target="_blank" rel="noopener noreferrer">
+                    <code>{col.href}</code>
+                    <Icon name="external-link" size={13} />
+                  </a>
+                  <p class="hf-cell-what" set:html={withCode(col.what)} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+
+      <footer class="hf-foot">
+        <p>
+          <strong>For whoever builds this.</strong> The 268 enumerated edge states — each with its
+          probe, what was decided about it, the line of code that answers it, and the 21 decisions
+          still to lock — are in <code>openspec/changes/support-handoff/edge-register.md</code>. They
+          were moved there, not dropped: this page is for deciding what a screen should do, and that
+          one is for building it. The catalogue both read from is
+          <code>apps/support/src/lib/handoff-registry.ts</code>, and every link above is requested by
+          <code>pnpm smoke-support</code>, so a state that stops opening fails a gate instead of
+          ageing quietly.
+        </p>
+      </footer>
+      </div>
+      </div>
+    </main>
+
+    <script>
+      import { mountHandoff } from '../lib/handoff';
+      mountHandoff();
+    </script>
+  </body>
+</html>
+
+<style>
+  /* Every colour here is a bridge token. `apps/support` has no `--color-*` vocabulary — the portal's
+     palette is `--bo-*`, declared once in `brand/baseout-bridge.css` and worn by four public apps.
+     Spacing is on the 4px grid throughout; the two 1px values are borders. */
+  :global(html) {
+    scroll-behavior: smooth;
+  }
+  :global(body) {
+    margin: 0;
+    background: var(--bo-root-bg);
+    color: var(--bo-base-content);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  :global(*) {
+    box-sizing: border-box;
+  }
+
+  .hf {
+    /* 82.5rem = 1320px, the width `apps/design/src/pages/handoff.astro` uses. The arithmetic that
+       makes the rail fit is on `.hf-layout` below. */
+    max-width: 82.5rem;
+    margin: 0 auto;
+    padding: 32px 24px 96px;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  .hf-eyebrow {
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+  .hf-h1 {
+    margin: 0 0 12px;
+    font-size: 32px;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+  .hf-lede {
+    margin: 0 0 16px;
+    max-width: 46rem;
+    color: var(--bo-muted-strong);
+  }
+  .hf-lede code {
+    font-size: 13px;
+  }
+
+  .hf-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .hf-count {
+    font-size: 13px;
+    color: var(--bo-muted);
+  }
+
+  /* ── The rail, the search, and what both become when the rail has nowhere to stand ────────────
+
+     THE ARITHMETIC, at 1440 and stated because the last two rulings about this row were made without
+     it and both were wrong:
+
+         .hf max-width          1320   (82.5rem — the app's handoff, matched deliberately)
+         horizontal padding     24 + 24
+         inner                  1272
+         rail track             212
+         column gap             40
+         content track          1020   = 1272 − 212 − 40
+
+     1152 was the old measure and it is what made a rail "impossible": 1152 centred leaves 144px
+     gutters, and a rail of full-width labels needs about 168 (the widest label, `Cross-cutting`,
+     measured 132 as a chip, plus a count badge and padding). The gutter was never the place. The
+     column is — and 1020 is still wider than the 62ch every lede on this page is capped at, so
+     nothing readable got narrower. It also lands exactly on what the emails section needs: a 600px
+     frame, a 24px gap and a 396px notes column.
+
+     WHAT IT BECOMES AS THE VIEWPORT NARROWS. Content = min(vw, 1320) − 48 − 252. At 1160 that is
+     860; below it the content column starts eating the reading measure, so 1160 is the switch — the
+     same breakpoint the app uses. Under it the rail goes back to being exactly what this page had
+     before: one horizontal row of chips above the content, sticky, its own scroller at 390 rather
+     than four wrapped rows eating a third of the viewport. The sub-rows do NOT flatten into that
+     row: ten chips is a row you can read and thirty is not, so at narrow widths they appear only
+     while the search is showing them.
+
+     `--hf-nav-mode` IS HOW THE SCRIPT KNOWS WHICH ONE IT IS. The breakpoint lives here, in CSS, and
+     `lib/handoff.ts` reads the answer rather than re-deriving it from a width it would then own a
+     second copy of. It decides two things: what `--hf-nav-h` is (a rail covers nothing, so 0; a bar
+     covers its own height) and where the scroll-spy's reading line sits. */
+
+  .hf-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 212px;
+    column-gap: 40px;
+    align-items: start;
+  }
+  .hf-head {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .hf-rail {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 16px;
+    align-self: start;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    --hf-nav-mode: rail;
+  }
+  .hf-body {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .hf-toc {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  /* Every child of a flex box gets its margin reset here rather than trusted: a general-sibling
+     prose rule reaches into nested flex and grid boxes in this app, and it has already produced one
+     crooked row and one wrong card gap. */
+  .hf-toc > *,
+  .hf-toc-grp > *,
+  .hf-subnav > * {
+    margin-top: 0;
+  }
+  .hf-toc-h {
+    margin: 0;
+    padding: 0 8px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+  .hf-toc-grp {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .hf-nav-a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    border-left: 2px solid transparent;
+    color: var(--bo-muted-strong);
+    font-size: 13px;
+    text-decoration: none;
+  }
+  .hf-nav-a-t {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hf-nav-a:hover {
+    background: var(--bo-base-100);
+    color: var(--bo-primary);
+  }
+  /* WHERE THE READER IS. `aria-current` rather than a class, because the state is the same fact for
+     the screen reader and for the eye, and carrying it twice is how the two drift apart. */
+  .hf-nav-a[aria-current='true'] {
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    border-left-color: var(--bo-primary);
+    font-weight: 600;
+  }
+  /* THE COUNT IS WHAT MAKES IT AN INDEX. A developer reads `Tickets 5` and knows the size of what
+     they are about to open; a menu row tells them only that it exists. */
+  .hf-n {
+    flex: 0 0 auto;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--bo-base-200);
+    color: var(--bo-muted);
+    font-size: 12px;
+    line-height: 20px;
+  }
+  .hf-subnav {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 4px 0 4px 12px;
+    padding-left: 8px;
+    border-left: 1px solid var(--bo-base-300);
+  }
+  .hf-nav-a.hf-sub {
+    padding: 4px 8px;
+    border-left: 0;
+    font-size: 12px;
+  }
+
+  .hf-nav-act {
+    display: flex;
+    gap: 4px;
+    margin-top: 12px;
+  }
+  .hf-nav-btn {
+    padding: 4px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 8px;
+    background: var(--bo-base-100);
+    color: var(--bo-muted-strong);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .hf-nav-btn:hover {
+    border-color: var(--bo-primary);
+    color: var(--bo-primary);
+  }
+
+  /* ── The search, in the content column ─────────────────────────────────── */
+  .hf-find {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 62ch;
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 8px;
+    background: var(--bo-base-100);
+  }
+  .hf-find > * {
+    margin-top: 0;
+  }
+  .hf-find:focus-within {
+    border-color: var(--bo-primary);
+  }
+  .hf-find .bo-i {
+    flex: 0 0 auto;
+    color: var(--bo-muted);
+  }
+  .hf-find-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    background: none;
+    color: var(--bo-base-content);
+    font: inherit;
+    font-size: 13px;
+  }
+  .hf-find-input:focus {
+    outline: none;
+  }
+  .hf-find-n {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--bo-muted);
+  }
+  .hf-find-none {
+    max-width: 62ch;
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: var(--bo-muted);
+  }
+  .hf-find-clear {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--bo-primary);
+    font: inherit;
+    font-size: 13px;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  /* ONE HIDING MECHANISM FOR THE WHOLE FILTER, and it is an attribute rather than `hidden`: an
+     author `display` beats that attribute, and this app has shipped that defect once already. */
+  /* `:global()` IS LOAD BEARING. A scoped selector compiles to `[data-hf-hide='true'].astro-<page>`
+     and the emails section is emitted by a CHILD COMPONENT, which carries its own hash — so without
+     this the filter would hide every flow on the page and leave the three email cards on screen,
+     with every gate green. Same defect as the one recorded in `components/HandoffEmails.astro`. */
+  :global([data-hf-hide='true']) {
+    display: none;
+  }
+
+  /* ── Narrow: the rail becomes the chip bar this page already had ────────── */
+  @media (max-width: 1160px) {
+    .hf-layout {
+      display: block;
+    }
+    .hf-rail {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      max-height: none;
+      overflow: visible;
+      margin: 0 -24px 20px;
+      padding: 8px 24px;
+      background: var(--bo-root-bg);
+      border-bottom: 1px solid var(--bo-base-300);
+      --hf-nav-mode: bar;
+    }
+    .hf-toc {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      /* ONE ROW THAT SCROLLS, NEVER FOUR THAT WRAP. Ten chips wrapped at 390 would be a third of the
+         viewport permanently pinned to the top, which is the failure this control exists to avoid. */
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+      padding: 4px 0;
+    }
+    .hf-toc-h {
+      display: none;
+    }
+    /* The group wrapper dissolves so its row and its sub-rows sit directly in the chip row. */
+    .hf-toc-grp {
+      display: contents;
+    }
+    .hf-nav-a {
+      flex: 0 0 auto;
+      border: 1px solid var(--bo-base-300);
+      border-left-width: 1px;
+      border-radius: 999px;
+      background: var(--bo-base-100);
+      color: var(--bo-base-content);
+      white-space: nowrap;
+    }
+    .hf-nav-a[aria-current='true'] {
+      border-color: transparent;
+    }
+    .hf-nav-a-t {
+      overflow: visible;
+      text-overflow: clip;
+    }
+    /* The counts leave the chips. Ten chips already need more room than the row has at 1160, and a
+       badge on each is 28px it does not have; the count is an index affordance and the bar is not an
+       index. */
+    .hf-n {
+      display: none;
+    }
+    .hf-subnav {
+      display: contents;
+    }
+    .hf-rail {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hf-toc {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .hf-nav-act {
+      flex: 0 0 auto;
+      margin-top: 0;
+    }
+  }
+
+  /* ── The one badge axis ─────────────────────────────────────────────────── */
+  /* BUILT OR NOT BUILT, AND NOTHING ELSE WEARS A COLOUR. The page carried 407 badges in two
+     competing taxonomies — a probe name on every edge row and a severity beside it — and the
+     complaint was that it all ran together. Everything that used to be a chip is now either a
+     sentence or a plain count in muted text: a number a reader can read is worth more than a colour
+     they have to decode. Soft background, semantic foreground, never outline. */
+  .hf-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .hf-pill[data-built='true'] {
+    background: var(--bo-soft-success-bg);
+    color: var(--bo-soft-success-fg);
+  }
+  .hf-pill[data-built='false'] {
+    background: var(--bo-soft-warning-bg);
+    color: var(--bo-soft-warning-fg);
+  }
+
+  /* ── Surface groups ─────────────────────────────────────────────────────── */
+  .hf-surface {
+    margin-top: 40px;
+    scroll-margin-top: calc(var(--hf-nav-h, 56px) + 16px);
+  }
+  .hf-h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--bo-base-300);
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .hf-h2-n {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--bo-muted);
+  }
+
+  .hf-flows {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  /* ── A FLOW IS CLOSED UNTIL SOMEBODY OPENS IT ───────────────────────────── */
+  /* A closed row still carries everything that decides whether to open it: whether it is built, how
+     many of its states you can open, how many things are wrong in it, and whether its steps are a
+     sequence or the states of one screen. Native `<details>`, so it works with no JavaScript, takes
+     keyboard focus for free, and is what Ctrl+F expands in browsers that support find-in-page
+     through closed details. */
+  .hf-flow {
+    border: 1px solid var(--bo-base-300);
+    border-radius: 12px;
+    background: var(--bo-base-100);
+    padding: 12px 20px;
+    scroll-margin-top: calc(var(--hf-nav-h, 56px) + 16px);
+  }
+  .hf-flow[open] {
+    padding-bottom: 20px;
+  }
+  .hf-flow-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    list-style: none;
+    cursor: pointer;
+  }
+  .hf-flow-head::-webkit-details-marker {
+    display: none;
+  }
+  .hf-flow-head:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 4px;
+    border-radius: 8px;
+  }
+  .hf-flow-chev {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--bo-muted);
+    transition: transform 120ms ease;
+  }
+  .hf-flow[open] .hf-flow-chev {
+    transform: rotate(90deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hf-flow-chev {
+      transition: none;
+    }
+  }
+  .hf-flow-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    min-width: 0;
+    margin-right: auto;
+  }
+  .hf-h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+  }
+  .hf-flow-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  /* A COUNT IS A WORD, NOT A TAXONOMY. `2 things wrong here` needs no legend; a red chip does. */
+  .hf-completeness {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--bo-muted);
+  }
+  .hf-completeness[data-shape] {
+    font-weight: 500;
+  }
+
+  /* ── 1 · What happens here ──────────────────────────────────────────────── */
+  .hf-what {
+    margin: 12px 0 0;
+    max-width: 46rem;
+    font-size: 14px;
+    color: var(--bo-base-content);
+  }
+
+  /* ── 2 · The states you can open ────────────────────────────────────────── */
+  /* WHERE THE STEPS ARE THE STATES OF ONE SCREEN, THEY GO ON ONE ROW. Signed out · The list · Open ·
+     Closed · All · Never written in is one feature seen six ways, and stacking it as six full-width
+     numbered cards says it is six things that happen in order. The registry decides which flows get
+     this (`HandoffShape`). */
+  .hf-chips {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0 0;
+    padding: 0;
+  }
+  .hf-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  .hf-chip:hover {
+    text-decoration: underline;
+  }
+  /* A STATE WITH NO ADDRESS DOES NOT GET A LINK, AND SAYS WHY. It is drawn as the same chip without
+     the plate, so the row still reads as one set — the difference is that one is clickable and one
+     tells you why it is not. */
+  .hf-chip[data-nolink] {
+    background: transparent;
+    color: var(--bo-muted-strong);
+    border: 1px dashed var(--bo-base-300);
+  }
+  .hf-chip-why {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--bo-muted);
+    white-space: nowrap;
+  }
+
+  /* A REAL SEQUENCE STAYS NUMBERED AND IN ORDER, because step 3 is only reachable by having done
+     step 2. Drawing it as an unordered row of chips would destroy that. */
+  .hf-seq {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .hf-step {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--bo-base-200);
+  }
+  .hf-step-n {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    border-radius: 999px;
+    background: var(--bo-base-200);
+    color: var(--bo-muted-strong);
+    font-size: 12px;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+  }
+  .hf-step[data-kind='not-built'] .hf-step-n {
+    background: var(--bo-soft-warning-bg);
+    color: var(--bo-soft-warning-fg);
+  }
+  .hf-step-body {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .hf-step-label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .hf-step-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--bo-primary);
+    text-decoration: none;
+  }
+  .hf-step-link:hover {
+    text-decoration: underline;
+  }
+  .hf-step-caption {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--bo-muted-strong);
+  }
+
+  /* ── 3 · What is missing or wrong ───────────────────────────────────────── */
+  /* PLAIN SENTENCES, NOT A REGISTER. No probe name, no severity, no `file:line`, no id — those are
+     the engineer's half and they are in `openspec/changes/support-handoff/edge-register.md`. What
+     is left is the sentence a reader could have written after using the thing. */
+  .hf-wrong {
+    margin: 16px 0 0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--bo-base-200);
+  }
+  .hf-wrong-h {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .hf-wrong ul {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 13px;
+    color: var(--bo-muted-strong);
+  }
+  .hf-wrong li {
+    margin-bottom: 4px;
+  }
+  .hf-wrong-more {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--bo-muted);
+  }
+
+  /* ── Runs through everything ────────────────────────────────────────────── */
+  .hf-x {
+    list-style: none;
+    margin: 0 0 24px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .hf-x-item {
+    border: 1px solid var(--bo-base-300);
+    border-radius: 12px;
+    background: var(--bo-base-100);
+    padding: 12px 16px;
+  }
+  .hf-x-title {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 650;
+    min-width: 0;
+  }
+  .hf-x-flows {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin: 0;
+    font-size: 12px;
+  }
+  .hf-x-key {
+    font-weight: 600;
+    color: var(--bo-muted);
+  }
+  .hf-x-flow {
+    padding: 0 8px;
+    border-radius: 8px;
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .hf-x-flow:hover {
+    text-decoration: underline;
+  }
+
+  /* ── Code spans ─────────────────────────────────────────────────────────── */
+  /* :global BECAUSE THESE ARE INJECTED. `withCode()` writes <code> through `set:html`, and Astro
+     stamps the page hash on the HOST element only — injected children carry none, so a scoped rule
+     compiles to `.hf-code:where(.astro-HASH)` and selects nothing. `contact.astro:1044` had already
+     learnt this and used `:global`. */
+  :global(.hf-code),
+  code {
+    overflow-wrap: anywhere;
+  }
+
+  :global(.hf-code) {
+    font-family: var(--__sl-font-mono, ui-monospace, monospace);
+    font-size: 0.8125rem;
+    padding: 0 4px;
+    border-radius: 4px;
+    /* `--bo-soft-neutral-bg` was never defined — the bridge ships soft primary/success/warning/error
+       and no neutral — so a raw rgba fallback was what painted, and white at 6% over white is
+       nothing at all on the light theme. */
+    background: var(--bo-base-200);
+    color: var(--bo-muted, inherit);
+  }
+
+  /* ── The comparison ─────────────────────────────────────────────────────── */
+  /* CARDS, NOT FRAMES, SINCE 2026-08-21. Each row is a heading, one sentence of finding, and four
+     text cards. The width control (`Fit / 30rem / 50rem / 72rem`) went with the iframes: it set
+     `grid-auto-columns` so a cell could be held at a portal breakpoint and MEASURED. Nothing here
+     measures anything any more — resizing a paragraph teaches a reader nothing about the portal —
+     so the control, `--hf-col`, `TRACKS` and `wireWidths()` are all gone rather than left pointing
+     at a card. */
+  .hf-cmp {
+    margin-bottom: 24px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 12px;
+    background: var(--bo-base-100);
+    padding: 16px;
+  }
+  .hf-cmp-q {
+    margin: 0 0 8px;
+  }
+  /* THE VERDICT IS PRINTED ABOVE THE ROW, not repeated on four cards. On two of the four surfaces
+     the honest per-card sentence is "identical to the one beside it", and saying that four times
+     is how a reader learns to stop reading them. */
+  .hf-cmp-find {
+    margin: 0 0 16px;
+    max-width: 60rem;
+    color: var(--bo-muted-strong);
+  }
+
+  /* FOUR CARDS THAT REFLOW RATHER THAN A ROW THAT SCROLLS. The frames had a fixed height and a
+     fixed track, so a fifth column had to become a scroller; text cards have neither, so `auto-fit`
+     gives four at 1152, two at ~800 and one at 390 with no breakpoint written down. */
+  .hf-cmp-row {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 12px;
+  }
+  .hf-cell {
+    margin: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: 8px;
+    background: var(--bo-base-200);
+  }
+  .hf-cell-label {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .hf-cell-what {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--bo-muted-strong);
+  }
+  .hf-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--bo-primary);
+    text-decoration: none;
+    min-width: 0;
+  }
+  .hf-open code {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .hf-open:hover {
+    text-decoration: underline;
+  }
+
+  .hf-foot {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--bo-base-300);
+    font-size: 13px;
+    color: var(--bo-muted);
+    max-width: 60rem;
+  }
+  .hf-foot code {
+    font-size: 12px;
+  }
+
+  @media (max-width: 50rem) {
+    .hf {
+      padding: 24px 16px 64px;
+    }
+    .hf-h1 {
+      font-size: 24px;
+    }
+    /* The bar bleeds to the page edges, so its negative margin has to track `.hf`'s padding. */
+    .hf-nav {
+      margin: 0 -16px 16px;
+      padding: 8px 16px;
+    }
+    .hf-flow {
+      padding: 12px 16px;
+    }
+  }
+
+  /* AT 390 THE TWO ACTIONS GO, AND THE CHIPS STAY. Nine chips plus `Open all` / `Close all` cannot
+     share one row at 390 without the chip scroller shrinking to about half the viewport, and the
+     alternative — letting the bar wrap to two rows — pins roughly 90px of a phone screen to the top
+     forever. NOT VERIFIED IN A BROWSER for this change: no dev server was started, so the 390
+     behaviour of the scroller and of `--hf-nav-h` is argued from the rules, not measured. */
+  @media (max-width: 30rem) {
+    .hf-nav-act {
+      display: none;
+    }
+  }
+</style>

@@ -3,7 +3,7 @@ title: Payment methods
 description: Where the card lives, who can change it, and why a failed payment is not the same event as a broken connection.
 ---
 
-A payment method belongs to the **Organization**, and the panel is admin-only, like everything else
+A payment method belongs to the *Organization*, and the panel is admin-only, like everything else
 under Billing. See [Members and roles](/account/organization/members-and-roles/).
 
 ## One organization, one billing relationship
@@ -23,7 +23,9 @@ lot of time:
 - A **billing** problem is between you and us and does not reach into your Destination. The backups
   you already have are files in your own storage.
 
+:::note
 If runs have stopped, check the connection first. It is much more often the cause.
+:::
 
 ## What we do not hold
 
@@ -39,7 +41,7 @@ dunning behaviour when a payment fails are not decided. The checkout is specifie
 Rather than describe a screen that does not exist, this page will name the accepted methods once
 there are any. To arrange payment today, [contact us](/contact/?kind=ticket).
 
-## Next
+## Next steps
 
 - [Invoices and receipts](/account/billing/invoices/)
 - [Changing your plan](/account/billing/changing-your-plan/)

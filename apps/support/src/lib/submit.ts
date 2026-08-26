@@ -14,32 +14,50 @@
  * once as a number in a check — they drift, and the version a person believes is the prose one.
  */
 import { bySlug } from '../data/requests';
-import { OPEN_CHAT_EVENT } from './rows';
+import { spaceById } from '../data/spaces';
+import { clearHandoff, readHandoff } from './chat-core';
+import { ICON_DOC, OPEN_CHAT_EVENT, linkRow } from './rows';
 import { iconHtml } from './icons';
 import { searchDocs } from './pagefind';
 import { esc } from './rows';
+import { readSession } from './portal-session';
+import { isDocsUrl } from './search-modal';
 import { statusBadgeHtml } from './status';
 import { looksLikeEmail, readVoteEmail, writeVoteEmail } from './votes';
 
 const DEBOUNCE_MS = 200;
 const MIN_QUERY = 4;
 const MAX_DUPES = 3;
+/* THREE, AND THE CAP IS THE WHOLE MITIGATION. This strip sits between the subject field and the
+   body field, so every row it draws pushes the thing the person came to write further down the
+   page. Three rows is what the deflection is worth; a fourth is a tax on someone who has already
+   decided the answer is not here. */
+const MAX_ARTICLES = 3;
 
-/* ── The four doors ───────────────────────────────────────────────────────────────────────────
+/* ── The five doors ───────────────────────────────────────────────────────────────────────────
  *
  * `billing` EXISTS BECAUSE IT WAS BEING MIS-ROUTED (Dan, 2026-08-20). An invoice question is
  * neither broken nor a wish, and with two doors it landed in the broken one, which sent an account
  * question to whoever reads bug reports and told the person writing it that their problem was a
  * fault. It is private like a ticket and it must never carry the public-board warning.
  *
+ * `sales` IS THE ONLY DOOR FOR SOMEONE WHO IS NOT A CUSTOMER (Dan, 2026-08-21: "one new bucket
+ * item to add - Sales Question (for pre-customer questions)"). Every other door on this page
+ * assumes an account exists somewhere behind it: a ticket is filed against one, an invoice belongs
+ * to one, and the sign-in note at the foot offers to show you the ones you opened. A person
+ * deciding whether to start has none of that, and the four existing doors each told them they had
+ * a fault, a wish, a bill or nothing in particular. It is private, and it is the one door whose
+ * destination is not support — which is why its confirmation says so rather than reusing the
+ * support wording.
+ *
  * `other` IS LAST AND READS AS LAST. A catch-all collects everyone who does not want to choose,
  * which is the point of having one — but it also collects everyone who would have chosen correctly
- * if it had not been sitting there at equal weight. So it is quieter than the three above it
- * rather than a fourth tile.
+ * if it had not been sitting there at equal weight. Position is what says so: it is last in this
+ * list, last in the DOM, last in the tab order and last in the grid.
  */
-export type Kind = 'ticket' | 'request' | 'billing' | 'other';
+export type Kind = 'ticket' | 'request' | 'billing' | 'sales' | 'other';
 
-const KINDS: Kind[] = ['ticket', 'request', 'billing', 'other'];
+const KINDS: Kind[] = ['ticket', 'request', 'billing', 'sales', 'other'];
 
 const isKind = (v: string | null): v is Kind => v !== null && (KINDS as string[]).includes(v);
 
@@ -104,9 +122,10 @@ export function wireSubmit(): void {
      `document.title` follows, because a browser tab is where this page most often waits.
 
      `Contact us` rather than `Contact support`, and rather than the `Write to us` it carried until
-     now (Dan, 2026-08-20: "it could just be contact us"). Two of the four doors do not go to
-     support — a feature request goes to a public board and a billing question goes to whoever
-     holds the account — so naming the desk in the neutral title would be wrong on half the page.
+     now (Dan, 2026-08-20: "it could just be contact us"). Three of the five doors do not go to
+     support — a feature request goes to a public board, a billing question goes to whoever holds
+     the account, and a sales question goes to whoever answers those — so naming the desk in the
+     neutral title would be wrong on most of the page.
      The static string in `pages/contact.astro` has to match this one: it is what renders before
      this script runs, and a title that changes on hydration is a flicker. */
   const TITLES: Record<string, string> = {
@@ -114,6 +133,7 @@ export function wireSubmit(): void {
     ticket: 'Report a problem',
     request: 'Suggest an improvement',
     billing: 'Account and billing',
+    sales: 'Sales question',
     other: 'Something else',
   };
   const heading = document.querySelector<HTMLElement>('h1#_top') ?? document.querySelector('h1');
@@ -164,17 +184,92 @@ export function wireSubmit(): void {
   /* A LINK THAT ALREADY KNOWS DOES NOT ASK AGAIN. `Add a request` and `Report a problem` are the
      answer to the fork's question, so arriving through one of them opens its form directly. The
      step still names itself and still carries the way back, so nothing is hidden — only the second
-     asking is. All four kinds deep-link the same way, so a billing link in an invoice email opens
+     asking is. All five kinds deep-link the same way, so a billing link in an invoice email opens
      the billing form. Anything else in `kind` falls through to the fork rather than erroring, which
      is why this is a guard over the one list of kinds and not a hand-written pair of comparisons —
-     the fifth door would have been added to the chooser and forgotten here. */
+     the fifth door would have been added to the chooser and forgotten here, and `sales` is that
+     fifth door: it cost nothing to reach `/contact/?kind=sales` because this reads the one list. */
   const params = new URLSearchParams(location.search);
   const kind = params.get('kind');
   if (isKind(kind)) show(kind, false);
 
   wireDuplicates(root);
   wireRelated(root, params.get('about'));
+  wireSpace(root);
+  wireHandoff(root, params.get('from') === 'chat');
+  wireReceipt(root);
   for (const k of KINDS) wireForm(root, steps, k);
+}
+
+/* ── The chat handoff ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The receiving half of `Email support` (labelled `Ask a person` until 2026-08-26; the control and
+ * this handler never changed, only the word — see `ChatDock.astro` for Dan's ruling).
+ *
+ * THE PAYLOAD ARRIVES IN `sessionStorage`, NOT IN THE URL, and the reasoning is written once at the
+ * sending end (`chat-core.ts`). What matters here is the consequence: this runs on a page that may
+ * have been reached in three ways — the handoff, a hand-typed `/contact/?kind=ticket`, or a reload
+ * of either — and only the first may consume a payload. `?from=chat` is what tells them apart.
+ *
+ * THE SPLIT BETWEEN THE TWO HALVES IS THE DESIGN, and it is not cosmetic. What the PERSON wrote
+ * goes into the body field, verbatim, because it is theirs and because the whole point of the
+ * handoff is that nobody says the same thing a third time; it lands in the box they were going to
+ * edit anyway. What we COLLECTED ABOUT THEM goes into the block, because that is the half they have
+ * to be shown and allowed to delete — and `Remove` cannot mean "select nine lines out of a textarea
+ * and press backspace", which is what burying it in the body would have made it.
+ *
+ * OPT-OUT, NOT OPT-IN. It is attached on arrival and removed in one press. Opt-in loses the context
+ * for nearly everyone, which is the failure the vendor documentation names; the collapsed-but-
+ * described rendering and the `Remove` control are what buy that back.
+ *
+ * NOTHING IS SENT — there is no backend here. `Remove` clears the stored payload as well as the
+ * block, so a reload cannot resurrect something the person deleted, and a submit clears it so the
+ * next visit to this page does not open holding a case that has already gone.
+ */
+function wireHandoff(root: HTMLElement, arrived: boolean): void {
+  const box = root.querySelector<HTMLElement>('[data-hand]');
+  const toggle = root.querySelector<HTMLButtonElement>('[data-hand-toggle]');
+  const body = root.querySelector<HTMLElement>('[data-hand-body]');
+  const text = root.querySelector<HTMLTextAreaElement>('[data-hand-text]');
+  const remove = root.querySelector<HTMLButtonElement>('[data-hand-remove]');
+  const asked = root.querySelector<HTMLTextAreaElement>('[data-form="ticket"] textarea[name=body]');
+  if (!box || !toggle || !body || !text || !remove) return;
+
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!open));
+    body.hidden = open;
+    if (!open) text.focus();
+  });
+
+  remove.addEventListener('click', () => {
+    clearHandoff();
+    box.hidden = true;
+    /* The control that had focus has just gone. Put it on the field the block was attached to
+       rather than letting focus fall to `<body>` in the middle of a form. */
+    asked?.focus();
+  });
+
+  if (!arrived) return;
+  const held = readHandoff();
+  if (!held) return;
+
+  text.value = held.block;
+
+  /* A DECLARED FIELD THAT NOTHING RENDERS IS A FACT NOBODY CAN SEE — the failure this repo has
+     already shipped once. `asked` is on the payload because the label is the one place the closed
+     block can say how much of the conversation it came out of. */
+  const n = root.querySelector<HTMLElement>('[data-hand-n]');
+  if (n) n.textContent = held.asked ? ` · ${held.asked} question${held.asked === 1 ? '' : 's'}` : '';
+
+  /* THE QUESTION IS NOT RE-ASKED. It goes in verbatim and stays editable, so the person continues
+     rather than restarts — and it is deliberately NOT copied into the subject line, which drives
+     the article suggestions: offering the documentation to somebody who has just been failed by the
+     documentation is the loop this control exists to break. */
+  if (asked && !asked.value && held.question) asked.value = held.question;
+
+  box.hidden = false;
 }
 
 /* ── "What is this about?" ───────────────────────────────────────────────────────────────────── */
@@ -219,6 +314,54 @@ function wireRelated(root: HTMLElement, about: string | null): void {
       }
     }
     sync();
+  }
+}
+
+/* ── "Which Space is this about?" ────────────────────────────────────────────────────────────── */
+
+/**
+ * The optional Space selection, and the one thing this controller actually has to do.
+ *
+ * Dan, asked whether a ticket should say which Space it is about: "Yes, good idea — allow that as a
+ * selection, but not required." `data/tickets.ts` has declared `spaceId` since the first case and
+ * nothing has ever filled it, so today the value can only be assigned by us at triage — which makes
+ * the first reply on a failed backup a question the person could have answered before sending.
+ *
+ * ── IT IS A NATIVE `select`, AND THAT IS A DECISION ABOUT A BUG, NOT ONLY ABOUT TASTE ──────────
+ * A chip group like `RelatedToField` is the form's other one-of-N control, and it does not scale:
+ * the platform list is five and closed, a person's Space roster is unbounded. The next reach is a
+ * custom popover, and this repo has already paid for one — a popover that closed on `focusout`
+ * destroyed itself between mousedown and mouseup, because a `<label>` is not focusable, and four
+ * synthetic `.click()` checks passed on the broken code. A `select` opens and closes without any of
+ * ours, gets the keyboard, the type-ahead and the mobile sheet for nothing, and `optgroup` gives the
+ * organisation grouping that stops two Spaces called `Ops` reading as one line typed twice.
+ *
+ * ── NOTHING IS WIRED FOR THE SIGNED-IN CASE, AND THAT IS THE POINT ────────────────────────────
+ * The resting option carries `value=""`, it is first and it is selected, so `new FormData(form)`
+ * already sends `spaceId=""` for "not about a particular Space" and the id for anything else. The
+ * validator walks `[required]` and this control has none, so it cannot block a submit. An optional
+ * field that needed a controller to stay optional would be one bug away from being required.
+ *
+ * ── SIGNED OUT, IT IS DISABLED — NOT MERELY HIDDEN ────────────────────────────────────────────
+ * The sheet hides it (`html[data-portal-session]`, the same mechanism as the sign-in line), and this
+ * is a static build so the markup ships in both states. A control that is only invisible is STILL IN
+ * `new FormData(form)`, and a roster the visitor never saw must not contribute a value to a case
+ * raised anonymously. `disabled` removes it from the form entirely, which is the honest statement:
+ * for this visitor the field does not exist. It also drops it from the tab order, so the picker
+ * cannot be reached by keyboard on a page that does not show it.
+ *
+ * THE SESSION IS READ, NEVER PERSISTED — `portal-session.ts` is the one authority, and this reads it
+ * rather than sniffing the attribute, so a page that stamps the attribute differently cannot make
+ * this disagree with the rest of the portal.
+ */
+function wireSpace(root: HTMLElement): void {
+  if (readSession() === 'in') return;
+  for (const sel of root.querySelectorAll<HTMLSelectElement>('[data-space]')) {
+    sel.disabled = true;
+    /* Back to the resting value as well as out of the form. `disabled` is enough for this submit;
+       resetting the value is what makes it enough for the next one, since a browser restoring form
+       state on a back-navigation would otherwise leave a selection standing in a disabled control. */
+    sel.value = '';
   }
 }
 
@@ -297,8 +440,20 @@ const STOPWORDS = new Set([
   'support', 'feature', 'request', 'baseout',
 ]);
 
-async function findSimilar(query: string): Promise<{ url: string; title: string }[]> {
-  const isRequest = (u: string) => u.startsWith('/roadmap/') && u !== '/roadmap/';
+const isRequestUrl = (u: string) => u.startsWith('/roadmap/') && u !== '/roadmap/';
+
+/**
+ * THE RANKING IS ONE FUNCTION AND THE CORPUS IS AN ARGUMENT, which is the whole reason article
+ * suggestions cost a call site rather than a feature. `keep` is the only thing that differs between
+ * "is somebody already asking for this" (`isRequestUrl`, the public board) and "is this already
+ * written down" (`isDocsUrl`, the 86 documentation pages) — same index, same phrase-then-words
+ * fallback, same overlap floor, opposite halves of the same index.
+ */
+async function findRelated(
+  query: string,
+  keep: (url: string) => boolean,
+): Promise<{ url: string; title: string }[]> {
+  const isRequest = keep;
 
   const whole = (await searchDocs(query, 12)).filter((h) => isRequest(h.url));
   if (whole.length) return whole;
@@ -328,35 +483,232 @@ async function findSimilar(query: string): Promise<{ url: string; title: string 
     .map(({ url, title }) => ({ url, title }));
 }
 
+const findSimilar = (query: string) => findRelated(query, isRequestUrl);
+
+/* ── Suggested articles ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The same machinery as duplicate detection, pointed at the subject field and at the other half of
+ * the index.
+ *
+ * IT NEVER BLOCKS AND IT NEVER RE-ASKS. The person came to report something; a deflection that gets
+ * in the way is a tax on the very case we most want written down. So: no focus is taken, no field
+ * is disabled, the submit button is untouched, and `Dismiss` is final for this form — a strip that
+ * reappears on the next keystroke has not been dismissed, it has been postponed, which is worse
+ * than not offering the control at all.
+ *
+ * PAGEFIND IS BUILD-TIME. Under `astro dev` the module 404s, `searchDocs` returns `[]`, `hits` is
+ * empty and the strip simply stays hidden — the degradation is "nothing appears", never an error.
+ * That is also exactly how this will first be seen and pronounced broken; verify on a build.
+ */
+function wireArticles(form: HTMLFormElement): void {
+  const input = form.querySelector<HTMLInputElement>('[data-arts-input]');
+  const box = form.querySelector<HTMLElement>('[data-arts]');
+  const head = form.querySelector<HTMLElement>('[data-arts-h]');
+  const list = form.querySelector<HTMLElement>('[data-arts-list]');
+  const dismiss = form.querySelector<HTMLButtonElement>('[data-arts-dismiss]');
+  if (!input || !box || !head || !list) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let seq = 0;
+  let off = false;
+
+  dismiss?.addEventListener('click', () => {
+    off = true;
+    box.hidden = true;
+    /* The control that just vanished had focus. Put it back on the field the strip was about,
+       rather than letting it fall to `<body>` in the middle of a form. */
+    input.focus();
+  });
+
+  const run = async (q: string) => {
+    const mine = ++seq;
+    const hits = (await findRelated(q, isDocsUrl)).slice(0, MAX_ARTICLES);
+    if (mine !== seq || off) return; // A slower earlier keystroke must not overwrite a newer one.
+
+    if (!hits.length) {
+      box.hidden = true;
+      return;
+    }
+
+    head.textContent =
+      hits.length === 1
+        ? 'One page may already answer this.'
+        : `${hits.length} pages may already answer this.`;
+
+    /* `linkRow` from the one row vocabulary, not a fourth kind of row — and without an excerpt on
+       purpose. The eight troubleshooting pages map near one-to-one onto the subjects this door
+       receives, so the title IS the answer to "is this my problem"; three excerpts underneath the
+       subject field would push the body box off the screen to say it twice. */
+    list.innerHTML = hits.map((h) => linkRow(h.title, h.url, ICON_DOC)).join('');
+    box.hidden = false;
+  };
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    if (off) return;
+    const q = input.value.trim();
+    if (q.length < MIN_QUERY) {
+      box.hidden = true;
+      return;
+    }
+    timer = setTimeout(() => void run(q), DEBOUNCE_MS);
+  });
+}
+
 /* ── Validation and the confirmation ─────────────────────────────────────────────────────────── */
 
-const DONE: Record<Kind, { h: string; body: string }> = {
+/* ── The receipt ─────────────────────────────────────────────────────────────────────────────────
+ *
+ * THREE FACTS, BECAUSE THEY ARE THE THREE A PERSON NEEDS A WEEK LATER: a reference they can quote,
+ * the address the mail went to, and who ends the wait and how. Everything else that could go here —
+ * a queue position, a stage, a clock — is either unknowable or a promise the business has not made.
+ *
+ * NO DURATION, ANYWHERE — and this comment does not quote the phrases either, because the check
+ * that enforces the rule is a grep over `src` and a warning written in the banned words fails it
+ * just as a promise would. The forbidden shape is any clock: a number of hours, a soft adverb, a
+ * claim about what we usually do. The second sentence of the answer line is what converts "we will
+ * not tell you how long" from an omission into a stated policy, which is the work an SLA would
+ * otherwise be invented to do.
+ */
+
+/* Four of the five doors say the same thing because the same thing is true of all four: it is a
+   private case, and a person answers it in the mailbox. `request` is the one that cannot — nobody
+   replies to a board post — so it overrides, and the override still ends in a mail a person reads. */
+const ANSWERED_BY_EMAIL =
+  'A person answers by replying to that email. We do not publish response times; you get an ' +
+  'email when there is an update.';
+
+/* THE EXIT IS THE FIFTH PER-DOOR FACT, and it was the one left shared. Every confirmation ended
+   on `Back to the board` — correct after a public request and wrong after the other four, which
+   send a private message to a person and have nothing to do with the roadmap. Somebody who has
+   just reported a failed backup is still stuck; the useful next place is the documentation, not a
+   list of features other people want. */
+const DOCS_EXIT = { href: '/start/what-baseout-is/', label: 'Back to the documentation' };
+
+const DONE: Record<Kind, { h: string; body: string; answer?: string; exit?: { href: string; label: string } }> = {
   ticket: {
+    exit: DOCS_EXIT,
     h: 'That would have gone to support',
     body: 'A real submission would open a ticket against your email address, flagged as coming from someone who is not signed in, and send you a copy.',
   },
   request: {
+    exit: { href: '/roadmap/', label: 'Back to the board' },
     h: 'That would have gone on the board',
     body: 'A real submission would post it as Planned for a moderator to review, count your vote for it, and email you when its status changes.',
+    answer:
+      'Nobody replies to a board post. You get an email when its status changes, and replying to ' +
+      'that email reaches a person.',
   },
   /* Each confirmation names its own destination, because that is the one fact the person pressing
-     submit is checking. A shared "Thanks, we got it" would read the same after all four and would
-     be the wrong reassurance for three of them. */
+     submit is checking. A shared "Thanks, we got it" would read the same after all five and would
+     be the wrong reassurance for four of them. */
   billing: {
+    exit: DOCS_EXIT,
     h: 'That would have gone to the billing team',
     body: 'A real submission would open a ticket against your email address, route it to whoever holds the account rather than to the engineers, and send you a copy.',
   },
+  /* THE ONE CONFIRMATION THAT MUST NOT SAY "SUPPORT". Everyone who reaches this screen is deciding
+     whether to become a customer, and being told their question went to the desk that fixes broken
+     backups is being told they were misheard. It also cannot say "against your account", because
+     the premise of this door is that there is not one yet. */
+  sales: {
+    exit: DOCS_EXIT,
+    h: 'That would have gone to sales',
+    body: 'A real submission would open a ticket against your email address, route it to whoever answers sales questions rather than to support, and send you a copy.',
+  },
   other: {
+    exit: DOCS_EXIT,
     h: 'That would have gone to the support inbox',
     body: 'A real submission would open a ticket against your email address, leave it unsorted for a person to place, and send you a copy.',
   },
 };
+
+/**
+ * A reference, generated here ONLY because there is no backend. The real one is minted by the
+ * server when the case row is written, and it must arrive with the acknowledgement mail so the
+ * screen and the mailbox cannot disagree.
+ *
+ * TWO IDS, AND CONFLATING THEM IS THE FAILURE. `ref` is the HUMAN, QUOTABLE label — it goes in the
+ * mail subject, the first line of the body and on this screen, and holding it grants nothing; it is
+ * a name for a case, not a key to one. The EMAIL-THREADING TOKEN is a different value entirely: it
+ * lives only in the Reply-To address, it is independently rotatable, and holding it grants the
+ * ability to POST into the thread. One id doing both jobs is the hole Krebs documented against
+ * Zendesk in October 2025 — the string a customer pastes into a public forum becomes a write key
+ * into their own case. Whoever builds the backend must mint both, and this comment is the contract.
+ *
+ * NOT SEQUENTIAL, which is the other half of that same finding: Zendesk's ids were "often
+ * sequential and guessable". Eight characters over a 32-symbol alphabet from `crypto`, and 256
+ * divides by 32 exactly, so the modulo is uniform rather than quietly favouring the first eight
+ * symbols. The alphabet is Crockford's: no I, L, O or U, because this is a string people read down
+ * a phone and type back into a mail.
+ *
+ * STABLE FOR THE VISITOR'S SESSION. A reference that changed between two submissions would be a
+ * reference to nothing, and the one thing this screen is for is being quotable later.
+ */
+const REF_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const REF_KEY = 'bo-support-ref';
+
+let memoRef = '';
+
+function sessionRef(): string {
+  if (memoRef) return memoRef;
+  try {
+    const held = sessionStorage.getItem(REF_KEY);
+    if (held) return (memoRef = held);
+  } catch {
+    /* Private mode, or storage denied. The in-memory copy is still stable for this page. */
+  }
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  memoRef = 'BO-' + Array.from(bytes, (b) => REF_ALPHABET[b % 32]).join('');
+  try {
+    sessionStorage.setItem(REF_KEY, memoRef);
+  } catch {
+    /* As above. */
+  }
+  return memoRef;
+}
+
+/**
+ * The copy control, the anatomy of `pattern-copy-id`: a 20px ghost button, `lucide--copy` at rest,
+ * `lucide--check` for ~1.1s after a write, then back. No toast — copying is not an event worth a
+ * page-level announcement — and no native `title=`, which is the portal's rule as much as the app's.
+ *
+ * THE CHECK ONLY POPS ON A WRITE THAT HAPPENED. `navigator.clipboard` is undefined outside a secure
+ * context, and a tick shown after nothing was copied is worse than no feedback: the person walks
+ * away believing they hold a reference they do not.
+ */
+function wireReceipt(root: HTMLElement): void {
+  const btn = root.querySelector<HTMLButtonElement>('[data-ref-copy]');
+  const code = root.querySelector<HTMLElement>('[data-ref]');
+  const glyph = root.querySelector<HTMLElement>('[data-ref-glyph]');
+  if (!btn || !code || !glyph) return;
+
+  let back: ReturnType<typeof setTimeout> | undefined;
+
+  btn.addEventListener('click', () => {
+    void navigator.clipboard?.writeText(code.textContent ?? '').then(
+      () => {
+        glyph.innerHTML = iconHtml('check', 14);
+        clearTimeout(back);
+        back = setTimeout(() => {
+          glyph.innerHTML = iconHtml('copy', 14);
+        }, 1100);
+      },
+      () => {
+        /* Refused by the browser. Nothing is claimed, and the reference is on screen to select. */
+      },
+    );
+  });
+}
 
 function wireForm(root: HTMLElement, steps: Map<string, HTMLElement>, kind: Kind): void {
   const form = root.querySelector<HTMLFormElement>(`[data-form="${kind}"]`);
   if (!form) return;
 
   wireAttachments(form);
+  wireArticles(form);
 
   const err = form.querySelector<HTMLElement>('[data-err]');
   const email = form.querySelector<HTMLInputElement>('input[name=email]');
@@ -399,7 +751,42 @@ function wireForm(root: HTMLElement, steps: Map<string, HTMLElement>, kind: Kind
     if (done) {
       done.querySelector('[data-done-h]')!.textContent = DONE[kind].h;
       done.querySelector('[data-done-body]')!.textContent = DONE[kind].body;
+      done.querySelector('[data-ref]')!.textContent = sessionRef();
+      /* PRINTED, NEVER ASKED FOR AGAIN. The address is in hand — it was validated two lines up —
+         and a confirmation that asks "where should we reply?" after the reply address was typed is
+         asking a person to check our work. Echoing it is also the one chance they get to catch
+         their own typo while the case is still one line old. */
+      done.querySelector('[data-receipt-mail]')!.textContent = email ? email.value.trim() : '';
+
+      /* THE OPTIONAL ANSWER, SHOWN BACK ONLY WHEN THERE WAS ONE. `spaceId` is what leaves the form;
+         what goes on the receipt is the RESOLVED display, joined here through `spaceById` because
+         that is precisely what a real store does to fill `Ticket.about` — so the string on this
+         screen and the chip on `/requests/` are one lookup rather than two spellings. The org is
+         carried with the name for the same reason it labels the `optgroup`: two organisations can
+         each hold a Space called `Ops`, and a receipt that cannot tell them apart is not a receipt.
+         Absent, never blank — see the note in `pages/contact.astro`. */
+      const spaceSel = form.querySelector<HTMLSelectElement>('[data-space]');
+      const space = spaceSel && !spaceSel.disabled ? spaceById(spaceSel.value) : null;
+      const aboutRow = done.querySelector<HTMLElement>('[data-receipt-about-row]');
+      if (aboutRow) {
+        aboutRow.hidden = !space;
+        const aboutVal = aboutRow.querySelector('[data-receipt-about]');
+        if (aboutVal) aboutVal.textContent = space ? `${space.name} · ${space.orgName}` : '';
+      }
+
+      done.querySelector('[data-receipt-answer]')!.textContent =
+        DONE[kind].answer ?? ANSWERED_BY_EMAIL;
+
+      const exit = DONE[kind].exit ?? DOCS_EXIT;
+      const exitEl = done.querySelector<HTMLAnchorElement>('[data-done-exit]');
+      if (exitEl) {
+        exitEl.href = exit.href;
+        exitEl.textContent = exit.label;
+      }
     }
+    /* It has been sent. A payload that outlived its own case would attach itself to the next one. */
+    clearHandoff();
+
     for (const [key, el] of steps) el.hidden = key !== 'done';
     done?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   });
@@ -446,7 +833,14 @@ function wireAttachments(form: HTMLFormElement): void {
           '<li class="sb-file">' +
           `<span class="sb-file-name">${esc(f.name)}</span>` +
           `<span class="sb-file-size">${formatBytes(f.size)}</span>` +
-          `<button type="button" class="sb-file-drop" data-file-remove="${i}">Remove` +
+          /* THE GLYPH IS WHAT SEPARATES THE CONTROL FROM THE FIGURE BESIDE IT (Oleh, 2026-08-26:
+             "воно зливається з розміром"). `Remove` and `5.6 MB` were both 13px of muted text on the
+             same line, so the row read as three pieces of information rather than two facts and a
+             button. An `x` is the one mark in this row that is not a word, and it says "control"
+             before anything is read. Same glyph and size as `.sb-hand-x` twenty lines up in the same
+             form, so the two Remove buttons on this page are one thing. */
+          `<button type="button" class="sb-file-drop" data-file-remove="${i}">` +
+          `<span class="sb-file-drop-ic" aria-hidden="true">${iconHtml('x', 14)}</span>Remove` +
           `<span class="sb-file-for"> ${esc(f.name)}</span></button>` +
           '</li>',
       )

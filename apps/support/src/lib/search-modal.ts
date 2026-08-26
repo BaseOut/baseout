@@ -21,8 +21,9 @@
 import { indexAvailable, searchDocs } from './pagefind';
 import {
   PLATFORM_IDS,
-  FILTER_EVENT,
-  readPlatformPreference,
+  currentPlatforms,
+  onPlatformsChange,
+  samePlatforms,
   writePlatformPreference,
   type PlatformId,
 } from './platforms';
@@ -52,10 +53,21 @@ const FETCH_RESULTS = MAX_RESULTS * 3;
  *
  * `/submit` and `/tickets` are redirects to `/contact`, so they are the same page under two more
  * names and are excluded with it.
+ *
+ * `/handoff` is the scenario catalogue for this portal — a meta page ABOUT the portal, not a page
+ * OF it. It is excluded for the same reason `tickets` is and for one more: it is an index of specs,
+ * URLs and file paths, and a reader searching "ticket" who lands in it has been answered by the
+ * wrong document entirely. It carries `noindex` and is pruned from the sitemap in
+ * `astro.config.mjs`; this line is the third of those three exclusions.
  */
-const NOT_DOCS = ['roadmap', 'contact', 'submit', 'tickets'];
+const NOT_DOCS = ['roadmap', 'contact', 'submit', 'tickets', 'handoff'];
 
-const isDocsUrl = (url: string): boolean => {
+/* EXPORTED, because the contact form's article suggestions are the same question asked from a
+   different chair: "of the hits this index returned, which ones are documentation?". A second copy
+   of this predicate would be a second list of exclusions, and the failure of the copy that is
+   behind is invisible — a new non-docs section would simply start appearing in one of the two
+   surfaces. One list, two callers. */
+export const isDocsUrl = (url: string): boolean => {
   /* Off-site is not documentation, and `//host` is off-site while looking site-relative. */
   if (!url.startsWith('/') || url.startsWith('//')) return false;
   /* The FIRST SEGMENT, not a prefix: `startsWith('/roadmap')` would also throw away a future
@@ -82,51 +94,26 @@ export function wireSearchModal(): void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let seq = 0;
 
-  /* ── The platform filter, shared with the sidebar ──────────────────────────────────────────
-     The same stored preference, read through the same function, so the two chip rows cannot drift
-     apart. Missing means everything, which is what a reader who has never chosen expects. */
-  const chips = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[data-search-platform]'));
-  let platforms = readPlatformPreference() ?? new Set<PlatformId>(PLATFORM_IDS);
+  /* ── The platform filter, shared with the sidebar and the chat ─────────────────────────────
+     The CONTROL is `components/PlatformPicker.astro` and it owns its own pressed state, its
+     keyboard, and the rule that the last platform does not turn off. This file no longer knows what
+     shape it is drawn in; it knows what the reader chose and re-runs the query when that changes.
 
-  const paintChips = () => {
-    for (const chip of chips) {
-      const id = chip.dataset.searchPlatform;
-      chip.setAttribute('aria-pressed', String(!!id && platforms.has(id as PlatformId)));
-    }
-  };
+     RE-RUNNING ON EVERY CHANGE, not only on a change made here, is new and is a fix. The old code
+     repainted its chips when the sidebar narrowed behind the open dialog but left the RESULTS as
+     they were, so the filter row and the list below it disagreed until the next keystroke. */
+  let platforms = currentPlatforms();
 
   /** Everything selected is not a filter, so it is sent as `undefined` — see `searchDocs`. */
   const activeFilter = (): string[] | undefined =>
     platforms.size === PLATFORM_IDS.length ? undefined : [...platforms];
 
-  for (const chip of chips) {
-    chip.addEventListener('click', () => {
-      const id = chip.dataset.searchPlatform as PlatformId | undefined;
-      if (!id) return;
-      const next = new Set(platforms);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      /* THE LAST ONE CANNOT BE TURNED OFF. Zero platforms is a search that can only ever return
-         platform-neutral pages, which is not a state anybody means to ask for — the same rule the
-         sidebar chips enforce. */
-      if (!next.size) return;
-      platforms = next;
-      paintChips();
-      writePlatformPreference(platforms);
-      const q = input.value.trim();
-      if (q) void run(q);
-    });
-  }
-
-  /* The sidebar sets the same value; catch up without re-broadcasting it. */
-  document.addEventListener(FILTER_EVENT, (e) => {
-    const ids = (e as CustomEvent<string[]>).detail;
-    if (!Array.isArray(ids) || !ids.length) return;
-    platforms = new Set(ids.filter((v): v is PlatformId => (PLATFORM_IDS as string[]).includes(v)));
-    paintChips();
+  onPlatformsChange((next) => {
+    if (samePlatforms(next, platforms)) return;
+    platforms = next;
+    const q = input.value.trim();
+    if (q) void run(q);
   });
-
-  paintChips();
 
   const collect = () => {
     rows = Array.from(list.querySelectorAll<HTMLAnchorElement>('.sh-row'));
@@ -219,13 +206,12 @@ export function wireSearchModal(): void {
     renderResults(q, docs.slice(0, MAX_RESULTS), indexed, hiddenByFilter);
   };
 
+  /* "search all platforms" writes the shared preference and stops there: the subscription above
+     re-runs the query, the picker repaints itself, and the sidebar behind the dialog widens too.
+     Doing any of that here as well would be a second answer to the same question. */
   list.addEventListener('click', (e) => {
     if (!(e.target as HTMLElement).closest('[data-search-widen]')) return;
-    platforms = new Set<PlatformId>(PLATFORM_IDS);
-    paintChips();
-    writePlatformPreference(platforms);
-    const q = input.value.trim();
-    if (q) void run(q);
+    writePlatformPreference(new Set<PlatformId>(PLATFORM_IDS));
   });
 
   input.addEventListener('input', () => {

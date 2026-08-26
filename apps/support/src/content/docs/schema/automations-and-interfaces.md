@@ -4,7 +4,7 @@ description: The parts of Airtable the API will not give us.
 ---
 
 Airtable's API does not export automations or interfaces, so Baseout cannot back them up. What it
-offers instead is a place to **record them by hand**: a per-base list of your automations and your
+offers instead is a place to record them by hand: a per-base list of your automations and your
 interfaces (with their pages nested underneath), each with a description, tags and a soft-delete.
 
 This is documentation you maintain, not a capture. It will not restore an automation for you.

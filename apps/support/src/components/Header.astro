@@ -1,4 +1,6 @@
 ---
+import { isServicePath } from '../lib/service-routes';
+import { API_DOCS_HREF, CHANGELOG_HREF, manualForPath } from '../lib/api-docs';
 /**
  * THE PORTAL HEADER, laid out left to right: brand · divider · nav · search · preferences.
  *
@@ -25,20 +27,131 @@
    relative path, and the three we do not override from the package. The trade is that a LATER
    override of ThemeSelect, LanguageSelect or SocialIcons through `components:` would not reach this
    file; whoever adds one has to swap the import here too. */
+import Icon from './Icon.astro';
 import Search from './Search.astro';
 import SiteTitle from './SiteTitle.astro';
 import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
 import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
-import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+import SessionControl from './SessionControl.astro';
 
 /* DOCUMENTATION DOES NOT POINT AT `/`, and that is the shape of this navigation. `/` is the WELCOME
    screen — the front door, reached by clicking the brand, with its own hero and its own search. It
    is not a page of the manual, so nothing in this list lights up while you stand on it.
    Documentation points at the manual's first page instead. */
+/* `MY REQUESTS` IS A HEADER DESTINATION (Oleh, 2026-08-21), and the reason it was not is spent.
+   `design.md` §2 argued it earned no slot "until sign-in exists — a fourth item leading to a locked
+   page is a fourth item that fails for every visitor". The session now defaults to `in` and
+   `/requests/` renders the list, so that sentence describes a page that no longer exists. It was
+   living as a grey line at the foot of `/contact/`, which is where a destination goes to not be
+   found.
+
+   THE EVIDENCE SAYS THE SAME. Of fifteen customer portals swept on 2026-08-19, Zapier is the only
+   one with a public ticket system, and it carries `Contact Support` and `My Requests` as two
+   separate header items — because "open one" and "see the ones I opened" are different jobs at
+   different frequencies. It is not a sixth tile on `/contact/`: that grid answers "what kind of
+   thing are you about to write", and a destination is not a kind of writing. The grid is also a
+   measured 3+2 over six tracks, and a sixth tile breaks it.
+
+   `Documentation` BECAME `Docs` TO PAY FOR IT, and the number is why. Measured at 390: the nav row
+   has 342px and today's three labels need 282, so nothing scrolls. A fourth item at the old labels
+   needs 379 and would start a horizontal scroll on every phone. `Docs · Roadmap · Contact us · My
+   requests` needs 312 and keeps 30px of room. One shortened word buys the whole destination, and
+   `Docs` is what the same nav already says on `/handoff/`. */
+/* `API/MCP` IS THE FIFTH ITEM. IT WAS `API`, THE ARITHMETIC BELOW IS WHY, AND DAN OVERRULED IT ON
+   2026-08-24 HAVING SEEN THE SHIPPED VERSION: "the menu should say API MCP, I think MCP needs to be
+   in there." The arithmetic was not wrong, it was outvoted, and it is kept because the cost is still
+   being paid every day and the next person should know what it is rather than rediscover it.
+
+   THE BUDGET. At 390 the nav row has 342px, the gap between pills is 0 and each pill carries 10px of
+   padding on each side, so a pill costs its label plus 20. From the three measurements already
+   recorded above: `Docs · Roadmap · Contact us · My requests` = 312px, and the same set with
+   `Contact` instead of `Contact us` = 292px. Subtracting the padding, `My requests` is 77px of text
+   over 11 glyphs — 7.0px a glyph — which is the rate everything below is derived at, with capitals
+   taken 25% wider than that as they are in every sans of this proportion.
+
+     `API`        ≈ 22px of text →  42px pill
+     `API/MCP`    ≈ 57px of text →  77px pill
+     `API & MCP`  ≈ 68px of text →  88px pill
+     `Developers` ≈ 76px of text →  96px pill
+
+   THE FOUR OPTIONS, EACH AGAINST 342:
+     keep `Contact us`, add `API/MCP`   312 + 77 = 389   47px over — scrolls on every phone
+     shorten to `Contact`, `API/MCP`    292 + 77 = 369   27px over — scrolls on every phone   ← now
+     shorten to `Contact`, `API & MCP`  292 + 88 = 380   38px over
+     shorten to `Contact`, `API`        292 + 42 = 334   8px spare — nothing scrolls
+
+   WHAT IT ACTUALLY COSTS, MEASURED IN THE BROWSER AT 390 RATHER THAN ESTIMATED. Every number below
+   is a reading of `nav.scrollWidth` against `nav.clientWidth`, taken on the day named:
+
+     08-23  `API`, five items                     353 against 310 →   43px of scroll
+     08-24  `API/MCP`, five items                 388 against 310 →   78px  (+35)
+     08-24  `API · MCP`, five items               395 against 310 →   85px  (+42)
+     08-25  `API/MCP` + `Changelog`, six items    480 against 310 →  170px  (+92)
+     08-25  the same, `My requests` moved out     378 against 310 →   68px  (−102)   ← now
+
+   THE ROW WAS ALREADY SCROLLING BEFORE ANY OF THIS: the 8px of spare the table above predicts did
+   not survive contact with the real font, and every estimate here runs about 19px optimistic. Read
+   the measurements, not the arithmetic; the arithmetic is kept because it is how a candidate label
+   gets costed before anyone builds it.
+
+   `Changelog` cost 92px, which is what took the strip past anything defensible. What paid for it was
+   moving `My requests` out of this row and behind the account control in `SessionControl.astro` —
+   a change that is not about width, and whose width argument is only the reason it happened now. It
+   returned 102px, more than the changelog spent, so the row is narrower today than it was before
+   either landed. The header and the page overflow at no width; only this strip scrolls, which the
+   note in the styles below calls the honest failure mode.
+
+   WHAT IT BUYS: a reader scanning the header for the letters M-C-P now finds them. The old answer
+   was that the first thing behind the door names MCP — `/api/` says it in its lede, the sidebar
+   there shows `API` and `MCP` as two groups, and the docs search indexes both — and Dan, who owns
+   the product, judged that too far behind the door.
+
+   `Contact us` → `Contact`. Dan overruled a label change on this item on 2026-08-20, and this is not
+   a reversal of it: his ruling was about MEANING — the door must not be named after one of its four
+   rooms, which is why "Report a problem" was wrong. `Contact` is the same neutral door with the
+   pronoun dropped, and it is what the four-item measurement at 292px was taken on.
+
+   ONE NUMBER HERE IS ESTIMATED, NOT MEASURED: the 42px `API` pill. The 292 and 312 figures were read
+   off the page; the glyph rate they imply is what sizes the new pill. 8px of the 342 is the margin
+   that estimate has to be wrong by, so this wants one confirmation at 390 before it is quoted as
+   measured. */
+/* `CHANGELOG` IS THE SIXTH ITEM, AND IT IS THE MOST EXPENSIVE ONE THIS ROW HAS TAKEN. Oleh,
+   2026-08-25: it goes before `Contact`. Its position among the first three is the part that was
+   open, and it is placed BEFORE `Roadmap` because the first three items are things to READ and the
+   last three are things to DO — write to us, watch a plan, look up what you sent. Changelog and
+   Roadmap are the same subject at two tenses (what shipped, what is planned) and belong next to
+   each other; putting the shipped half on the reading side of the boundary keeps both groupings
+   intact, which `Changelog · Roadmap` between the manuals and the contact door does.
+
+   THE ARITHMETIC, computed exactly the way the `API/MCP` block above computes it — 7.0px a glyph
+   from the measured `My requests`, capitals 25% wider, plus 20px of pill padding:
+
+     `Changelog`  8 lowercase at 7.0 + one capital at 8.75 ≈ 65px of text → 85px pill
+
+   Against the 342px the nav row has at 390: the five items are 369 (27px over, the line above), and
+   six are 292 + 77 + 85 = 454. THAT IS 112px OVER, four times the overflow this row already carries,
+   and it is the number to quote when somebody asks what the changelog cost.
+
+   ESTIMATED, NOT MEASURED, and the gap is known to run one way. When `API/MCP` was measured in the
+   browser at 390 it came out at 388px of nav against a 310px strip (78px of scroll) where this
+   arithmetic predicted 369 against 342 (27px). Applying +85 to the measured figure rather than the
+   estimated one projects roughly 473 against 310, about 163px of horizontal scroll. Both numbers are
+   worth having: the first is the one this table is internally consistent with, the second is the one
+   a phone will actually do. Neither has been read in a browser since this item was added.
+
+   WHAT IS NOT PAID FOR. The row scrolls; the header and the page do not overflow at any width, which
+   the note in the styles below calls the honest failure mode. There is no shortening left that is
+   free: `Changelog` is the word for the thing, `Log` and `Updates` are both wronger and only
+   `Updates` is shorter. The real fix is structural (a menu behind one item, or the nav moving into
+   the mobile sheet below 50rem), and that is a decision about the header rather than about this
+   item, so it is not taken here. It is recorded here so the next person inherits the number instead
+   of rediscovering it. */
 const NAV = [
-  { label: 'Documentation', href: '/start/what-baseout-is/' },
+  { label: 'Docs', href: '/start/what-baseout-is/' },
+  { label: 'API/MCP', href: API_DOCS_HREF },
+  { label: 'Changelog', href: CHANGELOG_HREF },
   { label: 'Roadmap', href: '/roadmap/' },
-  { label: 'Contact us', href: '/contact/' },
+  { label: 'Contact', href: '/contact/' },
 ];
 
 /* THE LABEL IS "CONTACT US" AND THE URL IS `/contact/`, which now agree. They did not for a while:
@@ -49,12 +162,31 @@ const NAV = [
    standing in front of it that they are in the wrong place. The step inside still names itself, so
    nothing was lost by making the door neutral. */
 const here = Astro.url.pathname;
-const isDocs = here !== '/' && !here.startsWith('/roadmap') && !here.startsWith('/contact');
 
-const isCurrent = (href: string) =>
-  href.startsWith('/roadmap') || href.startsWith('/contact')
-    ? here.startsWith(href.replace(/\/$/, ''))
-    : isDocs;
+/* `Documentation` used to light up for anything that was not the roadmap or the contact form, which
+   made it current on `/requests/` — a service page with no documentation in it. The docs entry is
+   current only when the reader is on a docs page AND not on a service page.
+
+   THE API MANUAL IS THE THIRD THING `Docs` MUST NOT CLAIM. `/api/` and `/mcp/` are content-collection
+   pages rendered with the full docs chrome, so every test for "is this documentation" answers yes
+   for them — which is exactly how `Docs` would end up lit while the reader stands in the other
+   manual. It is subtracted here for the same reason a service path is, and from the same single
+   source (`lib/api-docs.ts`) that `routeData.ts` partitions the sidebar with. */
+/* THE CHANGELOG IS THE FOURTH THING `Docs` MUST NOT CLAIM, for the same reason and by the same
+   mechanism: `/changelog/` and its entries are content-collection pages rendered with the full docs
+   chrome. `manualForPath` names which manual a path is in and `'product'` is the remainder, so a new
+   product chapter still lights `Docs` without being registered anywhere, while every manual added
+   beside it subtracts itself. */
+const manual = manualForPath(here);
+const isDocs = here !== '/' && !isServicePath(here) && manual === 'product';
+
+const isCurrent = (href: string) => {
+  if (href === API_DOCS_HREF) return manual === 'api';
+  if (href === CHANGELOG_HREF) return manual === 'changelog';
+  if (href.startsWith('/roadmap') || href.startsWith('/contact') || href.startsWith('/requests'))
+    return here.startsWith(href.replace(/\/$/, ''));
+  return isDocs;
+};
 ---
 
 <div class="header">
@@ -73,12 +205,60 @@ const isCurrent = (href: string) =>
       reading order (prev/next is derived from the sidebar). One nav that survives the breakpoint
       removes the duplicate and its side effect at once. Below 50rem it wraps to its own row; see
       the `--sl-nav-height` note in the styles. */}
-  <nav class="hx sl-flex" aria-label="Portal">
+  {/* THE ROW IS ASKED WHETHER IT FITS, AND IS GIVEN SOMEWHERE TO PUT WHAT DOES NOT (2026-08-25).
+      This is the structural fix the `Changelog` block above says the row needs and declines to
+      take: *"The real fix is structural (a menu behind one item, or the nav moving into the mobile
+      sheet below 50rem)"*. It is the first of those two.
+
+      The whole cost table above is now history rather than a budget. It priced labels at 7.0px a
+      glyph to find out in advance whether a candidate would fit, and its own postscript records the
+      estimate running ~19px optimistic; `lib/nav-overflow.ts` reads the pills the browser laid out
+      instead, so a label change costs a measurement rather than an argument. Keep the table: it is
+      the record of what each item cost and why `Contact us` became `Contact`, and a future reader
+      asking "why is this word short" should find the answer rather than re-shorten something else.
+
+      NOTHING IS HIDDEN AND NOTHING IS REORDERED. Every item is in the DOM at every width; folding
+      moves an item from the row into the menu and back. The item carrying `aria-current` is never
+      the one that folds — measured before this landed: on `/contact/` at 390 the current pill
+      painted the letters `Con` at the viewport edge, which is the answer to "where am I" being the
+      one thing cut off. */}
+  <nav class="hx sl-flex" aria-label="Portal" data-nav-fit>
     {NAV.map((item) => (
-      <a class="hx-link" href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+      <a
+        class="hx-link"
+        href={item.href}
+        data-nav-item
+        aria-current={isCurrent(item.href) ? 'page' : undefined}
+      >
         {item.label}
       </a>
     ))}
+
+    {/* `<details>`, so the browser owns the toggle, the keyboard and the open state — the same
+        reason `ChatDock.astro` draws its cited-sources list as one. Ships `hidden`: with no script
+        the nav keeps the `overflow-x: auto` it shipped with, which is a scrolling row rather than a
+        row with items missing. */}
+    <details class="hx-more" data-nav-more hidden>
+      <summary class="hx-link hx-more-btn" aria-label="More portal sections">
+        More
+        <span class="hx-more-caret" aria-hidden="true">
+          <Icon name="chevron-down" size={14} />
+        </span>
+      </summary>
+      <div class="hx-menu">
+        {NAV.map((item) => (
+          <a
+            class="hx-menu-item"
+            href={item.href}
+            data-nav-copy
+            hidden
+            aria-current={isCurrent(item.href) ? 'page' : undefined}
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+    </details>
   </nav>
 
   {/* SEARCH SITS ON THE RIGHT, not between the nav and the preferences. Centred it was the widest
@@ -92,16 +272,25 @@ const isCurrent = (href: string) =>
   {/* The group survives the breakpoint too, but sheds everything except the theme control: with the
       docs sidebar gone from the service pages there is no mobile menu on them to hold it, and a
       theme switch that exists on some pages and not others is worse than a slightly busier row. */}
+  {/* THE IDENTITY IS THE LAST THING IN THE ROW, which is where Dan asked for it and where a reader
+      reaches for it. `ThemeSelect` is gone from here: it was a ~100px labelled select carrying a word
+      most readers set once, and `ThemeToggle` does the same job in 32px. That difference is what
+      pays for the identity control rather than pushing the row into a scroll on a phone. */}
   <div class="sl-flex print:hidden right-group">
     <div class="sl-hidden md:sl-flex social-icons">
       <SocialIcons />
     </div>
-    <ThemeSelect />
     <div class="sl-hidden md:sl-flex">
       <LanguageSelect />
     </div>
+    <SessionControl />
   </div>
 </div>
+
+<script>
+  import { wireNavOverflow } from '../lib/nav-overflow';
+  wireNavOverflow();
+</script>
 
 <style>
   .header {
@@ -127,8 +316,14 @@ const isCurrent = (href: string) =>
     background: var(--bo-base-300);
   }
 
+  /* `min-width: 0`, NOT `flex: none` (2026-08-26). Every other item in this row is `flex: none`, so
+     the nav is the only shrinkable one and it absorbs the whole deficit when the row runs out —
+     which is what makes `clientWidth` the room available rather than the nav's own content width,
+     and therefore what lets `lib/nav-overflow.ts` see the overflow at all. Its header carries the
+     measurement. The pills do not shrink with it: `white-space: nowrap` holds each one's min-content
+     at its label, so the widths the fitter reads stay true while the box tells it the budget. */
   .hx {
-    flex: none;
+    min-width: 0;
     align-items: center;
     gap: 2px;
   }
@@ -160,6 +355,94 @@ const isCurrent = (href: string) =>
   .hx-link:focus-visible {
     outline: 2px solid var(--bo-primary);
     outline-offset: 2px;
+  }
+
+  .hx-link[hidden] { display: none; }
+
+  /* ── THE OVERFLOW MENU ────────────────────────────────────────────────────────────────────────
+     Wears `.hx-link` so the trigger is the same pill as the items beside it: a control that folds a
+     row of pills and does not look like one reads as a different kind of thing, and a reader has to
+     learn it. The caret is the only difference, and it is the standard one. */
+  .hx-more {
+    position: relative;
+    flex: none;
+  }
+
+  .hx-more[hidden] { display: none; }
+
+  .hx-more-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  /* Safari draws its own disclosure triangle through a pseudo-element `list-style` cannot reach. */
+  .hx-more-btn::-webkit-details-marker { display: none; }
+
+  .hx-more-caret {
+    display: flex;
+    transition: transform 140ms ease;
+  }
+
+  .hx-more[open] > .hx-more-btn > .hx-more-caret { transform: rotate(180deg); }
+
+  /* THE TRIGGER SPEAKS FOR THE ITEM IT IS HOLDING. `nav-overflow.ts` folds the current item only
+     when the row cannot hold it at all, and when that happens the row would otherwise answer "where
+     am I" with nothing. Same soft-teal pair as `aria-current` itself, so it is the same statement
+     rather than a second one to learn. */
+  .hx-more[data-holds-current] > .hx-more-btn {
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font-weight: 600;
+  }
+
+  .hx-menu {
+    position: absolute;
+    inset-block-start: calc(100% + 4px);
+    inset-inline-end: 0;
+    z-index: 40;
+    min-width: 168px;
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-base-100);
+    /* The popover rung of the elevation vocabulary (DESIGN.md §4): menus float above the page
+       rather than sit in it, and this is the one of the three shadows that says so. */
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.24);
+  }
+
+  .hx-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: var(--bo-r-6);
+    color: var(--bo-muted-strong);
+    font-size: var(--bo-t-14);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .hx-menu-item[hidden] { display: none; }
+
+  .hx-menu-item:hover {
+    background: var(--bo-base-200);
+    color: var(--sl-color-white);
+  }
+
+  .hx-menu-item[aria-current='page'] {
+    background: var(--bo-soft-primary-bg);
+    color: var(--bo-soft-primary-fg);
+    font-weight: 600;
+  }
+
+  .hx-menu-item:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: -1px;
   }
 
   /* The search pair has its own natural width (a field plus the ask button); letting it grow would
@@ -204,7 +487,45 @@ const isCurrent = (href: string) =>
      fixed header's height, `.main-frame`'s top padding, and the sidebar pane's `inset-block`.
      Raising it is the documented way to make the bar taller; setting a height on the bar alone
      would slide the whole page underneath it. */
-  @media (max-width: 49.999rem) {
+  /* ── THE BOUNDARY IS 700, NOT 50rem (Oleh, 2026-08-26: "не подобається, як тут виглядає хедер") ─
+     He was looking at a 788px window, and the header there was the PHONE header: 104px tall, the
+     wordmark gone, and **526px of empty gap** between a lone 28px brand mark and the search pair.
+     Twelve pixels wider, at 800, it became a 64px single row with the wordmark back. A header that
+     doubles in height and drops the brand name on a window most people would call a small laptop.
+
+     THE 50rem WAS BORROWED, NOT MEASURED. It is Starlight's `md` — the width where IT collapses the
+     docs sidebar and shows the menu button — and that is a real boundary for the sidebar and no
+     boundary at all for this row. The two-row grid's own argument was measured at 390 ("the nav
+     column was left 198px of a 358px row and cut a label in half"), which is true at 390 and false
+     by a wide margin at 788.
+
+     SO IT IS MEASURED. Swept on `/changelog/` with the wordmark hidden, reading how many of the five
+     nav items survive on one line:
+
+                       cursor    touch
+                560     2 of 5    2 of 5
+                600     3 of 5    3 of 5
+                700     5 of 5    3 of 5
+                720     5 of 5    3 of 5
+                730     5 of 5    5 of 5   ← one row holds the whole nav on both
+
+     Below it one row costs nav items while two rows show all five, so two rows are worth their 40px
+     there. From it they are worth nothing: the same five items fit on one line and the bar is 56px
+     instead of 104. `specs/16-responsive.md` §1 condition 2 — a measured min-content, with the
+     measurement beside it.
+
+     ONE NUMBER FOR BOTH POINTERS, and it is the touch one. A coarse pointer raises the search, ask
+     and menu controls to the 44px floor, which costs the row about 30px, so the cursor crossover is
+     700 and the touch crossover is 730. Splitting them would put two numbers on one idea and make
+     the header's shape depend on how you are holding the device rather than on how wide it is. The
+     cost of taking the larger is a 30px band where a cursor gets two rows it could have done
+     without; the cost of taking the smaller is a touch user losing two nav items.
+
+     THE MENU BUTTON IS NOT AFFECTED and must not be. It appears below Starlight's 50rem because
+     that is when the docs sidebar goes away, which is its own question; the header simply reserves
+     the gutter for it. Between 730 and 800 the row is one line AND carries a hamburger, and that is
+     correct — verified `header.scrollWidth - clientWidth = 0` at 730 · 750 · 788 on both pointers. */
+  @media (max-width: 729.98px) {
     :global(:root) { --sl-nav-height: 6.5rem; }
 
     .header {
@@ -229,13 +550,28 @@ const isCurrent = (href: string) =>
          The 2px gaps are the whole deficit — the pills carry 10px of padding each, so removing the
          gap leaves 20px between labels and nothing scrolls. */
       gap: 0;
-      /* Three full labels can exceed 390px. A scroll is the honest failure mode: everything stays
-         readable and reachable, and nothing is silently cut. */
+      /* THE NO-SCRIPT FALLBACK, AND ONLY THAT (2026-08-25). This used to be the shipped behaviour
+         and its comment called a hidden scroll "the honest failure mode: everything stays readable
+         and reachable, and nothing is silently cut". Measured at 390 on fifteen routes, it was
+         none of those things: 378px of items in 310px of row, `scrollbar-width: none` so no part of
+         the screen says the row scrolls, and on `/contact/` the pill carrying `aria-current` painted
+         the letters `Con` against the viewport edge. `lib/nav-overflow.ts` folds the excess into a
+         menu instead and stamps `data-fit` when it has; this stays for the reader whose script
+         never ran, where a scrolling row beats a truncated one. */
       overflow-x: auto;
       scrollbar-width: none;
     }
 
     .hx::-webkit-scrollbar { display: none; }
+
+    /* Claimed by the fitter. A clipping box cannot render a menu that hangs out of it, and there is
+       nothing left to scroll once every item either fits or has folded.
+
+       The gap stays 0. It is a measured value (the pills carry 10px of padding each, so removing the
+       gap leaves 20px between labels) and it is also an INPUT to the fitter, which reads `columnGap`
+       off this element while every item is shown. Changing it here would silently change the
+       arithmetic that decided what fits. */
+    .hx[data-fit] { overflow: visible; }
 
     /* Starlight centres its menu button across the whole nav height, which is now two rows — it
        would float between them. Pin it to the first. */

@@ -1,0 +1,160 @@
+<!--
+  LOGIN LINK, STYLE TWO — the same email, drawn the second way, for the side-by-side decision.
+
+  IT IS A STYLE VARIANT, SO THE COPY IS HELD STILL. Every sentence is the same string as
+  `login-link.mjml`; a diff over the two compiled files should show only what the structure forces.
+
+  THIS IS THE THINNEST OF THE THREE VARIANTS, AND THAT IS AN ANSWER RATHER THAN A GAP. Style two's
+  vocabulary is a stage track, a facts table and a bracketed identifier. This email has no case, no
+  stage and no facts to tabulate — it has one credential and the small print around it. So what style
+  two can change here is the labels, which go mono, and the URL, which moves from a filled box into
+  the same corner brackets the other two put their reference in. That is the honest extent of it.
+
+  IT STILL EXISTS BECAUSE THE TOGGLE IS SHARED. A style control that works on two of three emails and
+  disappears on the third is a control people stop trusting, and the cost of the third variant is one
+  file. If style two wins, this is the version that ships; if it loses, all three go together.
+
+  LOGIN LINK — how someone gets into the support-only account their submission created.
+
+  A SEPARATE EMAIL, on the client's instruction: "We can keep the emails separate." It is also the
+  right split on its own terms. The acknowledgement is a receipt and it must arrive whether or not
+  the address is ever verified; this one is a credential, it is requested rather than triggered, and
+  it expires. Folding a credential into a receipt means every receipt carries a live key.
+
+  ── VARIABLES ────────────────────────────────────────────────────────────────────────────────────
+    {{ login_url }}       The single-use link. Never shortened, never wrapped by a tracker — see the
+                          scanner note below.
+    {{ link_expires }}    A human duration for the LINK's lifetime, e.g. `15 minutes`. This is the
+                          only number in this directory that is allowed to name a length of time,
+                          because it describes a key we control and not an answer we have not
+                          written. Everything about the wait is still unquantified.
+    {{ request_url }}     Where to ask for another one.
+    {{ support_address }} The fallback inbox.
+
+  ── THIS IS THE ONE WITH A BUTTON, AND THEREFORE THE ONE WITH THE ACCENT ────────────────────────
+  Across the three templates Signal Teal marks what can be acted on and nothing that is merely being
+  read. Here that is a single solid teal button, which is the only solid fill in the whole set: this
+  email has exactly one job and the reader should be able to find it without reading a word. The
+  acknowledgement gets teal on two text links; the reply gets it on one. That ordering is the design,
+  not a coincidence of content.
+
+  ── WHAT IT IS FOR, SAID BEFORE THE LINK ────────────────────────────────────────────────────────
+  Someone who filed a ticket did not set out to make an account, so the first sentence has to explain
+  a thing they did not ask for. It names what the account holds — the cases opened from their address
+  — and nothing else, because that is all it holds. It is not a Baseout product account and must
+  never be described as one.
+
+  ── LINK SCANNERS ARE THE REAL FAILURE MODE, AND IT IS IN THE COPY ──────────────────────────────
+  Corporate mail filters — Microsoft Defender Safe Links and its peers — follow links
+  programmatically before delivery, which consumes a single-use one. Baseout's buyer is a technical
+  ops person, i.e. disproportionately behind exactly such a gateway, so this is not an edge case for
+  this audience. There is no template-side fix; the fix is a six-digit code, which is a different
+  build. What the copy can do is make the failure legible instead of baffling, and offer the way out
+  in the same breath. That is the third paragraph, and it is load bearing.
+
+  ── THE PRINTED URL GETS ITS OWN LABELLED LINE ──────────────────────────────────────────────────
+  It used to trail a sentence. A URL is a thing to copy, not a thing to read, and burying one in
+  prose asks the reader to find where it starts. It now sits under the label rung on its own line,
+  which is the same treatment the receipt gives a value, so a person on a locked-down desktop can
+  select it in one drag.
+
+  ── NO CLOCK ON THE ANSWER ──────────────────────────────────────────────────────────────────────
+  The link's own lifetime is stated. Nothing here says anything about how long a reply takes.
+
+  ── AUTO-GENERATED, AND A REPLY MUST NOT OPEN A CASE ────────────────────────────────────────────
+  This is machine-sent, so it carries the auto-generated header. Its reply-to should be the support
+  address rather than a case route: somebody who answers a sign-in link with "I didn't ask for this"
+  is reporting a security concern, not adding to a ticket.
+-->
+<mjml>
+  <mj-head>
+    <mj-include path="./partials/head.mjml" />
+    <mj-preview>Use this link to sign in to the Baseout support portal.</mj-preview>
+  </mj-head>
+
+  <mj-body>
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+
+    <mj-wrapper>
+      <mj-section border-radius="12px 12px 0 0" css-class="bo-band-top" padding="52px 32px 0">
+        <mj-column>
+          <mj-raw>
+            <img src="https://support.baseout.com/email/baseout-logo-ink@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-light" style="display: block; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #156e97; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--[if !mso]><!-->
+            <img src="https://support.baseout.com/email/baseout-logo-cyan@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-dark" style="display: none; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #5cceff; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--<![endif]-->
+          </mj-raw>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="24px 32px 0">
+        <mj-column>
+          <mj-text mj-class="eyebrow" css-class="bo-eyebrow">SUPPORT ACCOUNT</mj-text>
+          <mj-spacer height="10px" />
+          <mj-text mj-class="h1">Your sign-in link</mj-text>
+          <mj-spacer height="12px" />
+          <mj-text>
+            This link signs you in to the Baseout support portal, where you can read the cases opened
+            from your email address. It is a support account only, not a Baseout account, and it
+            gives no access to your data.
+          </mj-text>
+
+          <mj-spacer height="28px" />
+          <mj-button href="{{ login_url }}" align="left" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13px" letter-spacing="0.08em">SIGN IN TO SUPPORT &#8594;</mj-button>
+        </mj-column>
+      </mj-section>
+
+      <!-- THE URL IS PRINTED AS WELL AS LINKED, and here it takes the corner brackets the other two
+           style-two emails put their reference in, because it is the same kind of object: a string
+           the reader handles rather than reads. A button is an image-shaped thing to a client that
+           strips styling, and a person on a locked-down desktop often has to copy the address into a
+           browser by hand. -->
+      <mj-section padding="32px 32px 0">
+        <mj-column>
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-bracket">
+            <tr>
+              <td style="width: 24px; height: 16px; border-top: 1px solid #156e97; border-left: 1px solid #156e97;">&#160;</td>
+              <td>&#160;</td>
+              <td style="width: 24px; height: 16px; border-top: 1px solid #156e97; border-right: 1px solid #156e97;">&#160;</td>
+            </tr>
+            <tr>
+              <td colspan="3" align="center" style="padding: 12px 8px;">
+                <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; color: #646464;" class="bo-muted">OR PASTE THIS INTO YOUR BROWSER</div>
+                <div style="font-size: 13px; line-height: 1.6; color: #646464; padding-top: 8px; word-break: break-word;" class="bo-muted">{{ login_url }}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="width: 24px; height: 16px; border-bottom: 1px solid #156e97; border-left: 1px solid #156e97;">&#160;</td>
+              <td>&#160;</td>
+              <td style="width: 24px; height: 16px; border-bottom: 1px solid #156e97; border-right: 1px solid #156e97;">&#160;</td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="36px 32px 0">
+        <mj-column><mj-divider border-style="dotted" css-class="bo-rule bo-dots" /></mj-column>
+      </mj-section>
+      <mj-section padding="20px 32px 40px">
+        <mj-column>
+          <mj-text mj-class="muted" css-class="bo-muted">
+            The link expires {{ link_expires }} after this email was sent, and it works once. If it
+            has expired, or if it reports that it has already been used, ask for a new one at
+            <a href="{{ request_url }}" class="bo-break" style="color: #156e97;">{{ request_url }}</a>. Some corporate mail
+            filters open links before you do, which can use a link up before it reaches you; asking
+            for another is the fix, and you can ask as often as you need.
+          </mj-text>
+
+          <mj-spacer height="12px" />
+          <mj-text mj-class="muted" css-class="bo-muted">
+            If you did not ask for this, ignore it. Nothing changes until the link is used, and it
+            only works from this email. If you keep receiving these, tell us at
+            <a href="mailto:{{ support_address }}" class="bo-break" style="color: #156e97;">{{ support_address }}</a>.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+    </mj-wrapper>
+
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+  </mj-body>
+</mjml>

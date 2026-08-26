@@ -3,7 +3,7 @@ title: Invoices and receipts
 description: What a finance team needs from Baseout, where it will live, and what to ask for in the meantime.
 ---
 
-Invoices belong to the **Organization**, so they are addressed to the customer entity rather than to
+Invoices belong to the *Organization*, so they are addressed to the customer entity rather than to
 whoever happened to sign up, and the panel is admin-only. See
 [Members and roles](/account/organization/members-and-roles/).
 
@@ -40,7 +40,7 @@ Rather than describe a screen that does not exist, this page will explain the pa
 For a document you need now, [contact us](/contact/?kind=ticket) from the account's address and say
 what the finance team needs on it.
 
-## Next
+## Next steps
 
 - [Plans and limits](/account/billing/)
 - [Payment methods](/account/billing/payment-methods/)

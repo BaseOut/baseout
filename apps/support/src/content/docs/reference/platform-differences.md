@@ -94,7 +94,7 @@ See [Deleted records in Airtable](/platforms/airtable/deleted-items/),
 
 See [A restore left gaps](/troubleshooting/restore-left-gaps/).
 
-## Next
+## Next steps
 
 - [Glossary](/reference/glossary/): the settled terms
 - [What Baseout cannot capture](/troubleshooting/what-baseout-cannot-capture/): the honest limits

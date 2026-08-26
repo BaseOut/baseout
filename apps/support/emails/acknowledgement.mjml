@@ -1,0 +1,245 @@
+<!--
+  ACKNOWLEDGEMENT — sent once, when someone submits from `/contact/`.
+
+  ── VARIABLES ────────────────────────────────────────────────────────────────────────────────────
+  Syntax is `{{ name }}`, double-brace, and it is a CONVENTION WE ARE CHOOSING, not one imposed on
+  us: Mailgun's own template engine is Handlebars, Cloudflare Email Routing imposes nothing at all
+  and posts whatever HTML you hand it, and MJML passes braces through untouched. So the one syntax
+  that works unchanged in both destinations is the one Mailgun already speaks.
+
+    {{ case_ref }}          The quotable reference, e.g. `BO-4F2A91X7`. `lib/submit.ts` mints it.
+    {{ reply_to_address }}  The address the customer typed. Printed back, never assumed.
+    {{ support_address }}   The fallback inbox, reachable if our mail is being filtered.
+    {{ submitted_subject }} What they wrote in the subject field. BODY ONLY — see below.
+    {{ submitted_body }}    What they wrote in the message field.
+    {{ space_label }}       Optional. `Ops · Northwind` — the Space they picked, absent if none.
+    {{ case_url }}          Optional. The case in the portal; only rendered for a signed-in sender.
+
+  Two of those are OPTIONAL and their rows must be omitted, not blanked. A row reading `About: —` is
+  the form asking its optional question a second time, at the point where nothing can be done about
+  it. Whatever renders this must drop the whole `<tr>`, not empty its cell. The receipt is built so
+  that dropping a row costs nothing: every row closes with its own rule, so the one that ends up last
+  needs no special case.
+
+  ── THE SUBJECT IS OURS ──────────────────────────────────────────────────────────────────────────
+  `[{{ case_ref }}] Your message to Baseout` — and it may never echo the submitted subject or body.
+  A submission form that mails an attacker-chosen subject line from our domain to an address the
+  attacker chose is a mail bomb with our reputation behind it, and the subject is the part that lands
+  in the victim's inbox list without being opened. The body may quote what they wrote, and does; the
+  subject may not. The reference leads so that a reply threads on it after the headers expire.
+
+  ── THE REFERENCE IS PRINTED ONCE, AND IT LEADS ─────────────────────────────────────────────────
+  The wireframe printed it twice inside 200 pixels: bold in the opening sentence, then again as the
+  first row of the receipt. One of those had to go, and the one that survives is the one set as an
+  object — monospaced, at --bo-t-20, directly under the headline — because this is the single string
+  the reader will retype into a subject line. Monospace here is legibility rather than styling: it is
+  what makes an O and a 0 tell themselves apart in someone else's mail client.
+
+  ── THE THREE FACTS ARE THE PORTAL'S THREE FACTS ────────────────────────────────────────────────
+  Reference, the address, and who ends the wait. They are here because they are on the screen the
+  sender just left (`pages/contact.astro`, `.sb-receipt`), and a receipt in the mailbox that
+  disagrees with the receipt on screen is worse than either one alone. The answer line below is the
+  same sentence as `ANSWERED_BY_EMAIL` in `lib/submit.ts`. Edit neither without the other.
+
+  ── THE RECEIPT IS A LEDGER, NOT A PANEL ────────────────────────────────────────────────────────
+  It was a filled grey box with a corner radius, sitting inside the white card. That is a card inside
+  a card, which DESIGN.md prohibits by name, and it also read as a second document rather than as
+  part of this one. It is now the product's own signature surface: a two-column table, uppercase
+  label left at a fixed width, value right, hairline between rows and nothing else. No fill, no box,
+  no radius. The cell styling is written INLINE rather than through a class, because Outlook renders
+  through Word and Word's support for a descendant selector in a head stylesheet is not something to
+  bet a receipt on.
+
+  ── NO CLOCK, ANYWHERE ──────────────────────────────────────────────────────────────────────────
+  No email in this directory may name how long anything will take — not a number, not a soft adverb,
+  not a claim about what we usually manage. Name the channel, the address, and the event that ends
+  the wait, which is what the second sentence of the answer line does. This note does not spell the
+  offending phrases either: the check is a grep over this directory, and a warning written in the
+  banned words fails it exactly as a promise would.
+
+  ── LOOP SAFETY ─────────────────────────────────────────────────────────────────────────────────
+  This is an automatically generated message. RFC 3834 requires it to be sent with
+  `Auto-Submitted: auto-generated`, and requires responders not to answer it. That is a header the
+  sending code sets — it cannot live in the template — and it is written here because the template is
+  what someone reads when they wire the send.
+-->
+<mjml>
+  <mj-head>
+    <mj-include path="./partials/head.mjml" />
+    <!-- The preheader is the one head element that CANNOT be shared: it is the line the inbox list
+           prints beside the subject, so it is per-template by definition. It carries the reference a
+           second time, because for some readers it is the only body text they ever see. -->
+    <mj-preview>Your reference is {{ case_ref }}. Reply to this email to add to it.</mj-preview>
+  </mj-head>
+
+  <mj-body>
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+
+    <mj-wrapper>
+      <!-- NO BAND. The logo stands on the card with air around it, which is the classic letterhead and
+           what Oleh asked for on 2026-08-24; the black masthead is gone from style one and survives in
+           style two, which is now the variable the pair actually tests.            THE COST IS THE LOGO SWAP. With no pinned band the logo sits on the card, and the card is
+           white in one theme and #111111 in the other, so there are two files again and a conditional
+           to keep Word from showing both. The whole argument is in `partials/head.mjml`. -->
+      <mj-section border-radius="12px 12px 0 0" css-class="bo-band-top" padding="52px 32px 0">
+        <mj-column>
+          <mj-raw>
+            <img src="https://support.baseout.com/email/baseout-logo-ink@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-light" style="display: block; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #156e97; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--[if !mso]><!-->
+            <img src="https://support.baseout.com/email/baseout-logo-cyan@2x.png" alt="Baseout" width="150" height="40" class="bo-logo-dark" style="display: none; width: 150px; height: 40px; border: 0; outline: none; text-decoration: none; color: #5cceff; font-size: 20px; font-weight: 700; letter-spacing: -0.01em;" />
+            <!--<![endif]-->
+          </mj-raw>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="28px 32px 0">
+        <mj-column>
+          <mj-text mj-class="eyebrow" css-class="bo-eyebrow">SUPPORT REQUEST</mj-text>
+          <mj-spacer height="10px" />
+          <mj-text mj-class="h1">We have your message</mj-text>
+          <mj-spacer height="12px" />
+          <mj-text>Everything about this conversation lives under one reference.</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <!-- THE REFERENCE IS TYPE, NOT A PANEL. It was a tinted callout and the tint was doing the
+           work that size and the monospaced face should do: a filled box says "notice", and this
+           string does not need to be noticed, it needs to be READ and copied. Without the fill it is
+           still the largest non-heading thing on the page and the only monospaced one, which is
+           enough. It also leaves style one and style two genuinely different — brackets there, plain
+           type here — instead of two drawings of the same box. Printed exactly ONCE per email. -->
+      <mj-section padding="36px 32px 0">
+        <mj-column>
+          <mj-text mj-class="label" css-class="bo-muted">REFERENCE</mj-text>
+          <mj-spacer height="8px" />
+          <mj-text mj-class="ref" css-class="bo-ink bo-break" font-weight="600">{{ case_ref }}</mj-text>
+          <mj-spacer height="8px" />
+          <mj-text mj-class="muted" css-class="bo-muted">Quote it in anything you send us about this.</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="36px 32px 0">
+        <mj-column>
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-kv">
+            <tr>
+              <th style="width: 120px; padding: 0 12px 12px 0; text-align: left; vertical-align: top; border-bottom: 1px solid #d5d7de; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.4; color: #646464; text-transform: uppercase;">About</th>
+              <td style="padding: 0 0 12px; vertical-align: top; border-bottom: 1px solid #d5d7de; font-size: 14px; line-height: 1.5; color: #111111; word-break: break-word;">{{ space_label }}</td>
+            </tr>
+            <tr>
+              <th style="width: 120px; padding: 12px 12px 12px 0; text-align: left; vertical-align: top; border-bottom: 1px solid #d5d7de; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.4; color: #646464; text-transform: uppercase;">Replies go to</th>
+              <td style="padding: 12px 0; vertical-align: top; border-bottom: 1px solid #d5d7de; font-size: 14px; line-height: 1.5; color: #111111; word-break: break-word;">{{ reply_to_address }}</td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <!-- WHAT HAPPENS NEXT. The same three facts that used to be one muted paragraph, which is the
+           shape a reader skips. Numbered, they answer "what do I do now" without being read. The
+           words are unchanged: 01 and 02 are still verbatim `ANSWERED_BY_EMAIL` in `lib/submit.ts`,
+           so the mailbox and the on-screen receipt still agree word for word. Edit neither alone.
+           The numeral is monospaced and in the accent because an email cannot use a Lucide glyph —
+           an icon is an image, and images are blocked where this matters most. -->
+      <mj-section padding="40px 32px 0">
+        <mj-column>
+          <mj-text mj-class="label" css-class="bo-muted">WHAT HAPPENS NEXT</mj-text>
+        </mj-column>
+      </mj-section>
+      <mj-section padding="12px 32px 0">
+        <mj-column>
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-steps">
+            <tr>
+              <td style="width: 44px; padding: 0 0 12px; vertical-align: top; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.6; color: #156e97;" class="bo-step">01</td>
+              <td style="padding: 0 0 12px; vertical-align: top; font-size: 16px; line-height: 1.6; color: #111111;" class="bo-ink">A person answers by replying to this email.</td>
+            </tr>
+            <tr>
+              <td style="width: 44px; padding: 0 0 12px; vertical-align: top; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.6; color: #156e97;" class="bo-step">02</td>
+              <td style="padding: 0 0 12px; vertical-align: top; font-size: 16px; line-height: 1.6; color: #111111;" class="bo-ink">We do not publish response times; you get an email when there is an update.</td>
+            </tr>
+            <tr>
+              <td style="width: 44px; padding: 0; vertical-align: top; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.6; color: #156e97;" class="bo-step">03</td>
+              <td style="padding: 0; vertical-align: top; font-size: 16px; line-height: 1.6; color: #111111;" class="bo-ink">No account needed. Your reply joins the same case.</td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <!-- WHAT THEY WROTE, echoed. Allowed in the body and only in the body: it is the copy of their
+           own record that they have no other way to keep, since there is no portal view behind an
+           address we have not verified. -->
+      <mj-section padding="40px 32px 0">
+        <mj-column>
+          <mj-text mj-class="label" css-class="bo-muted">WHAT YOU SENT</mj-text>
+        </mj-column>
+      </mj-section>
+      <!-- A QUOTATION, DRAWN AS ONE. A 4px bar and a fill, which is the banned shape and a ruled
+           exception; the ruling and the argument for narrowing the rule are in `partials/head.mjml`.
+           The bordered box it replaces read as a form field, and this is not a field: it is the
+           reader's own words handed back, or somebody else's handed on. -->
+      <mj-section padding="12px 32px 0">
+        <mj-column>
+          <mj-table cellpadding="0" cellspacing="0" width="100%" padding="0" css-class="bo-round">
+            <tr>
+              <td width="4" style="width: 4px; background-color: #89b6ca; border-radius: 8px 0 0 8px; font-size: 0; line-height: 0;" class="bo-qbar">&#160;</td>
+              <td style="background-color: #f6f7fb; border-radius: 0 8px 8px 0; padding: 16px 20px;" class="bo-qbody">
+                <div style="font-size: 16px; font-weight: 600; line-height: 1.6; color: #111111; word-break: break-word;" class="bo-ink">{{ submitted_subject }}</div>
+                <div style="font-size: 13px; line-height: 1.6; color: #646464; padding-top: 8px;" class="bo-muted">{{ submitted_body }}</div>
+              </td>
+            </tr>
+          </mj-table>
+        </mj-column>
+      </mj-section>
+
+      <!-- THE BUTTON IS OPTIONAL AND MUST BE OMITTED, NOT DISABLED. `{{ case_url }}` exists only for a
+           sender who is signed in; there is no anonymous case view, so for most recipients there is
+           no page behind it. Whatever renders this drops the whole block when the variable is absent,
+           exactly as it drops the `About` row. "Or just hit reply" beside it is the path that always
+           works, which is why the block can go missing without leaving a hole where an instruction
+           used to be.
+
+           THE COLUMN IS SIZED IN PIXELS, NOT PERCENT, and that is what puts the caption beside the
+           button rather than a third of the way across the card. A percentage column parks the text
+           wherever the split lands; 270px is the button plus its air, so the caption starts where the
+           button ends. The alternative — one table with the button hand-written into a cell — spaces
+           it perfectly and throws away `mj-button`'s VML fallback, which is the only reason the
+           button is a button and not coloured text in Outlook on Windows.
+           BOTH COLUMNS CARRY A PERCENTAGE AND THE PAIR SUMS TO 100, which took two wrong answers to
+           reach. Sizing only the first one stacks them: MJML gives the unsized sibling `per-50`, so
+           the row asks for 270px plus half of itself and wraps. Sizing BOTH in pixels stacks them
+           too, and that one is not obvious — 184 + 352 is exactly the 536 available, and MJML lays
+           columns out as inline-blocks, so the single whitespace character between the two divs
+           tips the row over its own width. A percentage pair has no such margin of error. Under
+           480px MJML stacks them anyway, which is the behaviour wanted there. -->
+      <mj-section padding="32px 32px 0">
+        <mj-column width="35%" vertical-align="middle">
+          <mj-button href="{{ case_url }}" align="left">Track this case</mj-button>
+        </mj-column>
+        <mj-column width="65%" vertical-align="middle">
+          <mj-text mj-class="muted" css-class="bo-muted">or just hit reply</mj-text>
+        </mj-column>
+      </mj-section>
+
+      <mj-section padding="40px 32px 0">
+        <mj-column><mj-divider /></mj-column>
+      </mj-section>
+      <!-- THE WHOLE CLOSE IS TWO THINGS NOW. It was seven lines across two blocks: a spam-folder
+           paragraph, a portal link, then a grey band repeating the address, the reference and a
+           product tagline. The address was printed twice, the reference three times counting the
+           block above, and "transactional message about a case you opened" restated the sentence
+           directly over it. What survives is the one line that does work no other line does — WHY
+           this arrived, which is what stops a reader who does not recognise it reporting it as spam
+           — with the spam-folder warning folded into it, and the portal link as the offer it is.
+           The recovery address is gone from here: it is in the same sentence, once. -->
+      <mj-section padding="20px 32px 40px">
+        <mj-column>
+          <mj-text mj-class="muted" css-class="bo-muted bo-break">
+            You are receiving this because you wrote to
+            <a href="mailto:{{ support_address }}" class="bo-break" style="color: #156e97;">{{ support_address }}</a>.
+            If the answer never arrives, check your spam folder.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+    </mj-wrapper>
+
+    <mj-section padding="0"><mj-column><mj-spacer height="32px" /></mj-column></mj-section>
+  </mj-body>
+</mjml>
