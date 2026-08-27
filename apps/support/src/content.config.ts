@@ -52,6 +52,15 @@ export const collections = {
             }),
           )
           .optional(),
+        /* THE CODE THIS PAGE DOCUMENTS — repo-relative paths (files or directories) whose behavior
+           the page describes. Optional, seeded page-by-page as pages are touched; most pages start
+           without it. Its reader is `scripts/support-docs-register.mjs` (root repo): the freshness
+           gate compares each source's last commit against the page's and flags pages whose code
+           moved after the prose did (`pnpm support:docs-check`). This is the mechanism behind the
+           docs auto-update program (plans/2026-08-26-support-docs-automation.md, Dan 2026-08-26).
+           Paths must exist — the gate fails on a path that has gone away, because a dangling source
+           means either the code moved (re-point it) or the feature is gone (rewrite the page). */
+        sources: z.array(z.string()).optional(),
       }),
     }),
   }),

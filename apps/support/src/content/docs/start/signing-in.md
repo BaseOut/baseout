@@ -1,6 +1,12 @@
 ---
 title: Signing in
 description: Magic link, Continue with Airtable, why there is no password, two-factor codes and joining an existing organization.
+sources:
+  - apps/web/src/pages/login.astro
+  - apps/web/src/views/LoginView.astro
+  - apps/web/src/views/WelcomeView.astro
+  - apps/web/src/pages/api/onboarding/complete.ts
+  - apps/web/src/lib/auth-factory.ts
 ---
 
 Baseout has no password, and no screen anywhere asks for one. There are two ways in.

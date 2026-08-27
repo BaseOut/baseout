@@ -1,6 +1,9 @@
 ---
 title: Browse and descriptions
 description: Find any base, table or field — and write descriptions against it.
+sources:
+  - apps/web/src/pages/schema.astro
+  - apps/web/src/components/schema/SchemaBrowse.astro
 ---
 
 Browse is the index of everything Baseout captured: a Tree or Flat list of every base, table, field

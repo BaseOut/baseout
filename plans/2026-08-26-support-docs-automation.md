@@ -80,6 +80,19 @@ touched. This is what makes "auto-updater" honest: the gate finds stale pages; S
 1. **Now (this change):** final UI sync ✅, this strategy doc, ledger updated.
 2. **Next:** write Skill 1 + the docs-register generator; dry-run it against one recently shipped
    change (e.g. the D1 Browse reads) and hand-review the proposed page edits.
+   **✅ DONE 2026-08-26:** `/support-docs-update` skill (`.claude/skills/support-docs-update/`),
+   freshness gate `scripts/support-docs-register.mjs` (`pnpm support:docs-register` /
+   `support:docs-check`; live-derived from git, nothing committed), `sources:` frontmatter field
+   added to the Starlight schema, 3 exemplar pages seeded (signing-in, schema/browse,
+   running-a-backup; 93 pages remain unmapped = coverage debt paid down per touch).
+   **Dry-run:** the gate flagged `start/signing-in.md` stale against `6793e5d6` (the magic-link
+   cookie-cache fix) — skill verdict **no-op** (bug fix restoring documented behavior; prose
+   already correct), re-anchored via the seed commit, changelog candidate recorded below.
+
+## Changelog candidates (accumulate here until the launch entry exists)
+
+- Fixed — completing first-time setup no longer bounces you back to a blank setup form
+  (stale sign-in cache; `6793e5d6`, 2026-08-26).
 3. **Then:** Skill 3 portal screenshots (public, zero-secret) + the launch changelog entry
    (timed with go-live, per Dan).
 4. **Later / needs Dan:** authed-screenshot path (his Browser Rendering project), CI wiring of the

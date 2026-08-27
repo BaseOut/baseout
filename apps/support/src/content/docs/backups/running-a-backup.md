@@ -4,6 +4,9 @@ description: Starting an off-schedule run, pausing or cancelling one in flight, 
 api:
   - summary: Start a backup run on a Space
   - summary: Cancel a run that is in flight
+sources:
+  - apps/web/src/views/BackupsListView.astro
+  - apps/workflows/trigger/tasks/backup-base.ts
 ---
 
 **Run backup now** starts a backup immediately instead of waiting for the next scheduled run.
