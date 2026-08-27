@@ -1,5 +1,10 @@
 # Execution plans — Astro 7 upgrade + support-site backends (2026-08-27)
 
+> **PRIORITY UPDATE (Dan, later 2026-08-27):** the env split needs more time, and the next task
+> is **MCP/API app-parity for Schema/Data/Reports** — planned in
+> `plans/2026-08-27-mcp-app-parity.md` as Stream C, which JUMPS this queue. Stream A (Astro 7)
+> stays interleavable (it never touches apps/api); Stream B moves behind both.
+
 Two queued work streams, planned to be startable on a word. ui-only pull note: the fork delta
 since the final support sync (`af6d4b27..cd276b9c`) is one survey research doc — survey is out of
 scope (2026-08-19 ruling), nothing synced, nothing owed.
