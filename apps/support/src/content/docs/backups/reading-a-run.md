@@ -4,6 +4,11 @@ description: Run statuses, the three-level audit trail, failed attachments, and 
 api:
   - summary: List the runs on a Space, newest first
   - summary: Read one run, with its per-base results
+sources:
+  - apps/web/src/views/BackupsListView.astro
+  - apps/web/src/views/BackupRunDetailView.astro
+  - apps/web/src/views/BackupRunBaseView.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/backup-runs.ts
 ---
 
 The backup history is an audit trail, and it is built to be read downwards: the list tells you

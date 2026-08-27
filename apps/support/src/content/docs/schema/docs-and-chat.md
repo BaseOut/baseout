@@ -1,6 +1,12 @@
 ---
 title: Schema docs and Chat
 description: Long-form documentation about your schema, and asking questions of it.
+sources:
+  - apps/web/src/views/schema/DocsTab.astro
+  - apps/web/src/components/islands/DocsTab.tsx
+  - apps/web/src/pages/api/spaces/[spaceId]/documents.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/chat/send.ts
+  - apps/workflows/trigger/tasks/chat-respond.ts
 ---
 
 **Docs** is for writing documentation *about* the schema — longer than a field description. It is a

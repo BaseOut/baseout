@@ -1,6 +1,11 @@
 ---
 title: Destinations
 description: Where your backups are written.
+sources:
+  - apps/web/src/views/DestinationsView.astro
+  - apps/web/src/views/DestinationAddView.astro
+  - apps/web/src/views/DestinationDetailView.astro
+  - apps/web/src/pages/api/connections/storage
 ---
 
 A *Destination* is storage a Space writes its backups to. Like a Source it belongs to the account

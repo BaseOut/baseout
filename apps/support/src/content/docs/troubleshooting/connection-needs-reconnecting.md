@@ -1,6 +1,11 @@
 ---
 title: A connection needs reconnecting
 description: Backups are paused until you fix it.
+sources:
+  - apps/server/src/lib/cron/oauth-refresh-sweep.ts
+  - apps/server/src/lib/connections/auto-invalidate.ts
+  - apps/web/src/lib/connection-health.ts
+  - apps/web/src/components/patterns/ConnectionHealthBanner.astro
 ---
 
 When a Source or Destination loses access, backups stop for every Space that uses it, and Baseout

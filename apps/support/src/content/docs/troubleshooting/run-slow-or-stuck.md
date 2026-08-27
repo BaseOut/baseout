@@ -1,6 +1,11 @@
 ---
 title: A run is slow or stuck
 description: How to tell a run that is being rate-limited from one that has actually stopped, before you cancel something that was going to finish.
+sources:
+  - apps/server/src/durable-objects/ConnectionDO.ts
+  - apps/server/src/lib/runs/reconcile.ts
+  - apps/web/src/stores/backup-runs.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/backup-runs/[runId]/cancel.ts
 ---
 
 A run that has been in `running` for an hour is usually being paced by the platform, not stalled.

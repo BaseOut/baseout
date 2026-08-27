@@ -1,6 +1,11 @@
 ---
 title: Sign-in methods
 description: Two ways in, no password anywhere, and what each one means for who can reach your account.
+sources:
+  - apps/web/src/views/LoginView.astro
+  - apps/web/src/lib/auth-factory.ts
+  - apps/web/src/lib/auth-client.ts
+  - apps/web/src/pages/login.astro
 ---
 
 Baseout has two sign-in methods and no password. No screen anywhere asks for one, so there is

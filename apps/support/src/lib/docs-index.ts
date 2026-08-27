@@ -134,7 +134,16 @@ export const idToMdPath = (id: string): string => {
  * regex that stripped tags would silently eat their contents the first time one wrapped a paragraph.
  */
 export async function getDocsPages(): Promise<DocsPage[]> {
-  const entries = await getCollection('docs');
+  /* Drafts exist now (the first: the pre-written launch changelog entry,
+     2026-08-27), so the header claim above that no page carries `draft` is
+     out of date. Starlight deletes draft pages from production builds; the
+     three machine surfaces built from THIS list (the `.md` twins, `llms.txt`,
+     `llms-full.txt`) must make the same cut, or a draft page ships through
+     its markdown twin while its HTML stays hidden. Mirror Starlight exactly:
+     drafts render in dev, disappear in prod builds. */
+  const entries = (await getCollection('docs')).filter(
+    (entry) => !(import.meta.env.PROD && (entry.data as { draft?: boolean }).draft),
+  );
 
   const pages: DocsPage[] = entries.map((entry) => {
     const id = entry.id;

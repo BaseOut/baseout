@@ -2,6 +2,11 @@
 title: Restoring Airtable data
 description: What comes back intact in Airtable, by data type, and what needs a hand afterwards.
 platform: airtable
+sources:
+  - apps/workflows/trigger/tasks/restore-base.ts
+  - apps/workflows/trigger/tasks/_lib/airtable-create.ts
+  - apps/workflows/trigger/tasks/_lib/field-denormalizer.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/restore.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

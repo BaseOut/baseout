@@ -1,6 +1,10 @@
 ---
 title: Schema overview
 description: Your Airtable structure — read-only, and only after a backup.
+sources:
+  - apps/web/src/pages/schema.astro
+  - apps/web/src/views/SchemaView.astro
+  - apps/web/src/views/schema
 ---
 
 The Schema section shows the structure Baseout captured: bases, tables, fields, views, and how they

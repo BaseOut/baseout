@@ -1,6 +1,10 @@
 ---
 title: Data changelog
 description: What changed in your records between one backup and the next.
+sources:
+  - apps/web/src/components/data/DataChangelog.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/data/changelog.ts
+  - apps/server/src/lib/per-space/record-changelog-io.ts
 ---
 
 The Data changelog is a table of backup runs with the record changes each one saw — `Created`,

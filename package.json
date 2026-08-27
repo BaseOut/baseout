@@ -18,6 +18,7 @@
     "ui:sync-status": "node scripts/ui-sync-status.mjs",
     "support:docs-register": "node scripts/support-docs-register.mjs",
     "support:docs-check": "node scripts/support-docs-register.mjs --check",
+    "support:snapshots": "node scripts/support-snapshots.mjs",
     "ui:sync-drift": "node scripts/sync-drift.mjs",
     "ui:sync-check": "node scripts/ui-sync-status.mjs --check",
     "storybook:reconcile": "node scripts/storybook-reconcile.mjs",

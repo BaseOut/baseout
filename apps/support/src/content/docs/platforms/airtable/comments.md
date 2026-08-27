@@ -2,6 +2,10 @@
 title: Comments in Airtable
 description: Airtable puts comments on a record, returns them behind their own scope, and gives an author and a date, which is more than it gives for anything else.
 platform: airtable
+sources:
+  - apps/workflows/trigger/tasks/_lib/record-comments.ts
+  - apps/workflows/trigger/tasks/_lib/comment-attachments.ts
+  - apps/server/src/lib/per-space/comments-sync.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

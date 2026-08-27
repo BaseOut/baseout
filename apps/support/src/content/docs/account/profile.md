@@ -1,6 +1,11 @@
 ---
 title: Profile and email
 description: Your name, your email address, and why changing the address is a different act from changing anything else about you.
+sources:
+  - apps/web/src/views/settingsCatalog.ts
+  - apps/web/src/views/settingsControls.ts
+  - apps/web/src/views/SettingsView.astro
+  - apps/web/src/pages/profile.astro
 ---
 
 Your profile is the part of Baseout that is about you rather than about your work: a display name,

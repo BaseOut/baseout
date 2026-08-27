@@ -1,6 +1,12 @@
 ---
 title: Reports
 description: A saved report definition, its schedule, and its run history.
+sources:
+  - apps/web/src/views/ReportsView.astro
+  - apps/web/src/views/ReportDefinitionView.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/reports.ts
+  - apps/server/src/lib/reports
+  - apps/workflows/trigger/tasks/render-report.ts
 ---
 
 A report is a saved definition: the sections it covers, the bases it is scoped to, and how it is

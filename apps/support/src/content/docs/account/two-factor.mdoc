@@ -1,6 +1,11 @@
 ---
 title: Two-factor authentication
 description: Optional, off until you turn it on, and the one thing that stops your email inbox from being enough to sign in as you.
+sources:
+  - apps/web/src/views/SecurityPanel.astro
+  - apps/web/src/lib/two-factor
+  - apps/web/src/pages/2fa.astro
+  - apps/web/src/lib/auth-factory.ts
 ---
 
 Two-factor authentication adds a six-digit code after either sign-in method. It is optional and off

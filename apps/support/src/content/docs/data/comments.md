@@ -1,6 +1,11 @@
 ---
 title: Comments
 description: Record comments captured by the backup.
+sources:
+  - apps/web/src/components/data/DataComments.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/data/comments.ts
+  - apps/server/src/lib/per-space/comments-read.ts
+  - apps/workflows/trigger/tasks/_lib/record-comments.ts
 ---
 
 The Comments tab is a stream of the comments Baseout captured, filterable and groupable, with each

@@ -1,6 +1,11 @@
 ---
 title: Members and roles
 description: What an admin can do that a member cannot, and which settings the split actually governs today.
+sources:
+  - apps/web/src/db/schema/core.ts
+  - apps/web/src/views/settingsCatalog.ts
+  - apps/web/src/layouts/SettingsBody.astro
+  - apps/web/src/pages/api/organizations/join-requests/index.ts
 ---
 
 An organization has more than one person in it, and not everything in it should be changeable by

@@ -1,6 +1,11 @@
 ---
 title: Plans and limits
 description: What Baseout meters, where each limit is felt, and which numbers are not final enough to publish yet.
+sources:
+  - apps/web/src/lib/entitlements/resolve.ts
+  - apps/web/src/lib/entitlements/enforce-create.ts
+  - apps/web/src/lib/capabilities/resolve.ts
+  - apps/web/src/views/settingsCatalog.ts
 ---
 
 Billing belongs to the *Organization*, not to a person, so a plan covers everybody in it and

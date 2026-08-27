@@ -1,6 +1,12 @@
 ---
 title: Browsing records
 description: Finding a record inside a backup, and opening it.
+sources:
+  - apps/web/src/components/data/DataBrowse.astro
+  - apps/web/src/components/data/RecordPanel.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/data/records.ts
+  - apps/web/src/lib/data-browse/records-cursor.ts
+  - apps/server/src/lib/per-space/record-read.ts
 ---
 
 The Records tab shows one table at a time from one base, as a grid. Clicking a row opens the record

@@ -1,6 +1,11 @@
 ---
 title: Schedule and scope
 description: Which bases a Space backs up, how deep it goes, and how often each layer runs.
+sources:
+  - apps/web/src/pages/api/spaces/[spaceId]/backup-config.ts
+  - apps/server/src/lib/scheduling/dual-schedule.ts
+  - apps/server/src/durable-objects/SpaceDO.ts
+  - apps/web/src/views/IntegrationsSetupWizard.astro
 ---
 
 A Space's backup configuration has two halves. *Scope* is what gets captured — which bases, and how

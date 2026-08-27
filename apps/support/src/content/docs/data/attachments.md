@@ -1,6 +1,12 @@
 ---
 title: Attachments
 description: The files your backups already hold, as a browsable library.
+sources:
+  - apps/web/src/components/data/DataMedia.astro
+  - apps/web/src/components/data/MediaPanel.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/data/media.ts
+  - apps/server/src/lib/per-space/media-sync.ts
+  - apps/workflows/trigger/tasks/_lib/media-emitter.ts
 ---
 
 The Attachments tab lists every file captured by your backups, as a table or as a gallery, with

@@ -1,6 +1,10 @@
 ---
 title: Sessions and devices
 description: What being signed in means when there is no password, and what a trusted device changes.
+sources:
+  - apps/web/src/lib/auth-factory.ts
+  - apps/web/src/pages/2fa.astro
+  - apps/web/src/lib/auth-client.ts
 ---
 
 A session is one signed-in browser. Because Baseout has no password, a session is created by

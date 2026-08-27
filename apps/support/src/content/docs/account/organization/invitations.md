@@ -1,6 +1,10 @@
 ---
 title: Invitations
 description: The two ways somebody ends up in your organization, and why one of them arrives without you doing anything.
+sources:
+  - apps/web/src/pages/api/organizations/join-requests/index.ts
+  - apps/web/src/pages/api/organizations/join-requests/[requestId].ts
+  - apps/web/src/lib/signup/join-requests.ts
 ---
 
 People get into an organization from two directions, and only one of them starts with you.

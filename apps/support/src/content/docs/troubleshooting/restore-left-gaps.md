@@ -1,6 +1,12 @@
 ---
 title: A restore left gaps
 description: Restore is best-effort by design, the outcome report names every gap, and most of them come from one cause.
+sources:
+  - apps/workflows/trigger/tasks/restore-base.ts
+  - apps/workflows/trigger/tasks/_lib/airtable-create.ts
+  - apps/workflows/trigger/tasks/_lib/field-denormalizer.ts
+  - apps/web/src/views/RestoreView.astro
+  - apps/server/src/lib/restores/complete.ts
 ---
 
 A restore that finished with things to fix is not a restore that went wrong. It is the documented

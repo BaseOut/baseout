@@ -1,6 +1,11 @@
 ---
 title: What Baseout cannot capture
 description: The honest limits — most of them Airtable's, not ours.
+sources:
+  - apps/web/src/views/schema/AutomationsTab.astro
+  - apps/server/src/lib/per-space/view-capture.ts
+  - apps/workflows/trigger/tasks/_lib/base-metadata.ts
+  - apps/workflows/trigger/tasks/restore-base.ts
 ---
 
 Some things cannot be backed up because Airtable's API does not expose them. This page will be the

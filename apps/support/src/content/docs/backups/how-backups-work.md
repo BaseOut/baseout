@@ -1,6 +1,11 @@
 ---
 title: How backups work
 description: What a backup run is, what it captures, what starts one, and where it writes.
+sources:
+  - apps/workflows/trigger/tasks/backup-base.ts
+  - apps/server/src/lib/runs/start.ts
+  - apps/web/src/views/BackupsListView.astro
+  - apps/web/src/views/BackupRunDetailView.astro
 ---
 
 A **backup run** is one execution of the backup process for a Space. It reads the bases in that

@@ -89,6 +89,32 @@ touched. This is what makes "auto-updater" honest: the gate finds stale pages; S
    cookie-cache fix) — skill verdict **no-op** (bug fix restoring documented behavior; prose
    already correct), re-anchored via the seed commit, changelog candidate recorded below.
 
+3. **Then:** Skill 3 portal screenshots + the launch changelog entry.
+   **✅ DONE 2026-08-27:** `scripts/support-snapshots.mjs` (`pnpm support:snapshots`) screenshots
+   the live public portal (7 routes × desktop+mobile) into gitignored `apps/support/snapshots/`
+   using apps/web's playwright — zero secrets, verified against support.baseout.com. The launch
+   changelog entry is pre-written at `docs/changelog/2026/baseout-is-live.md` with `draft: true`
+   (build-excluded; at go-live: drop the draft line, fix the date, fold in candidates below).
+   `docs-index.ts` now filters drafts from the machine surfaces (.md twins / llms.txt) in prod —
+   they previously leaked drafts Starlight hid.
+4. **Coverage: 61/96 pages mapped 2026-08-27** (4-agent sweep, every path machine-verified). The
+   35 unmapped are honest: unbuilt platforms (clickup/notion ×20), unbuilt features (cancel /
+   delete-account / ownership-transfer), deliberate template pages (api/mcp anatomy), glossary/
+   faq, changelog posts, index.
+
+## Doc-vs-code drift found by the mapping sweep (Skill-1 work items)
+
+- `account/billing/invoices.md` + `payment-methods.md` say no in-product surface exists — **the
+  code is ahead of the docs**: Settings ▸ Billing already opens the Stripe customer portal.
+- `account/profile.md` describes an email-change flow confirmed from the new address; in code the
+  email field is read-only ("changing it is a support request").
+- `account/organization/members-and-roles.md` says "member and admin"; schema has owner|admin|member.
+- `platforms/airtable/connecting.mdoc` documents a personal-access-token method; no PAT connect
+  route exists (only display-side handling).
+- `restore/attachments.md` documents more than ships: attachment re-upload is a stub
+  (`attachmentsRestored: 0`), base auto-creation deferred.
+- `schema/docs-and-chat.md` calls the chat "faked" — it has a real backend (chat-respond task).
+
 ## Changelog candidates (accumulate here until the launch entry exists)
 
 - Fixed — completing first-time setup no longer bounces you back to a blank setup form

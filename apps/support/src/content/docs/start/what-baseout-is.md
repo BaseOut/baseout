@@ -1,6 +1,10 @@
 ---
 title: What Baseout is
 description: A utility admin tool for backing up, restoring and inspecting the data you keep in another platform.
+sources:
+  - apps/workflows/trigger/tasks/backup-base.ts
+  - apps/server/src/lib/scheduling/dual-schedule.ts
+  - apps/workflows/trigger/tasks/restore-base.ts
 ---
 
 Baseout copies your data out of the platform you work in, on a schedule you set, holds those copies

@@ -1,6 +1,11 @@
 ---
 title: Sources
 description: The connection to the platform your Spaces back up.
+sources:
+  - apps/web/src/views/SourcesView.astro
+  - apps/web/src/views/SourceDetailView.astro
+  - apps/web/src/pages/api/connections/airtable/start.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/rescan-bases.ts
 ---
 
 import PlatformTabs from '../../../components/PlatformTabs.astro';

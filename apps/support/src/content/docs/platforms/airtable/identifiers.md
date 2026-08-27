@@ -2,6 +2,10 @@
 title: Airtable record ids
 description: Every Airtable object carries a prefixed id, links are stored as those ids, and a restore mints new ones, which is the whole reason links need repointing.
 platform: airtable
+sources:
+  - apps/workflows/trigger/tasks/_lib/field-normalizer.ts
+  - apps/workflows/trigger/tasks/_lib/field-denormalizer.ts
+  - apps/workflows/trigger/tasks/_lib/airtable-create.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

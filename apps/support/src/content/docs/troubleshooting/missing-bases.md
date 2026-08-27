@@ -1,6 +1,11 @@
 ---
 title: My bases are missing from the picker
 description: Airtable access scopes, and what Baseout can and cannot see.
+sources:
+  - apps/server/src/lib/rediscovery/run.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/rescan-bases.ts
+  - apps/web/src/components/schema/workspaceGroups.ts
+  - apps/web/src/views/IntegrationsManageBasesView.astro
 ---
 
 Baseout can only see the bases Airtable tells it about. If you granted access to specific bases

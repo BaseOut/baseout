@@ -2,6 +2,10 @@
 title: Deleted records in Airtable
 description: A deleted Airtable record simply stops being in the answer, so the only copy of it is a backup taken before the deletion.
 platform: airtable
+sources:
+  - apps/workflows/trigger/tasks/backup-base.ts
+  - apps/server/src/lib/retention/decide-deletions.ts
+  - apps/workflows/trigger/tasks/cleanup-expired-snapshots.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

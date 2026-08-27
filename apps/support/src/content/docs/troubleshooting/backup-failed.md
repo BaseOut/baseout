@@ -1,6 +1,11 @@
 ---
 title: My backup failed
 description: Reading a failed run and working out whether it will fix itself.
+sources:
+  - apps/server/src/lib/runs/complete.ts
+  - apps/workflows/trigger/tasks/backup-base.ts
+  - apps/web/src/views/BackupRunDetailView.astro
+  - apps/server/src/lib/notifications/derive.ts
 ---
 
 A failed run shows up in three places: as a row in the Space's backup history, as a row in the

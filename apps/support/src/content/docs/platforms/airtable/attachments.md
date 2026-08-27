@@ -2,6 +2,10 @@
 title: Attachments in Airtable
 description: Airtable hands back a signed URL that expires two hours later, which is exactly why a backup copies the bytes instead of keeping the link.
 platform: airtable
+sources:
+  - apps/workflows/trigger/tasks/_lib/attachment-downloader.ts
+  - apps/workflows/trigger/tasks/_lib/comment-attachments.ts
+  - apps/workflows/trigger/tasks/_lib/r2-path.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

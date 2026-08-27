@@ -1,6 +1,12 @@
 ---
 title: Retention and cleanup
 description: The only thing in Baseout that removes backed-up data, and how to set how long versions live.
+sources:
+  - apps/server/src/lib/retention/decide-deletions.ts
+  - apps/server/src/lib/retention/build-cleanup-plan.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/retention-policy.ts
+  - apps/workflows/trigger/tasks/delete-run-files.ts
+  - apps/web/src/views/RetentionView.astro
 ---
 
 The cleanup schedule is the **only** mechanism in Baseout that removes backed-up data. Nothing else

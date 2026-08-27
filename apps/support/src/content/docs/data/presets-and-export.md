@@ -1,6 +1,12 @@
 ---
 title: Presets and export
 description: Saving a view of your data, and getting it out.
+sources:
+  - apps/web/src/components/data/DataBrowse.astro
+  - apps/web/src/lib/data-browse/system-preset.ts
+  - apps/web/src/components/patterns/ExportControl.astro
+  - apps/server/src/pages/api/internal/spaces/data-export.ts
+  - apps/workflows/trigger/tasks/export-archive.ts
 ---
 
 A *preset* is a saved combination of base, table, filters and visible fields. Once you save a

@@ -1,6 +1,12 @@
 ---
 title: Automations and Interfaces
 description: The parts of Airtable the API will not give us.
+sources:
+  - apps/web/src/views/schema/AutomationsTab.astro
+  - apps/web/src/views/schema/InterfacesTab.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/automations.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/interfaces.ts
+  - apps/server/src/lib/per-space/automations-interfaces-io.ts
 ---
 
 Airtable's API does not export automations or interfaces, so Baseout cannot back them up. What it

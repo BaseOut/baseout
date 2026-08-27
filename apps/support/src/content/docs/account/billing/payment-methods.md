@@ -1,6 +1,10 @@
 ---
 title: Payment methods
 description: Where the card lives, who can change it, and why a failed payment is not the same event as a broken connection.
+sources:
+  - apps/web/src/pages/api/billing/portal.ts
+  - apps/web/src/lib/stripe.ts
+  - apps/web/src/views/settingsCatalog.ts
 ---
 
 A payment method belongs to the *Organization*, and the panel is admin-only, like everything else

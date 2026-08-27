@@ -4,6 +4,11 @@ description: Base by base, into new tables, never over the original.
 api:
   - summary: Start a restore from a snapshot
   - summary: Read the progress of a restore
+sources:
+  - apps/web/src/views/RestoreView.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/restore.ts
+  - apps/server/src/lib/restores/start.ts
+  - apps/workflows/trigger/tasks/restore-base.ts
 ---
 
 Restore is the rare operation, the one you reach for after something has gone wrong. It works one

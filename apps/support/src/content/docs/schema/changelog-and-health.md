@@ -1,6 +1,12 @@
 ---
 title: Schema changelog and Health
 description: What changed in your schema, and where the rot is.
+sources:
+  - apps/web/src/views/schema/ChangelogTab.astro
+  - apps/web/src/views/schema/HealthTab.astro
+  - apps/server/src/lib/per-space/schema-changelog.ts
+  - apps/server/src/lib/per-space/health-scoring.ts
+  - apps/workflows/trigger/tasks/health-score-base.ts
 ---
 
 **Changelog** is a day-grouped feed of schema changes — fields added, removed, renamed or

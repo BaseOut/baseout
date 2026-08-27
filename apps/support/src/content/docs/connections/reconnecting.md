@@ -1,6 +1,11 @@
 ---
 title: Reconnecting a broken connection
 description: What "reconnect required" means and how to clear it.
+sources:
+  - apps/web/src/views/SourceDetailView.astro
+  - apps/web/src/views/DestinationDetailView.astro
+  - apps/web/src/pages/api/connections/airtable/start.ts
+  - apps/server/src/lib/airtable-refresh.ts
 ---
 
 A Source or Destination that loses access stops backups for every Space that uses it. Baseout says

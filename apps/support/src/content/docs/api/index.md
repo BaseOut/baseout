@@ -15,6 +15,8 @@ description: The reference for driving Baseout from your own code.
 # request. The two "Anatomy of" pages carry the request-shaped material and carry it as a TEMPLATE,
 # in `{braces}`, which is generic on purpose and reads as generic on sight.
 # So: when the API exists, ADD reference pages beside these; do not "correct" the braces into names.
+sources:
+  - apps/api/src
 ---
 
 The API is organised around the same objects the app is organised around. Anything you can name in

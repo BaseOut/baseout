@@ -1,6 +1,9 @@
 ---
 title: Data overview
 description: Browse, trace and search the records inside your backups. Read-only.
+sources:
+  - apps/web/src/pages/data.astro
+  - apps/web/src/views/DataView.astro
 ---
 
 The Data section is the contents of your backups, as opposed to Schema, which is their structure.

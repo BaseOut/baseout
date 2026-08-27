@@ -1,6 +1,10 @@
 ---
 title: Attachments were skipped
 description: Why a successful run can still report missing files, what caused each one, and why retrying is the step to take before a restore.
+sources:
+  - apps/workflows/trigger/tasks/_lib/attachment-downloader.ts
+  - apps/workflows/trigger/tasks/backup-base.ts
+  - apps/web/src/views/BackupRunDetailView.astro
 ---
 
 A run can succeed and still have skipped files. That is deliberate: an attachment fails on its own

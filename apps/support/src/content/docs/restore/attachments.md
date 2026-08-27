@@ -1,6 +1,9 @@
 ---
 title: Restoring attachments
 description: Bringing files back as real attachments, or as links to the copies in your destination.
+sources:
+  - apps/web/src/views/RestoreView.astro
+  - apps/workflows/trigger/tasks/restore-base.ts
 ---
 
 Step four of a restore asks how attachments should come back. Both options carry the number of files

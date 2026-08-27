@@ -1,6 +1,10 @@
 ---
 title: A connection finds nothing
 description: A healthy connection that returns no content is a grant problem, not a fault, and each platform hides the grant somewhere different.
+sources:
+  - apps/web/src/pages/api/connections/airtable/start.ts
+  - apps/web/src/lib/airtable/persist.ts
+  - apps/server/src/lib/rediscovery/run.ts
 ---
 
 This is the most confusing failure in the product, because nothing looks broken. The connection says

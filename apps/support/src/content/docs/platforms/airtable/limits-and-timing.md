@@ -2,6 +2,9 @@
 title: How long an Airtable backup takes
 description: Airtable meters the API per base, which is what sets the pace of a run and why one large base is slower than ten small ones.
 platform: airtable
+sources:
+  - apps/server/src/durable-objects/ConnectionDO.ts
+  - apps/workflows/trigger/tasks/_lib/airtable-client.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

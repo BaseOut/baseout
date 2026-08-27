@@ -1,6 +1,11 @@
 ---
 title: Settings
 description: How Settings is divided, which panel a thing you are looking for is in, and why some of them are admin-only.
+sources:
+  - apps/web/src/views/settingsCatalog.ts
+  - apps/web/src/views/SettingsView.astro
+  - apps/web/src/layouts/SettingsBody.astro
+  - apps/web/src/pages/settings.astro
 ---
 
 Settings is split by **what a setting applies to**, not by what it looks like. Once you know the

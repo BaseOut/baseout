@@ -1,6 +1,9 @@
 ---
 title: Invoices and receipts
 description: What a finance team needs from Baseout, where it will live, and what to ask for in the meantime.
+sources:
+  - apps/web/src/pages/api/billing/portal.ts
+  - apps/web/src/views/settingsCatalog.ts
 ---
 
 Invoices belong to the *Organization*, so they are addressed to the customer entity rather than to

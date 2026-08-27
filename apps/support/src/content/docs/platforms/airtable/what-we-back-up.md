@@ -2,6 +2,11 @@
 title: What we back up in Airtable
 description: The Airtable objects a run captures, and the ones Airtable's API will not hand over.
 platform: airtable
+sources:
+  - apps/workflows/trigger/tasks/backup-base.ts
+  - apps/workflows/trigger/tasks/_lib/airtable-client.ts
+  - apps/workflows/trigger/tasks/_lib/attachment-downloader.ts
+  - apps/workflows/trigger/tasks/_lib/base-metadata.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

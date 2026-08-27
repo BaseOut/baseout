@@ -1,6 +1,11 @@
 ---
 title: Status reference
 description: Every status badge in Baseout, what it means, and what you can do about it.
+sources:
+  - apps/web/src/lib/connection-health.ts
+  - apps/web/src/stores/backup-runs.ts
+  - apps/web/src/db/schema/core.ts
+  - apps/server/src/lib/per-space/comments-read.ts
 ---
 
 Every status Baseout shows you is in one of the four tables below, with the action it asks of you.

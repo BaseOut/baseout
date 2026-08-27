@@ -1,6 +1,12 @@
 ---
 title: Visualize and Relationships
 description: The ER diagram, and the map of how your tables link.
+sources:
+  - apps/web/src/views/schema/VisualizeTab.astro
+  - apps/web/src/components/islands/SchemaCanvas.tsx
+  - apps/web/src/views/schema/RelationshipsTab.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/relationships.ts
+  - apps/workflows/trigger/tasks/relationship-inference.ts
 ---
 
 **Visualize** draws your Space's structure as a read-only ER diagram — tables as nodes, linked-record

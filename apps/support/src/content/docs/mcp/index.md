@@ -7,6 +7,8 @@ description: The Baseout MCP server — what it exposes to an AI client, and how
 # returns — so no tool name appears on this page, and the one on `mcp/anatomy-of-a-tool-page.md`
 # is written in `{braces}` as a template. Add tool pages beside these when they exist; do not fill
 # the braces in.
+sources:
+  - apps/api/src/mcp
 ---
 
 The Model Context Protocol is a standard way for an AI client to discover and call tools on your

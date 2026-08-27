@@ -1,6 +1,12 @@
 ---
 title: The Inbox
 description: What needs your attention, and what merely happened.
+sources:
+  - apps/web/src/views/InboxView.astro
+  - apps/web/src/pages/api/spaces/[spaceId]/inbox.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/inbox/triage.ts
+  - apps/web/src/pages/api/spaces/[spaceId]/inbox/mute.ts
+  - apps/server/src/lib/notifications/derive.ts
 ---
 
 The Inbox is account-wide and splits into two lanes: **Needs attention** for things you have to act

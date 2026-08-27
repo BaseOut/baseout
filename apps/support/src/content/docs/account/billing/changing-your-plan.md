@@ -1,6 +1,11 @@
 ---
 title: Changing your plan
 description: What moving up or down actually affects, and what happens to a Space that is above the limit of the plan you moved to.
+sources:
+  - apps/web/src/pages/api/billing/portal.ts
+  - apps/web/src/lib/stripe.ts
+  - apps/web/src/lib/entitlements/webhook-sync.ts
+  - apps/web/src/views/settingsCatalog.ts
 ---
 
 Changing the plan is an admin act, from **Settings**, under **Billing**. It applies to the whole

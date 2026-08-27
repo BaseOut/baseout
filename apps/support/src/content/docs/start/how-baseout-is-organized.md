@@ -1,6 +1,10 @@
 ---
 title: How Baseout is organized
 description: Organization, Space, Source, Destination and Base, the containers everything else sits inside.
+sources:
+  - apps/web/src/db/schema/core.ts
+  - apps/web/src/views/SourcesView.astro
+  - apps/web/src/views/DestinationsView.astro
 ---
 
 Four containers, nested. An *Organization* is the top-level customer entity, and billing lives

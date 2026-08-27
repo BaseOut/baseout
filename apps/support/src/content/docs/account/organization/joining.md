@@ -1,6 +1,11 @@
 ---
 title: Joining an organization
 description: What happens when somebody at your email domain already has a Baseout organization, and why the choice is offered rather than made for you.
+sources:
+  - apps/web/src/views/AuthAssociationView.astro
+  - apps/web/src/pages/api/onboarding/join-request.ts
+  - apps/web/src/lib/signup/domain-association.ts
+  - apps/web/src/pages/welcome.astro
 ---
 
 An *Organization* is the top-level customer entity. It holds the Spaces, the Sources, the

@@ -2,6 +2,10 @@
 title: What an Airtable connection can see
 description: Airtable bounds a connection twice, by the bases named in the grant and by the scopes on it, and reports your permission level on every base it returns.
 platform: airtable
+sources:
+  - apps/web/src/lib/airtable/config.ts
+  - apps/web/src/pages/api/connections/airtable/start.ts
+  - apps/workflows/trigger/tasks/_lib/airtable-client.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For

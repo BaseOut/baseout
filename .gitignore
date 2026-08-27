@@ -71,3 +71,6 @@ coverage/
 
 # Comp AI — internal compliance working files, kept entirely out of the repo
 shared/internal/comp-ai*
+
+# Regenerable portal screenshots (scripts/support-snapshots.mjs)
+apps/support/snapshots/

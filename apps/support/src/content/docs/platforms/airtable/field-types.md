@@ -2,6 +2,10 @@
 title: Airtable field types
 description: Which Airtable field types hold a value a backup can store, and which are computed and come back only when their inputs do.
 platform: airtable
+sources:
+  - apps/workflows/trigger/tasks/_lib/field-normalizer.ts
+  - apps/workflows/trigger/tasks/_lib/field-denormalizer.ts
+  - apps/workflows/trigger/tasks/_lib/airtable-client.ts
 ---
 
 The steps are the same on every platform. This page covers only what is specific to Airtable. For
