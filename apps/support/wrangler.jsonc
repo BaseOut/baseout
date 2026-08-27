@@ -4,7 +4,15 @@
   "compatibility_date": "2026-07-01",
   "assets": {
     "directory": "./dist"
-  }
+  },
+  // Domain attachment lives HERE, not the dashboard (Dan, 2026-08-27):
+  // wrangler owns worker config so a deploy restates it. DNS for
+  // support.baseout.com already exists in the zone; custom_domain: true
+  // makes the deploy bind the hostname to this worker (was 525 unattached).
+  "routes": [{ "pattern": "support.baseout.com", "custom_domain": true }],
+  // Keep the workers.dev alias alive alongside the custom domain (screenshot
+  // tooling and pre-domain links reference it).
+  "workers_dev": true
   // Provisioned in tasks 2.1/2.2 of openspec/changes/support-portal — uncomment then:
   // "d1_databases": [{ "binding": "SUPPORT_DB", "database_name": "baseout-support", "database_id": "TODO" }],
   // "kv_namespaces": [{ "binding": "CHAT_LIMITS", "id": "TODO" }]
