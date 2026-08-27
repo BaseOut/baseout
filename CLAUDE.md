@@ -55,7 +55,7 @@ Package manager pinned at `pnpm@9.12.0`. New apps go in `apps/<name>/` with pack
 
 ## Current
 
-`brand/`, `shared/`, `product/info/` (older marketing overview), `product/website/` (Astro marketing site — not yet relocated to `apps/web/`). The full frontend implementation and backup engine each live in their own repos today and will migrate into `apps/web/` and `apps/server/` respectively.
+`brand/`, `shared/`, `product/info/` (older marketing overview). `product/website/` (the pre-relocation Astro 5 marketing site) was ARCHIVED 2026-08-27 — history only, see `product/website-ARCHIVED.md`. The full frontend implementation and backup engine each live in their own repos today and will migrate into `apps/web/` and `apps/server/` respectively.
 
 ## Repo Split: Frontend vs Backend vs Workflows
 

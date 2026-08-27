@@ -36,10 +36,11 @@
 - [ ] 5.3 Deploy `deploy:production`; human smoke: login on console.baseout.com + Backups
       poll survives navigation.
 
-## 6. product/website (BLOCKED: Dan decision, design.md D3)
+## 6. product/website — DONE (decision: archive, Autumn 2026-08-27)
 
-- [ ] 6.1 Ask Dan: archive vs upgrade (recommendation: archive; kills the 3 remaining highs).
-- [ ] 6.2 Execute the chosen option.
+- [x] 6.1 Decision: ARCHIVE "for now" (Autumn, 2026-08-27 — kills the 3 remaining highs;
+      history preserves it, recovery pointer at product/website-ARCHIVED.md).
+- [x] 6.2 Executed: `git rm -r product/website` + pointer file + CLAUDE.md layout note.
 
 ## 7. Close out
 
