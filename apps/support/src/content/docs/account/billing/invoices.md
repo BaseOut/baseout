@@ -1,6 +1,6 @@
 ---
 title: Invoices and receipts
-description: What a finance team needs from Baseout, where it will live, and what to ask for in the meantime.
+description: What a finance team needs from Baseout, where to download it, and what to ask us for when the document needs more.
 sources:
   - apps/web/src/pages/api/billing/portal.ts
   - apps/web/src/views/settingsCatalog.ts
@@ -33,15 +33,21 @@ Worth separating, because two different things here look like proof:
 Auditors sometimes want both, and they come from different places. The history is in the Space, on
 the run.
 
+## Where to get one
+
+**Settings ▸ Billing ▸ Open portal.** The button opens the Stripe customer portal for your
+Organization, and every invoice and receipt is there to download. Stripe hosts the portal, which is
+why the documents look like Stripe documents: they are the payment processor's own records, which
+is exactly what a finance team wants them to be.
+
+The button is admin-only, like the rest of Billing.
+
 ## What is not settled yet
 
-The invoice panel is not built, so there is no in-product download today. What an invoice carries,
-whether purchase-order numbers and VAT identifiers can be added, and whether receipts are emailed
-automatically are all open.
-
-Rather than describe a screen that does not exist, this page will explain the panel once it does.
-For a document you need now, [contact us](/contact/?kind=ticket) from the account's address and say
-what the finance team needs on it.
+Whether purchase-order numbers and VAT identifiers can be added to an invoice, and whether receipts
+are emailed automatically, are still open. If the standard document is missing something your
+finance team needs on it, [contact us](/contact/?kind=ticket) from the account's address and say
+what it needs to carry.
 
 ## Next steps
 

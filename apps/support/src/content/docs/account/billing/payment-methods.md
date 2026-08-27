@@ -31,19 +31,23 @@ lot of time:
 If runs have stopped, check the connection first. It is much more often the cause.
 :::
 
+## Where the card lives
+
+**Settings ▸ Billing ▸ Open portal.** The button opens the Stripe customer portal for your
+Organization, and the card is added, replaced, or removed there — alongside the plan and the
+invoices, because it is all one billing relationship.
+
 ## What we do not hold
 
-Card details are handled by the payment processor, not stored by Baseout. That is the ordinary
-arrangement and it is worth saying because of what it implies for support: we can see that a payment
-succeeded or failed, and we cannot read your card back to you.
+Card details are handled by Stripe, not stored by Baseout. That is the ordinary arrangement and it
+is worth saying because of what it implies for support: we can see that a payment succeeded or
+failed, and we cannot read your card back to you.
 
 ## What is not settled yet
 
-Which processor, which methods are accepted, whether invoicing is offered alongside cards, and the
-dunning behaviour when a payment fails are not decided. The checkout is specified and not built.
-
-Rather than describe a screen that does not exist, this page will name the accepted methods once
-there are any. To arrange payment today, [contact us](/contact/?kind=ticket).
+Whether invoicing is offered alongside cards, and the dunning behaviour when a payment fails, are
+not decided. If a card is not workable for your organization,
+[contact us](/contact/?kind=ticket).
 
 ## Next steps
 

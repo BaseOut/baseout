@@ -104,8 +104,10 @@ touched. This is what makes "auto-updater" honest: the gate finds stale pages; S
 
 ## Doc-vs-code drift found by the mapping sweep (Skill-1 work items)
 
-- `account/billing/invoices.md` + `payment-methods.md` say no in-product surface exists — **the
-  code is ahead of the docs**: Settings ▸ Billing already opens the Stripe customer portal.
+- ~~`account/billing/invoices.md` + `payment-methods.md` say no in-product surface exists~~
+  **FIXED 2026-08-27** (first real /support-docs-update run): both pages now point at
+  Settings ▸ Billing ▸ Open portal and name Stripe. Remaining drift items below are DELIBERATE
+  demo posture (docs describe the finished product) — do not "fix" without a product decision.
 - `account/profile.md` describes an email-change flow confirmed from the new address; in code the
   email field is read-only ("changing it is a support request").
 - `account/organization/members-and-roles.md` says "member and admin"; schema has owner|admin|member.
@@ -119,6 +121,8 @@ touched. This is what makes "auto-updater" honest: the gate finds stale pages; S
 
 - Fixed — completing first-time setup no longer bounces you back to a blank setup form
   (stale sign-in cache; `6793e5d6`, 2026-08-26).
+- Docs — the billing pages now say where invoices and the card actually live (the Stripe
+  customer portal, Settings ▸ Billing), instead of "contact us" (2026-08-27).
 3. **Then:** Skill 3 portal screenshots (public, zero-secret) + the launch changelog entry
    (timed with go-live, per Dan).
 4. **Later / needs Dan:** authed-screenshot path (his Browser Rendering project), CI wiring of the
