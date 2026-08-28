@@ -99,8 +99,9 @@
   "previews": {
     "vars": {
       "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
-      // Web's staging preview origin (bare console.baseout.dev = production).
-      "PUBLIC_APP_URL": "https://staging.console.baseout.dev"
+      // Dan's preview origin (apex). Same dashboard caveat as web: do not
+      // preview:sync until console.baseout.dev is Enable for Preview only.
+      "PUBLIC_APP_URL": "https://console.baseout.dev"
     },
     "hyperdrive": [
       {

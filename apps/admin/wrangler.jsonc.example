@@ -96,8 +96,9 @@
   // Previews stay on the DEV Hyperdrive/KV.
   "previews": {
     "vars": {
-      // Web's staging preview origin (bare console.baseout.dev = production).
-      "WEB_APP_URL": "https://staging.console.baseout.dev"
+      // Dan's preview origin (apex). Same dashboard caveat as web: do not
+      // preview:sync until console.baseout.dev is Enable for Preview only.
+      "WEB_APP_URL": "https://console.baseout.dev"
     },
     "hyperdrive": [
       {

@@ -185,11 +185,13 @@
       // OAuth client pairs, BETTER_AUTH_SECRET, etc. — survive). Every
       // binding a preview needs MUST be restated: previews inherit nothing
       // from production except compat/assets/placement (beta docs).
-      // Previews serve `<preview-name>.console.baseout.dev` (dashboard
-      // Custom Domain; the staging-branch preview = staging.console.baseout.dev,
-      // verified live 2026-08-25 — bare console.baseout.dev serves PRODUCTION).
-      // Preview URLs are Cloudflare-Access-gated. Previews run against the
-      // DEV database/KV — never live resources.
+      // Dan's preview origin is the apex `https://console.baseout.dev` (vs
+      // `.com` production). Cloudflare still mints `<preview-name>.console.baseout.dev`
+      // for named previews (e.g. `wrangler preview --name staging`); that is a
+      // platform hostname, not the product name. PUBLIC_AUTH_BASE_URL stays on
+      // the apex. Until Domains → console.baseout.dev is Enable for **Preview**
+      // only (today the apex still serves production), do not preview:sync this
+      // block or magic links from a named preview will point at live.
       // ⚠ Service bindings from previews resolve to the PRODUCTION
       // deployment of the target (beta docs /resources/) — preview web
       // drives the live baseout-server. Known gap, see
@@ -197,11 +199,11 @@
       "previews": {
         "vars": {
           "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
-          "PUBLIC_AUTH_BASE_URL": "https://staging.console.baseout.dev",
+          "PUBLIC_AUTH_BASE_URL": "https://console.baseout.dev",
           "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
-          // Admin's staging preview (workers.dev form — admin.baseout.dev is
-          // not attached as a preview domain yet; becomes
-          // staging.admin.baseout.dev when it is).
+          // Intended preview admin host is admin.baseout.dev (not DNS yet).
+          // Until that custom domain is Preview-only, the seeded admin preview
+          // lives on workers.dev.
           "ADMIN_APP_URL": "https://staging-baseout-admin.openside.workers.dev",
           // Preview carries the E2E gate like dev (Playwright targets previews).
           "E2E_TEST_MODE": "true"
