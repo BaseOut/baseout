@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authorizeGrant, isTokenUsable, type TokenGrant } from "../src/lib/auth";
+import { authorizeGrant, grantFromRow, isTokenUsable, SCOPES, type Scope, type TokenGrant } from "../src/lib/auth";
 
 const now = new Date("2026-07-20T12:00:00.000Z");
 const grant = (over: Partial<TokenGrant> = {}): TokenGrant => ({
@@ -7,6 +7,7 @@ const grant = (over: Partial<TokenGrant> = {}): TokenGrant => ({
   organizationId: "org_1",
   spaceId: null,
   scopes: ["org:read", "backups:read", "schema:read"],
+  createdByUserId: null,
   ...over,
 });
 
@@ -60,5 +61,56 @@ describe("authorizeGrant — tenant-safe 404s + scope 403", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error.code).toBe("org_not_found");
+  });
+});
+
+describe("scope vocabulary (api-write-foundation D2)", () => {
+  it("carries exactly the ten scopes", () => {
+    expect([...SCOPES].sort()).toEqual(
+      ["backups:read", "data:read", "documents:read", "documents:write", "org:read", "reports:read", "reports:write", "schema:read", "views:read", "views:write"].sort(),
+    );
+  });
+
+  it("each new scope authorizes its own operations", () => {
+    for (const scope of ["documents:read", "documents:write", "reports:read", "reports:write", "views:read", "views:write", "data:read"] as Scope[]) {
+      const r = authorizeGrant({ grant: grant({ scopes: [scope] }), pathOrgId: "org_1", pathSpaceId: "space_1", requiredScope: scope });
+      expect(r.ok, scope).toBe(true);
+    }
+  });
+
+  it("a :write scope does NOT imply a :read scope (explicit composition)", () => {
+    const r = authorizeGrant({ grant: grant({ scopes: ["views:write"] }), pathOrgId: "org_1", pathSpaceId: "space_1", requiredScope: "views:read" });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.status).toBe(403);
+    expect(r.error.code).toBe("insufficient_scope");
+  });
+
+  it("a :read scope does NOT imply its :write scope", () => {
+    const r = authorizeGrant({ grant: grant({ scopes: ["views:read"] }), pathOrgId: "org_1", pathSpaceId: "space_1", requiredScope: "views:write" });
+    expect(r.ok).toBe(false);
+  });
+
+  it("documents:write does NOT imply documents:read (and vice versa)", () => {
+    const w = authorizeGrant({ grant: grant({ scopes: ["documents:write"] }), pathOrgId: "org_1", pathSpaceId: "space_1", requiredScope: "documents:read" });
+    expect(w.ok).toBe(false);
+    const r = authorizeGrant({ grant: grant({ scopes: ["documents:read"] }), pathOrgId: "org_1", pathSpaceId: "space_1", requiredScope: "documents:write" });
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("grantFromRow — attribution (D5)", () => {
+  it("carries the token's creating user id onto the grant", () => {
+    const g = grantFromRow({
+      id: "tok_1", organizationId: "org_1", spaceId: null,
+      scopes: ["documents:write"], createdByUserId: "user_42",
+    });
+    expect(g.createdByUserId).toBe("user_42");
+    expect(g).toEqual({ id: "tok_1", organizationId: "org_1", spaceId: null, scopes: ["documents:write"], createdByUserId: "user_42" });
+  });
+
+  it("tolerates a null creator (deleted user — FK is set null)", () => {
+    const g = grantFromRow({ id: "t", organizationId: "o", spaceId: "s", scopes: [], createdByUserId: null });
+    expect(g.createdByUserId).toBeNull();
   });
 });

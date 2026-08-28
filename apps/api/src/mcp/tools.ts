@@ -10,20 +10,58 @@
 export interface McpToolDef {
   name: string;
   description: string;
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   /** Must match a registry operation's `path`. */
   path: string;
   /** JSON Schema properties for caller-supplied args (excludes orgId/platform). */
   argProps: Record<string, unknown>;
   /** Required arg names (spaceId is added conditionally by the catalog). */
   required?: string[];
-  /** POST tools: caller args become the request body (else they become query/path). */
-  bodyTool?: boolean;
+  /**
+   * Which args form the JSON request body: "all" = every non-path arg (search
+   * shape); a name list = exactly those args (remaining non-path args → query).
+   * Omitted = no body (all non-path args → query).
+   */
+  bodyArgs?: "all" | string[];
+  /**
+   * Override the method-derived readOnlyHint (GET → true, else false) — for
+   * POST endpoints that are semantically reads (e.g. structured search).
+   */
+  readOnly?: boolean;
 }
 
 const S = { type: "string" } as const;
 const INT = { type: "integer", minimum: 1, maximum: 100 } as const;
 const limitCursor = { limit: INT, cursor: S };
+
+// Shared arg-prop fragments for the document tools (api-documents-tools D7).
+const DOC_BODY_PROPS = {
+  markdown: { type: "string", description: "Document body as markdown (converted to the editor's format server-side). Provide this OR body, not both." },
+  body: { type: "array", items: { type: "object" }, description: "Document body as a Plate node array (editor format). Prefer markdown." },
+  tags: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["base", "table", "field", "view"] },
+        targetId: { type: "string" },
+        addedVia: { type: "string", enum: ["inline", "manual"] },
+      },
+      required: ["targetType", "targetId"],
+    },
+    description: "Schema entities this document tags (full replacement).",
+  },
+  links: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: { name: { type: "string" }, url: { type: "string" }, sortOrder: { type: "integer" } },
+      required: ["url"],
+    },
+    description: "External links (full replacement).",
+  },
+} as const;
+const TARGET_TYPE = { type: "string", enum: ["base", "table", "field", "view"] } as const;
 
 export const MCP_TOOLS: McpToolDef[] = [
   { name: "get_org", description: "Get the Organization's profile (name, created date, plan).", method: "GET", path: "/v1/orgs/{orgId}", argProps: {} },
@@ -50,7 +88,8 @@ export const MCP_TOOLS: McpToolDef[] = [
     description: "Search a Space's schema (bases/tables/fields/views) by name, description, or select options. Returns heterogeneous hits with full ancestry.",
     method: "POST",
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/search",
-    bodyTool: true,
+    bodyArgs: "all",
+    readOnly: true,
     argProps: {
       query: S,
       types: { type: "array", items: { type: "string", enum: ["base", "table", "field", "view"] } },
@@ -60,5 +99,135 @@ export const MCP_TOOLS: McpToolDef[] = [
       cursor: S,
     },
     required: ["query"],
+  },
+
+  // Documents (api-documents-tools): per-Space Schema Docs CRUD + entity tagging.
+  { name: "list_documents", description: "List the Space's documents (title, excerpt, tag count, newest first).", method: "GET", path: "/v1/orgs/{orgId}/spaces/{spaceId}/documents", argProps: {} },
+  { name: "get_document", description: "Get a document: body, tags (with removed-entity flags), links, diagrams.", method: "GET", path: "/v1/orgs/{orgId}/spaces/{spaceId}/documents/{documentId}", argProps: { documentId: S }, required: ["documentId"] },
+  {
+    name: "create_document",
+    description: "Create a document. Write the body as markdown; optionally tag schema entities and attach links.",
+    method: "POST",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/documents",
+    bodyArgs: "all",
+    argProps: { title: S, ...DOC_BODY_PROPS },
+    required: ["title"],
+  },
+  {
+    name: "update_document",
+    description: "Update a document's title, body (markdown), tags, or links. Omitted fields are left unchanged; tags/links replace in full.",
+    method: "PATCH",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/documents/{documentId}",
+    bodyArgs: ["title", "markdown", "body", "tags", "links"],
+    argProps: { documentId: S, title: S, ...DOC_BODY_PROPS },
+    required: ["documentId"],
+  },
+  { name: "delete_document", description: "Delete a document and its tags, links, and diagrams. Irreversible.", method: "DELETE", path: "/v1/orgs/{orgId}/spaces/{spaceId}/documents/{documentId}", argProps: { documentId: S }, required: ["documentId"] },
+  {
+    name: "list_entity_documents",
+    description: "List the documents that tag a schema entity (base, table, field, or view).",
+    method: "GET",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/entity-documents",
+    argProps: { targetType: TARGET_TYPE, targetId: S },
+    required: ["targetType", "targetId"],
+  },
+  {
+    name: "tag_document",
+    description: "Tag a document with a schema entity (idempotent). Returns the updated document.",
+    method: "POST",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/documents/{documentId}/tags",
+    bodyArgs: ["targetType", "targetId", "addedVia"],
+    argProps: { documentId: S, targetType: TARGET_TYPE, targetId: S, addedVia: { type: "string", enum: ["inline", "manual"] } },
+    required: ["documentId", "targetType", "targetId"],
+  },
+  // Search (api-search-tools): Dan's "search and open sidebars" — results carry
+  // appUrl deep links (added by dispatch via src/mcp/app-urls.ts).
+  {
+    name: "search_records",
+    description: "Search record values and field names across the Space's backed-up data. Hits come grouped base then table; `partial: true` means the scan budget was hit (narrow with baseId/tableId).",
+    method: "GET",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/record-search",
+    argProps: { q: S, baseId: S, tableId: S },
+    required: ["q"],
+  },
+  {
+    name: "search_documents",
+    description: "Search the Space's documents by title or excerpt.",
+    method: "GET",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/document-search",
+    argProps: { q: S },
+    required: ["q"],
+  },
+  {
+    name: "search_reports",
+    description: "Search the Space's report definitions by name (returns sections, schedule cadence, next run).",
+    method: "GET",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/report-search",
+    argProps: { q: S },
+    required: ["q"],
+  },
+  {
+    name: "search_attachments",
+    description: "Search captured attachments by filename and/or filters: content class (image|document|spreadsheet|...), base, table, size bounds, captured-date window.",
+    method: "GET",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/attachment-search",
+    argProps: {
+      q: S,
+      class: S,
+      baseId: S,
+      tableId: S,
+      minSize: { type: "integer" },
+      maxSize: { type: "integer" },
+      after: S,
+      before: S,
+      ...limitCursor,
+    },
+  },
+
+  // Usage (api-productionization): the quota surface.
+  {
+    name: "get_api_usage",
+    description: "The Organization's plan, monthly API-call allowance, and month-to-date usage (usageAvailable: false when usage metering reads are not configured).",
+    method: "GET",
+    path: "/v1/orgs/{orgId}/api-usage",
+    argProps: {},
+  },
+
+  // Saved views (api-views-tools): Data Browse presets.
+  { name: "list_views", description: "List the Space's saved views (Data Browse presets): name, table, pinned, config.", method: "GET", path: "/v1/orgs/{orgId}/spaces/{spaceId}/views", argProps: {} },
+  { name: "get_view", description: "Get a saved view: name, table, and its full filter/sort/column config.", method: "GET", path: "/v1/orgs/{orgId}/spaces/{spaceId}/views/{viewId}", argProps: { viewId: S }, required: ["viewId"] },
+  {
+    name: "create_view",
+    description: "Create a saved view (Data Browse preset). The table choice is locked at creation — a view can never move to another table.",
+    method: "POST",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/views",
+    bodyArgs: "all",
+    argProps: {
+      name: S,
+      tableId: S,
+      config: { type: "object", description: "The view's filter/sort/column configuration (the Data page's preset config shape). At minimum { \"tableId\": ..., \"hiddenCols\": [], \"filterTree\": { \"kind\": \"group\", \"conjunction\": \"and\", \"children\": [] }, \"sortField\": \"\", \"sortDir\": 1, \"query\": \"\", \"showRecId\": false, \"colOrder\": [] }." },
+      pinned: { type: "boolean" },
+      sortOrder: { type: "integer" },
+    },
+    required: ["name", "tableId", "config"],
+  },
+  {
+    name: "update_view",
+    description: "Update a saved view's name, config, pinned state, or sort order. The view's table can never change (table_locked).",
+    method: "PATCH",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/views/{viewId}",
+    bodyArgs: ["name", "config", "pinned", "sortOrder"],
+    argProps: { viewId: S, name: S, config: { type: "object" }, pinned: { type: "boolean" }, sortOrder: { type: "integer" } },
+    required: ["viewId"],
+  },
+  { name: "delete_view", description: "Delete a saved view. Irreversible.", method: "DELETE", path: "/v1/orgs/{orgId}/spaces/{spaceId}/views/{viewId}", argProps: { viewId: S }, required: ["viewId"] },
+
+  {
+    name: "untag_document",
+    description: "Remove a document's tag by its target entity. Returns the updated document.",
+    method: "DELETE",
+    path: "/v1/orgs/{orgId}/spaces/{spaceId}/documents/{documentId}/tags",
+    argProps: { documentId: S, targetType: TARGET_TYPE, targetId: S },
+    required: ["documentId", "targetType", "targetId"],
   },
 ];

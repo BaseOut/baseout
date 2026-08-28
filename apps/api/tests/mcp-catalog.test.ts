@@ -10,8 +10,8 @@ import { buildToolCatalog, opForTool } from "../src/mcp/catalog";
 import { MCP_TOOLS } from "../src/mcp/tools";
 import type { TokenGrant } from "../src/lib/auth";
 
-const ALL_SCOPES = ["org:read", "backups:read", "schema:read"];
-const orgWide: TokenGrant = { id: "tok-1", organizationId: "org-1", spaceId: null, scopes: ALL_SCOPES };
+const ALL_SCOPES = ["org:read", "backups:read", "schema:read", "documents:read", "documents:write", "views:read", "views:write", "data:read", "reports:read"];
+const orgWide: TokenGrant = { id: "tok-1", organizationId: "org-1", spaceId: null, scopes: ALL_SCOPES, createdByUserId: null };
 const spaceBound: TokenGrant = { ...orgWide, spaceId: "spc-1" };
 
 // Additive-only stability policy: renaming or removing a tool is breaking and
@@ -35,6 +35,24 @@ const EXPECTED_TOOLS = [
   "list_schema_changes",
   "list_schema_versions",
   "search_schema",
+  "list_documents",
+  "get_document",
+  "create_document",
+  "update_document",
+  "delete_document",
+  "list_entity_documents",
+  "tag_document",
+  "untag_document",
+  "list_views",
+  "get_view",
+  "create_view",
+  "update_view",
+  "delete_view",
+  "search_records",
+  "search_documents",
+  "search_reports",
+  "search_attachments",
+  "get_api_usage",
 ].sort();
 
 describe("catalog ⇄ registry contract", () => {
@@ -75,9 +93,12 @@ describe("catalog ⇄ registry contract", () => {
     }
   });
 
-  test("all tools are annotated read-only", () => {
-    for (const tool of buildToolCatalog(operations, orgWide)) {
-      expect(tool.annotations.readOnlyHint).toBe(true);
+  test("annotations track the method: GET/search read-only, mutations not, deletes destructive", () => {
+    for (const def of MCP_TOOLS) {
+      const tool = buildToolCatalog(operations, orgWide).find((t) => t.name === def.name)!;
+      const expectReadOnly = def.readOnly ?? def.method === "GET";
+      expect(tool.annotations.readOnlyHint, def.name).toBe(expectReadOnly);
+      if (def.method === "DELETE") expect(tool.annotations.destructiveHint, def.name).toBe(true);
     }
   });
 });

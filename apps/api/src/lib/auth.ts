@@ -9,13 +9,47 @@ import type { ApiDb } from "../db/client";
 import { apiTokens } from "../db/schema";
 import { ApiError, insufficientScope, notFound } from "./errors";
 
-export type Scope = "org:read" | "backups:read" | "schema:read";
+// Scope vocabulary (api-write-foundation D2). Write scopes are additive and do
+// NOT imply their read scope — tokens compose scopes explicitly.
+export const SCOPES = [
+  "org:read",
+  "backups:read",
+  "schema:read",
+  "documents:read",
+  "documents:write",
+  "reports:read",
+  "reports:write",
+  "views:read",
+  "views:write",
+  "data:read",
+] as const;
+export type Scope = (typeof SCOPES)[number];
 
 export interface TokenGrant {
   id: string;
   organizationId: string;
   spaceId: string | null;
   scopes: string[];
+  /** The token's issuing user (api_tokens.created_by_user_id) — threaded into
+   *  mutation attribution (design D5). Null when the creator was deleted. */
+  createdByUserId: string | null;
+}
+
+/** Pure: map an api_tokens row (auth SELECT shape) to the request grant. */
+export function grantFromRow(row: {
+  id: string;
+  organizationId: string;
+  spaceId: string | null;
+  scopes: string[];
+  createdByUserId: string | null;
+}): TokenGrant {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    spaceId: row.spaceId,
+    scopes: row.scopes,
+    createdByUserId: row.createdByUserId,
+  };
 }
 
 /** Pure: usable right now? (active + unexpired). */
@@ -67,12 +101,13 @@ export async function authenticate(db: ApiDb, authHeader: string | null, now: Da
       scopes: apiTokens.scopes,
       isActive: apiTokens.isActive,
       expiresAt: apiTokens.expiresAt,
+      createdByUserId: apiTokens.createdByUserId,
     })
     .from(apiTokens)
     .where(eq(apiTokens.tokenHash, hash))
     .limit(1);
   if (!row || !isTokenUsable(row, now)) return null;
-  return { id: row.id, organizationId: row.organizationId, spaceId: row.spaceId, scopes: row.scopes };
+  return grantFromRow(row);
 }
 
 /** Write-behind last_used_at (call via ctx.waitUntil — MUST NOT block the response). */

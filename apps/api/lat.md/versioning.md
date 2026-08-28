@@ -2,7 +2,7 @@
 
 Public URL versioning: `/v1/...`, `/v2/...`. Each major version is a stable contract; breaking changes land in a new major.
 
-Today there is no live API surface — Phase 2 ships v1.
+v1 is live (reads + the write foundation; `baseout-api-dev` on workers.dev today, `api.baseout.com` once the production lane lands). Every endpoint lives in the operation registry, so version prefixes are part of each operation's path template.
 
 ## Versioning Rules
 
@@ -31,6 +31,6 @@ v1 stays available for at least 12 months after v2 ships. Sunset dates beyond th
 
 Pointers to related rules and surfaces.
 
-- Public API spec: TBD (OpenAPI in repo once Phase 2 lands)
+- Public API spec: [openapi.json](../openapi.json) (generated from the registry — `pnpm openapi:generate`)
 - API surface entry: [src/index.ts](../src/index.ts)
 - Service auth contract: [[service-auth]]

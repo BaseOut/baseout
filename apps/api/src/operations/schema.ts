@@ -3,7 +3,9 @@
 // Adds ETag/304 (derived from the base's schema_hash), `expand`, and the public
 // envelope. Scope: schema:read.
 
+import { z } from "zod";
 import { notFound, upstreamUnavailable, invalidRequest, ApiError } from "../lib/errors";
+import { DEFAULT_PLATFORM } from "../lib/platform";
 import { requireSpace } from "../lib/guards";
 import { json, notModified } from "../lib/responses";
 import { serverClient } from "../lib/server-client";
@@ -11,7 +13,7 @@ import type { Operation, OperationContext } from "../lib/registry";
 
 // v1: only Airtable. Any other code → 404 platform_not_found (design D2).
 function requirePlatform(c: OperationContext): void {
-  if (c.params.platform !== "at") throw notFound("platform_not_found", "No such platform for this Space.");
+  if (c.params.platform !== DEFAULT_PLATFORM) throw notFound("platform_not_found", "No such platform for this Space.");
 }
 
 function fnv1a(str: string): string {
@@ -52,6 +54,31 @@ function schemaJson(c: OperationContext, payload: { data?: unknown; pagination?:
   return json(payload, c.requestId, etag ? { headers: { etag } } : {});
 }
 
+const limitCursorQuery = { limit: z.number().int().min(1).max(100).optional(), cursor: z.string().optional() };
+
+// Structured search config (mirrors the server-side validation; the MCP
+// search_schema tool's argProps agree with this shape — contract-tested).
+export const searchBodySchema = z.object({
+  query: z.string(),
+  types: z.array(z.enum(["base", "table", "field", "view"])).optional(),
+  match: z
+    .object({
+      mode: z.enum(["contains", "exact", "prefix"]).optional(),
+      in: z.array(z.enum(["name", "description", "options"])).optional(),
+    })
+    .optional(),
+  filters: z
+    .object({
+      baseIds: z.array(z.string()).optional(),
+      fieldTypes: z.array(z.string()).optional(),
+      isPrimary: z.boolean().optional(),
+      changedAfter: z.string().optional(),
+    })
+    .optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  cursor: z.string().optional(),
+});
+
 const qs = (params: Record<string, string | null | undefined>) =>
   Object.entries(params)
     .filter(([, v]) => v != null && v !== "")
@@ -64,6 +91,7 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/bases",
     scope: "schema:read",
     summary: "List the Space's bases.",
+    querySchema: z.object({ ...limitCursorQuery }),
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");
@@ -90,6 +118,7 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/bases/{baseId}/tables",
     scope: "schema:read",
     summary: "List a base's tables.",
+    querySchema: z.object({ ...limitCursorQuery }),
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");
@@ -102,6 +131,7 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/tables/{tableId}",
     scope: "schema:read",
     summary: "Get a table (flat by id); ?expand=fields embeds its fields.",
+    querySchema: z.object({ expand: z.string().optional() }),
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");
@@ -122,6 +152,7 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/tables/{tableId}/fields",
     scope: "schema:read",
     summary: "List a table's fields.",
+    querySchema: z.object({ ...limitCursorQuery }),
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");
@@ -148,6 +179,15 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/changes",
     scope: "schema:read",
     summary: "Schema changelog (filterable, newest first).",
+    querySchema: z.object({
+      baseId: z.string(),
+      entityType: z.string().optional(),
+      changeType: z.string().optional(),
+      breaksData: z.string().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+      ...limitCursorQuery,
+    }),
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");
@@ -174,6 +214,7 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/versions",
     scope: "schema:read",
     summary: "Captured schema versions for a base.",
+    querySchema: z.object({ baseId: z.string(), ...limitCursorQuery }),
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");
@@ -190,6 +231,7 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/search",
     scope: "schema:read",
     summary: "Convenience schema search (GET ?q=) — POST with defaults.",
+    querySchema: z.object({ q: z.string() }),
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");
@@ -203,6 +245,7 @@ export const schemaOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/{platform}/schema/search",
     scope: "schema:read",
     summary: "Structured schema search (heterogeneous hits with ancestry).",
+    bodySchema: searchBodySchema,
     handler: async (c) => {
       requirePlatform(c);
       const { spaceId } = await requireSpace(c, "schema:read");

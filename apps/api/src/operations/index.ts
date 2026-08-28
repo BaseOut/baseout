@@ -5,5 +5,9 @@ import type { Operation } from "../lib/registry";
 import { orgOperations } from "./orgs";
 import { backupOperations } from "./backups";
 import { schemaOperations } from "./schema";
+import { documentOperations } from "./documents";
+import { viewOperations } from "./views";
+import { searchOperations } from "./search";
+import { usageOperations } from "./usage";
 
-export const operations: Operation[] = [...orgOperations, ...backupOperations, ...schemaOperations];
+export const operations: Operation[] = [...orgOperations, ...backupOperations, ...schemaOperations, ...documentOperations, ...viewOperations, ...searchOperations, ...usageOperations];

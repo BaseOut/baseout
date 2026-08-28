@@ -1,34 +1,43 @@
 # Architecture
 
-`@baseout/api` is the public versioned inbound API at `api.baseout.com`. It authenticates customer API keys, validates payloads, and forwards work into `apps/server` over the HMAC service-token boundary.
+`@baseout/api` is the public REST API and MCP server. Every endpoint is declared once in the operation registry; the router, OpenAPI document, and MCP tool catalog all derive from that one array.
 
-Currently scaffolded as [src/index.ts](../src/index.ts) only. Phase 2 adds the v1 surface.
+An `Operation` is (method, `{param}` path template, required scope, Zod query/body schemas, handler) — see [src/lib/registry.ts](../src/lib/registry.ts) and [src/operations/](../src/operations/). Reads shipped via `api-rest-read`/`api-mcp`; the write plumbing (PATCH/DELETE, write scopes, body validation, attribution) via `api-write-foundation`.
 
 ## Scope
 
-What this app does and doesn't do. The split exists so customer-facing API contracts are versioned and stable, separate from internal engine evolution.
+What this Worker serves, and what deliberately lives elsewhere.
 
-- For: stable, versioned customer ingest API. Authenticated by per-customer API keys.
-- Not for: customer dashboards (that's `apps/web`), Airtable webhook ingest (that's `apps/hooks`), read-only SQL access (that's `apps/sql`).
+- For: the stable public read/write API (`/v1/...`) and the MCP server (`/mcp`) over the same operations — Org/Space/platform reads, backup reads, schema intelligence, and (as feature phases land) views/documents/reports mutations.
+- Not for: customer dashboards (`apps/web`), Airtable webhook ingest (`apps/hooks`), direct SQL access (`apps/sql`), backup mutations (deliberately impossible — no such operations are registered).
 
-## Request Flow
+## Request Pipeline
 
-The end-to-end path for a typical inbound API call:
+Per request ([src/index.ts](../src/index.ts)): version gate → Bearer auth → route match → shadow rate limit → body validation (non-GET) → handler. Every response carries `X-Request-Id`; every request is metered.
 
-1. Client calls `https://api.baseout.com/v1/<endpoint>` with an `Authorization: Bearer <api-key>` header.
-2. `apps/api` looks up the API key by hash (`api_tokens.token_hash`); 401 on miss.
-3. `apps/api` validates the JSON payload via Zod.
-4. `apps/api` forwards the validated, normalised payload to `apps/server`'s `/api/internal/*` with an HMAC-signed service token from `@baseout/shared`.
-5. `apps/api` returns the engine's response shape (or a translated error) to the client.
+Body handling lives in [src/lib/body.ts](../src/lib/body.ts): content-type gate, JSON parse, Zod validation with field-level 400s; operations without a `bodySchema` keep the legacy lenient parse. Metering is fire-and-forget to Analytics Engine ([src/lib/metering.ts](../src/lib/metering.ts)).
+
+Handlers run a tenant guard first ([src/lib/guards.ts](../src/lib/guards.ts)) — org/space mismatch is a tenant-safe 404, missing scope a 403. Master-DB reads happen in-Worker via Hyperdrive ([src/db/client.ts](../src/db/client.ts), per-request postgres-js); per-Space schema reads go through the `SERVER` service binding ([src/lib/server-client.ts](../src/lib/server-client.ts)) — this app never touches per-Space client DBs.
+
+## MCP Server
+
+Mounted at `/mcp` on the same Worker: stateless JSON-RPC 2.0 over POST, auth-first, no SDK ([src/mcp/transport.ts](../src/mcp/transport.ts)). Tools resolve 1:1 to registry operations and execute their handlers in-process.
+
+Tool defs are hand-described ([src/mcp/tools.ts](../src/mcp/tools.ts)); the catalog ([src/mcp/catalog.ts](../src/mcp/catalog.ts)) is scope-filtered per token and grant-aware (orgId/platform always injected; spaceId injected for Space-bound tokens). Dispatch ([src/mcp/dispatch.ts](../src/mcp/dispatch.ts)) derives path params from the operation's path template; a tool's `bodyArgs` splits remaining args between JSON body (validated by the operation's `bodySchema`) and query.
+
+Annotations are method-derived (`readOnlyHint`, `destructiveHint` on DELETE) with a per-tool read override for POST search. Contract tests pin tool↔operation resolution and argProps↔Zod-shape agreement ([tests/schema-agreement.test.ts](../tests/schema-agreement.test.ts)). `platform` is the `DEFAULT_PLATFORM = "at"` constant ([src/lib/platform.ts](../src/lib/platform.ts)) until multi-platform ships.
 
 ## Deployment
 
-Cloudflare Workers via Wrangler. Worker name: `baseout-api`. Configuration in [wrangler.jsonc](../wrangler.jsonc); environments are `production` and `staging`. DNS pointed at `api.baseout.com`.
+Cloudflare Workers via Wrangler ([wrangler.jsonc](../wrangler.jsonc)). Live today as `baseout-api-dev` on workers.dev; the production lane (`api.baseout.com`) is pending.
+
+The `dev` env uses the shared dev Hyperdrive and binds `SERVER` to the production `baseout-server` script; secrets sync from `.dev.vars` via `pnpm deploy:dev` — never `wrangler secret put` by hand. `production` (`baseout-api` + route + prod Hyperdrive) waits on Dan's env-lane completion — see the DEPLOY-BLOCKED comment in wrangler.jsonc.
 
 ## Where to Look
 
-Pointers to related rules and apps.
+Pointers to related rules and surfaces.
 
 - Cross-app token map: [root cross-app-comm](../../../lat.md/cross-app-comm.md)
 - Versioning policy: [[versioning]]
-- Service auth (HMAC + API key hashing): [[service-auth]]
+- Auth (bearer tokens, scopes, outbound engine calls): [[service-auth]]
+- OpenAPI document: [openapi.json](../openapi.json), regenerated by `pnpm openapi:generate`

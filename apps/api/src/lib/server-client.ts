@@ -44,4 +44,60 @@ export const serverClient = {
     call(env, `/api/internal/spaces/${enc(spaceId)}/schema-versions${query ? `?${query}` : ""}`, { method: "GET" }),
   schemaChangelog: (env: Env, spaceId: string, query: string) =>
     call(env, `/api/internal/spaces/${enc(spaceId)}/schema-changelog${query ? `?${query}` : ""}`, { method: "GET" }),
+
+  // Schema Docs brokers (api-documents-tools).
+  documentsList: (env: Env, spaceId: string, query = "") =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/documents${query ? `?${query}` : ""}`, { method: "GET" }),
+  documentsCreate: (env: Env, spaceId: string, input: unknown) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/documents`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  documentGet: (env: Env, spaceId: string, documentId: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/documents/${enc(documentId)}`, { method: "GET" }),
+  documentUpdate: (env: Env, spaceId: string, documentId: string, patch: unknown) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/documents/${enc(documentId)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  documentDelete: (env: Env, spaceId: string, documentId: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/documents/${enc(documentId)}`, { method: "DELETE" }),
+  docsByEntity: (env: Env, spaceId: string, query: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/docs-by-entity?${query}`, { method: "GET" }),
+  documentTagAdd: (env: Env, spaceId: string, documentId: string, tag: unknown) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/documents/${enc(documentId)}/tags`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(tag),
+    }),
+  documentTagRemove: (env: Env, spaceId: string, documentId: string, query: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/documents/${enc(documentId)}/tags?${query}`, { method: "DELETE" }),
+
+  // Saved-views broker (api-views-tools / server-saved-views).
+  viewsList: (env: Env, spaceId: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/views`, { method: "GET" }),
+  viewsCreate: (env: Env, spaceId: string, input: unknown) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/views`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  viewGet: (env: Env, spaceId: string, viewId: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/views/${enc(viewId)}`, { method: "GET" }),
+  viewUpdate: (env: Env, spaceId: string, viewId: string, patch: unknown) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/views/${enc(viewId)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  viewDelete: (env: Env, spaceId: string, viewId: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/views/${enc(viewId)}`, { method: "DELETE" }),
+
+  // Search brokers (api-search-tools).
+  dataSearch: (env: Env, spaceId: string, query: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/data/search?${query}`, { method: "GET" }),
+  mediaList: (env: Env, spaceId: string, query: string) =>
+    call(env, `/api/internal/spaces/${enc(spaceId)}/media${query ? `?${query}` : ""}`, { method: "GET" }),
 };

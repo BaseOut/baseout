@@ -35,6 +35,11 @@ export function buildOpenApiDocument(operations: Operation[], version = "1.0.0")
       summary: op.summary,
       security: [{ bearerAuth: [op.scope] }],
       parameters: pathParams(op.path),
+      // Generic JSON body marker for write operations (per-field schemas stay a
+      // zod-to-json-schema-free enrichment, same stance as responses).
+      ...(op.bodySchema
+        ? { requestBody: { required: true, content: { "application/json": { schema: { type: "object" } } } } }
+        : {}),
       responses: {
         "200": { description: "OK" },
         "304": { description: "Not Modified (matching ETag)" },
