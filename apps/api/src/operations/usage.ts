@@ -28,7 +28,7 @@ export const usageOperations: Operation[] = [
           remaining: used != null && allowance != null ? Math.max(0, allowance - used) : null,
           periodStart: monthStartUtc(c.now).toISOString(),
           usageAvailable: used != null,
-          enforcement: "off",
+          enforcement: c.env.QUOTA_ENFORCE === "true" ? "on" : "off",
         },
         c.requestId,
       );
