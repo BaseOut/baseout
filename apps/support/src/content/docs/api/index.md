@@ -1,7 +1,12 @@
 ---
 title: API
 description: The reference for driving Baseout from your own code.
-# THE TENSION THIS PAGE IS THE ANSWER TO — READ BEFORE "FINISHING" IT.
+# STATUS 2026-08-27: the surface is now SETTLED AND SHIPPED (api-write-foundation through
+# api-productionization) — real paths, parameters, scopes and error codes exist in apps/api. The
+# concepts pages are being filled in first (authentication/scopes is live beside this page); the
+# per-object reference pages are the remaining work. The note below is the original ruling and
+# still governs the anatomy pages: they stay templates, real pages get ADDED beside them.
+# THE TENSION THIS PAGE WAS THE ANSWER TO — the original note:
 # This portal carries no "not written yet" affordance. Oleh removed the site-wide draft banner on
 # 2026-08-18 and the seven per-page `provisional` banners on 2026-08-20, on one ruling: the portal is
 # a demonstration of the finished product, and a banner saying the text is not real is noise in
