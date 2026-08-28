@@ -55,10 +55,14 @@ Preview URLs are public by default; beta docs (verbatim): *"Preview URLs are pub
 - The workers.dev *"Production and Preview URLs are toggled separately"* (the `subdomain.previews_enabled` flag on the worker object) — an alternative/complement is turning workers.dev preview URLs off so the custom preview domain is the only surface.
 - Remaining ask (if wanted): extend the same gate to `baseout-admin` previews — admin's own staff-session gate already protects it, so this is defense-in-depth, not urgent.
 
-## D7. Preview hostname catch (found 2026-08-25 — affects auth + OAuth)
+## D7. Preview hostname (Dan vs Cloudflare)
 
-**CONFIRMED EMPIRICALLY 2026-08-25** by seeding real `staging` previews of all three Workers via `wrangler preview --name staging` (no git push needed):
-- Preview origin is **`https://staging.console.baseout.dev`** (Access-gated). Bare `console.baseout.dev` serves the **production** build (asset hashes identical to console.baseout.com — Dan enabled that domain for production too).
-- Admin's staging preview: `https://staging-baseout-admin.openside.workers.dev` (admin.baseout.dev not attached as a preview domain yet; becomes `staging.admin.baseout.dev` when it is). Server's: `https://staging-baseout-server.openside.workers.dev` (health 200).
-- Preview vars were CORRECTED accordingly and re-synced: web `PUBLIC_AUTH_BASE_URL=https://staging.console.baseout.dev`, `ADMIN_APP_URL=https://staging-baseout-admin.openside.workers.dev`; server `PUBLIC_APP_URL` and admin `WEB_APP_URL` → `https://staging.console.baseout.dev`. All three staging previews redeployed with the corrected values.
-- **OAuth callbacks can now be registered for the confirmed origin** `https://staging.console.baseout.dev<callback path>` (oauth-setup.md §4 HOLD lifted).
+Dan's names: **`console.baseout.com`** = production, **`console.baseout.dev`** = preview. He did not ask for `staging.console.baseout.dev`.
+
+Cloudflare custom-domain previews serve **`<preview-name>.<domain>`**. `wrangler preview --name staging` (2026-08-25) created a preview whose platform URL is `https://staging.console.baseout.dev` (Access-gated). Bare `console.baseout.dev` still serves **production** (same `/login` as `.com`) because that domain is enabled for Production as well as Preview.
+
+Previews Base `PUBLIC_AUTH_BASE_URL` / `PUBLIC_APP_URL` / `WEB_APP_URL` are the **apex** `https://console.baseout.dev`. Do not bake the `--name staging` host into those vars.
+
+**Dashboard (Dan):** `baseout-console` → Domains → `console.baseout.dev` → Enable for **Preview** only (production stays on `.com`). Until that flip, `preview:sync` of the origin vars would make named-preview magic links point at live. After the flip, OAuth callbacks are `https://console.baseout.dev/api/connections/.../callback`.
+
+Admin: `admin.baseout.dev` is not in DNS yet; `ADMIN_APP_URL` stays on the workers.dev admin preview until that domain is attached as Preview-only.

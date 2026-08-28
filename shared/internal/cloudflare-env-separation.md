@@ -84,8 +84,8 @@ GA docs quoted later in this file for anything previews-related:
 - **End state (2026-08-25): ALL THREE workers' preview configs are COMPLETE** on both fields —
   dev HYPERDRIVE (`ba2652…`), full binding sets, `console.baseout.dev` vars, secrets intact,
   and the paired preview `ADMIN_HANDOFF_SECRET` set fresh on console + admin. Remaining smoke
-  is human: staging-branch push → magic-link login on console.baseout.dev; OAuth provider
-  callback registration before Connect smokes.
+  is human: Dan flips `console.baseout.dev` to Enable for Preview only, then
+  magic-link on the apex; OAuth callbacks on that origin — not `staging.console.baseout.dev`.
 
 - **Two parallel fields exist on the worker object:** `previews_base_config` (dashboard's
   "Base configuration", the older name) and `preview_defaults` (what wrangler `preview
@@ -104,10 +104,11 @@ GA docs quoted later in this file for anything previews-related:
     Trust free plan + one Access app, policy = `@openside.com` via One-Time PIN; the beta
     integrates Access across workers.dev + custom preview URLs. workers.dev preview URLs can
     also be toggled off separately. ~15 min once Dan approves.
-  - *Preview hostname catch (D7):* custom-domain previews serve at
-    `<preview-name>.console.baseout.dev` (likely `staging.console.baseout.dev`) — confirm at
-    the first staging build, then fix `PUBLIC_AUTH_BASE_URL` in the previews blocks and only
-    then register OAuth callbacks for the observed origin.
+  - *Preview hostname (D7):* Dan's preview origin is **`console.baseout.dev`**,
+    not `staging.console.baseout.dev` (that is `wrangler preview --name staging`).
+    Apex `.dev` still serves production until Domains Enable for is **Preview
+    only**. Auth vars in the templates use the apex; do not preview:sync them
+    until that dashboard flip.
   - *Branch pinning:* not verifiable via API from Autumn's token (builds endpoints 403) —
     confirm the build-trigger branch filter in the dashboard at the regroup.
 
