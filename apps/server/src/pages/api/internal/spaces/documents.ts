@@ -61,7 +61,8 @@ export async function spacesDocumentsHandler(
 
   try {
     if (request.method === "GET") {
-      const documents = await withSpaceSchema(masterDb, space.pgLocator, (tx) => listDocuments(tx));
+      const q = new URL(request.url).searchParams.get("q") ?? undefined;
+      const documents = await withSpaceSchema(masterDb, space.pgLocator, (tx) => listDocuments(tx, q));
       return jsonResponse({ ok: true, documents }, 200);
     }
     const document = await withSpaceSchema(masterDb, space.pgLocator, (tx) => createDocument(tx, input!));

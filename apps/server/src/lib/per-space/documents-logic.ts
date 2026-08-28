@@ -38,6 +38,33 @@ export function deriveExcerpt(body: unknown, maxLen = 200): string {
   return text.length <= maxLen ? text : `${text.slice(0, maxLen)}…`;
 }
 
+/** A validated tag add/remove request (api-documents-tools tag broker). */
+export interface TagRequest {
+  targetType: DocTargetType;
+  targetId: string;
+  addedVia?: "inline" | "manual";
+}
+
+const TARGET_TYPES: readonly string[] = ["base", "table", "field", "view"];
+const ADDED_VIA: readonly string[] = ["inline", "manual"];
+
+/**
+ * Validate a raw tag request (POST body or DELETE query pair). Returns the
+ * typed request or null when the shape is invalid — the route maps null → 400.
+ */
+export function parseTagRequest(raw: unknown): TagRequest | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.targetType !== "string" || !TARGET_TYPES.includes(r.targetType)) return null;
+  if (typeof r.targetId !== "string" || r.targetId.trim() === "") return null;
+  if (r.addedVia !== undefined && (typeof r.addedVia !== "string" || !ADDED_VIA.includes(r.addedVia))) return null;
+  return {
+    targetType: r.targetType as DocTargetType,
+    targetId: r.targetId,
+    ...(r.addedVia !== undefined ? { addedVia: r.addedVia as "inline" | "manual" } : {}),
+  };
+}
+
 /**
  * Annotate each tag with `entityRemoved` — true when the tagged entity is not
  * in `activeKeys` (absent or `status='removed'`). Tags are never dropped: a

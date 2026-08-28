@@ -90,3 +90,24 @@ describe("flagRemovedTags", () => {
     expect(out[0]).toMatchObject({ documentId: "d1", targetType: "field", targetId: "fld1" });
   });
 });
+
+describe("parseTagRequest (api-documents-tools tag broker)", () => {
+  it("accepts a valid tag request, with and without addedVia", async () => {
+    const { parseTagRequest } = await import("../../../src/lib/per-space/documents-logic");
+    expect(parseTagRequest({ targetType: "field", targetId: "fld1" })).toEqual({ targetType: "field", targetId: "fld1" });
+    expect(parseTagRequest({ targetType: "table", targetId: "tbl1", addedVia: "inline" })).toEqual({
+      targetType: "table", targetId: "tbl1", addedVia: "inline",
+    });
+  });
+
+  it("rejects bad shapes: wrong type, empty id, bad addedVia, non-objects", async () => {
+    const { parseTagRequest } = await import("../../../src/lib/per-space/documents-logic");
+    expect(parseTagRequest({ targetType: "space", targetId: "x" })).toBeNull();
+    expect(parseTagRequest({ targetType: "field", targetId: "" })).toBeNull();
+    expect(parseTagRequest({ targetType: "field", targetId: "  " })).toBeNull();
+    expect(parseTagRequest({ targetType: "field", targetId: "x", addedVia: "auto" })).toBeNull();
+    expect(parseTagRequest(null)).toBeNull();
+    expect(parseTagRequest("field")).toBeNull();
+    expect(parseTagRequest({})).toBeNull();
+  });
+});

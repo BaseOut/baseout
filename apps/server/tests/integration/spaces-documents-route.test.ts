@@ -119,3 +119,42 @@ describe("Schema read route — guards", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("Document tags route (api-documents-tools) — guards", () => {
+  const TAGS = `http://test/api/internal/spaces/${SPACE_ID}/documents/${DOC_ID}/tags`;
+
+  it("401 without the internal token", async () => {
+    const res = await SELF.fetch(TAGS, { method: "POST" });
+    expect(res.status).toBe(401);
+  });
+
+  it("405 on GET/PATCH", async () => {
+    for (const method of ["GET", "PATCH"]) {
+      const res = await SELF.fetch(TAGS, { method, headers: tok });
+      expect(res.status, method).toBe(405);
+    }
+  });
+
+  it("400 on a non-UUID document id", async () => {
+    const res = await SELF.fetch(`http://test/api/internal/spaces/${SPACE_ID}/documents/nope/tags`, {
+      method: "POST",
+      headers: { ...tok, "content-type": "application/json" },
+      body: JSON.stringify({ targetType: "field", targetId: "fld1" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("400 on an invalid tag body (bad targetType)", async () => {
+    const res = await SELF.fetch(TAGS, {
+      method: "POST",
+      headers: { ...tok, "content-type": "application/json" },
+      body: JSON.stringify({ targetType: "space", targetId: "x" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("400 on DELETE without the targetType/targetId query pair", async () => {
+    const res = await SELF.fetch(TAGS, { method: "DELETE", headers: tok });
+    expect(res.status).toBe(400);
+  });
+});
