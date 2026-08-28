@@ -12,7 +12,8 @@ import { parseValidatedBody } from "./lib/body";
 import { ApiError, errorResponse, notFound, unauthorized } from "./lib/errors";
 import { log } from "./lib/log";
 import { meterRequest, type UsagePoint } from "./lib/metering";
-import { evaluateRateLimit } from "./lib/ratelimit";
+import { evaluateRateLimit, hasTierLimiters } from "./lib/ratelimit";
+import { evaluateQuota, getCachedPlan } from "./lib/quota";
 import { buildRouter, type OperationContext } from "./lib/registry";
 import { operations } from "./operations";
 import { handleMcp } from "./mcp/transport";
@@ -58,14 +59,23 @@ export default {
           return res;
         }
         ctx.waitUntil(touchLastUsed(conn.db, grant.id, now).catch(() => {}));
-        const rl = await evaluateRateLimit(env, grant.id);
+        const planSlug = hasTierLimiters(env) ? (await getCachedPlan(conn.db, grant.organizationId, now))?.planSlug ?? null : null;
+        const rl = await evaluateRateLimit(env, grant.id, planSlug);
         if (rl.block) {
           meter({ surface: "mcp", routeTemplate: "/mcp", tokenId: grant.id, orgId: grant.organizationId, status: 429 });
           return errorResponse(new ApiError("rate_limited", "rate_limited", "Rate limit exceeded.", { headers: rl.headers }), requestId, rl.headers);
         }
+        // Monthly quota (api-productionization 4.2) — headers always, 429 only
+        // under QUOTA_ENFORCE with evidence. Fail-open by construction.
+        const quota = await evaluateQuota(env, conn.db, grant.organizationId, now);
+        const guardHeaders = { ...rl.headers, ...quota.headers };
+        if (quota.block) {
+          meter({ surface: "mcp", routeTemplate: "/mcp", tokenId: grant.id, orgId: grant.organizationId, status: 429 });
+          return errorResponse(new ApiError("rate_limited", "quota_exceeded", "Monthly call allowance exhausted.", { headers: quota.headers }), requestId, guardHeaders);
+        }
         const { res, label } = await handleMcp(request, { operations, db: conn.db, sql: conn.sql, env, ctx, grant, now, requestId }, requestId);
         meter({ surface: "mcp", routeTemplate: label, tokenId: grant.id, orgId: grant.organizationId, status: res.status });
-        return withHeaders(res, rl.headers);
+        return withHeaders(res, guardHeaders);
       } catch (err) {
         if (!(err instanceof ApiError)) log.error("api.mcp.unhandled", { requestId, err: err instanceof Error ? err.message : String(err) });
         meter({ surface: "mcp", routeTemplate: "/mcp", status: 500 });
@@ -110,12 +120,26 @@ export default {
       }
       const { op, params } = matched;
 
-      const rl = await evaluateRateLimit(env, grant.id);
+      const planSlug = hasTierLimiters(env) ? (await getCachedPlan(db, grant.organizationId, now))?.planSlug ?? null : null;
+      const rl = await evaluateRateLimit(env, grant.id, planSlug);
       if (rl.block) {
         const res = errorResponse(
           new ApiError("rate_limited", "rate_limited", "Rate limit exceeded.", { headers: rl.headers }),
           requestId,
           rl.headers,
+        );
+        meter({ tokenId: grant.id, orgId: grant.organizationId, routeTemplate: op.path, status: 429 });
+        return res;
+      }
+      // Monthly quota (api-productionization 4.2) — headers always, 429 only
+      // under QUOTA_ENFORCE with evidence. Fail-open by construction.
+      const quota = await evaluateQuota(env, db, grant.organizationId, now);
+      const guardHeaders = { ...rl.headers, ...quota.headers };
+      if (quota.block) {
+        const res = errorResponse(
+          new ApiError("rate_limited", "quota_exceeded", "Monthly call allowance exhausted.", { headers: quota.headers }),
+          requestId,
+          guardHeaders,
         );
         meter({ tokenId: grant.id, orgId: grant.organizationId, routeTemplate: op.path, status: 429 });
         return res;
@@ -131,7 +155,7 @@ export default {
         db, sql, env, ctx, grant, params,
         query: url.searchParams, body, requestId, headers: request.headers, now,
       };
-      const res = withHeaders(await op.handler(c), rl.headers);
+      const res = withHeaders(await op.handler(c), guardHeaders);
       meter({
         tokenId: grant.id, orgId: grant.organizationId, spaceId: params.spaceId ?? null,
         platform: params.platform ?? null, routeTemplate: op.path, status: res.status,

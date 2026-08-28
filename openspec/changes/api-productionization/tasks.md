@@ -28,12 +28,27 @@ TDD throughout (§3.4). Tasks 4.x are Dan-gated — each names its blocking deci
 
 - [ ] 4.1 Rate-limit enforcement: real per-tier numbers → wrangler `simple` limits +
       `RATE_LIMIT_ENFORCE=true`. **Blocked on Dan decision #2 (numbers).**
-- [ ] 4.2 Quota enforcement: 429 when used ≥ allowance behind `QUOTA_ENFORCE`.
-      **Blocked on the same decision.**
+      → CODE HALF DONE (2026-08-27): `limiterForPlan` selects an optional per-tier
+      binding (RATE_LIMITER_LITE/_CORE/_PLUS/_MAX/_ENTERPRISE) by the org's cached plan
+      slug, falling back to the flat binding; the flip is declaring the bindings with
+      Dan's numbers + setting the var. Nothing else remains to code.
+- [x] 4.2 Quota enforcement: 429 when used ≥ allowance behind `QUOTA_ENFORCE`
+      (default "false"). → `src/lib/quota.ts`: pure decision + per-isolate caches
+      (plan 5min, usage 60s), wired into BOTH surfaces after the rate limiter.
+      X-Quota-Limit/-Remaining headers when known; 429 `quota_exceeded` with
+      Retry-After-to-month-end ONLY with enforcement on AND usage evidence (fail-open
+      on AE outage/no-creds/no-plan — never blocks blind). Live: zero-cost
+      short-circuit verified (no quota headers on the dev worker — no AE creds);
+      `get_api_usage.enforcement` now reflects the flag. Flipping needs the AE creds
+      (4.2's other half of Dan decision #2) + `QUOTA_ENFORCE=true`.
 - [ ] 4.3 OAuth 2.1 + DCR + `mcp.baseout.com`. **Blocked on Dan decision #3
       (claude.ai connector-directory ambition).**
 - [ ] 4.4 Production: `api.baseout.com` route, prod Hyperdrive in env.production, prod
       `PUBLIC_APP_URL`, secrets. **Blocked on Dan decision #1 (env lane).**
+      → SCAFFOLD DONE (2026-08-27): env.production restates every binding + vars
+      (enforcement flags off); remaining = fill `<PROD_HYPERDRIVE_ID>`, uncomment the
+      route, confirm `PUBLIC_APP_URL`, set production secrets. Two values + a deploy.
+      (`wrangler deploy --env dev --dry-run` validates the config shape.)
 
 ## Session notes (2026-08-27)
 
@@ -54,3 +69,10 @@ TDD throughout (§3.4). Tasks 4.x are Dan-gated — each names its blocking deci
     * "Search over records, documents, reports and attachments — results deep-link
        into the app."
 - 37 OpenAPI operations / 36 MCP tools; apps/api 165/165 + tsc green; lat green.
+
+## Session notes 2 (2026-08-27, closing the coding leg)
+
+- The change is now CODE-COMPLETE: everything still open is a Dan input (rate/quota
+  numbers + AE token = decision #2; OAuth ambition = #3; route/Hyperdrive/console
+  origin = #1). apps/api 173/173 + tsc green; dev worker redeployed; live checks:
+  x-quota headers correctly absent on the zero-cost path, enforcement reads "off".

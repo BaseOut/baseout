@@ -13,7 +13,9 @@ What this Worker serves, and what deliberately lives elsewhere.
 
 ## Request Pipeline
 
-Per request ([src/index.ts](../src/index.ts)): version gate → Bearer auth → route match → shadow rate limit → body validation (non-GET) → handler. Every response carries `X-Request-Id`; every request is metered.
+Per request ([src/index.ts](../src/index.ts)): version gate → Bearer auth → route match → rate limit → monthly quota → body validation (non-GET) → handler. Every response carries `X-Request-Id`; every request is metered.
+
+The rate limiter is shadow by default and tier-aware once per-plan bindings exist (`limiterForPlan`). The quota step ([src/lib/quota.ts](../src/lib/quota.ts)) emits X-Quota-* headers whenever plan + usage are known and blocks with 429 only under `QUOTA_ENFORCE` with usage evidence — fail-open on any missing input.
 
 Body handling lives in [src/lib/body.ts](../src/lib/body.ts): content-type gate, JSON parse, Zod validation with field-level 400s; operations without a `bodySchema` keep the legacy lenient parse. Metering is fire-and-forget to Analytics Engine ([src/lib/metering.ts](../src/lib/metering.ts)).
 
