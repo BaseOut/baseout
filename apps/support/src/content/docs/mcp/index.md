@@ -1,12 +1,11 @@
 ---
 title: MCP
 description: The Baseout MCP server — what it exposes to an AI client, and how this section is arranged.
-# THE SAME TENSION, THE SAME RESOLUTION. Read the frontmatter note on `api/index.md` first.
-# The Model Context Protocol itself is public and settled, and everything this page says about it is
-# checkable. What is NOT settled is which tools Baseout exposes, what each is called, or what it
-# returns — so no tool name appears on this page, and the one on `mcp/anatomy-of-a-tool-page.md`
-# is written in `{braces}` as a template. Add tool pages beside these when they exist; do not fill
-# the braces in.
+# The tool surface is now REAL (api-write-foundation → api-productionization, 2026-08-27): the
+# server ships with a scope-filtered catalog covering org/backups/schema/data/documents/views/
+# reports + search. This page still names no individual tool — the per-tool reference pages are the
+# remaining work, added beside `mcp/anatomy-of-a-tool-page.md` (which stays a template by its own
+# ruling; see `api/index.md`'s note for the original reasoning).
 sources:
   - apps/api/src/mcp
 ---
@@ -42,11 +41,14 @@ described in [Anatomy of a tool page](/mcp/anatomy-of-a-tool-page/).
 
 ## What it can reach
 
-The same objects the API names — organizations, spaces, connections, backup runs, snapshots and
-schemas — and no more. An MCP client reads your backups; it does not stand between Baseout and the
-platform, and it is not another way to start a restore.
+The same objects the API names — organizations, spaces, backup runs, schemas, records, documents,
+saved views and reports. Reading is most of it; a token can also grant editing of the things that
+live inside Baseout itself — documents, saved Data views, report definitions — each behind its own
+write scope. An MCP client never stands between Baseout and the platform: it is not a way to start
+a backup, a restore, or to touch a connection.
 
 ## Scope, stated once
 
-Read access is read access. A tool that would change something in your account is documented as such
-on its own page, in its first paragraph, and there is no tool that writes to a connected platform.
+Read access is read access, and a write scope is granted on the token, never assumed — the
+[authentication page](/api/authentication/) has the full scope table. A tool that changes something
+says so in its own description, and there is no tool that writes to a connected platform.

@@ -416,6 +416,7 @@ export default defineConfig({
           label: 'API',
           items: [
             { label: 'Overview', slug: 'api' },
+            { label: 'Authentication and scopes', slug: 'api/authentication' },
             { label: 'Anatomy of a reference page', slug: 'api/anatomy-of-a-reference-page' },
           ],
         },
@@ -423,6 +424,7 @@ export default defineConfig({
           label: 'MCP',
           items: [
             { label: 'Overview', slug: 'mcp' },
+            { label: 'Connecting a client', slug: 'mcp/connecting' },
             { label: 'Anatomy of a tool page', slug: 'mcp/anatomy-of-a-tool-page' },
           ],
         },
