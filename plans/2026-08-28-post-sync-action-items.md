@@ -20,7 +20,7 @@
 
 ---
 
-### Task 1: Publish `staging` in sync with `main`
+### Task 1: Publish `staging` in sync with `main` — ✅ DONE 2026-08-28 (`022d14f6..1dda165b`)
 
 **Files:** none (git only).
 
@@ -46,7 +46,7 @@ Expected: `0	0`
 
 ---
 
-### Task 2: Adopt the branching convention (and write it down once)
+### Task 2: Adopt the branching convention (and write it down once) — ✅ DONE 2026-08-28 (branch `repo-branching-convention`, commit `4bfaaffc`)
 
 **Files:**
 - Modify: `CLAUDE.md` §8 "Asking, Confirming, Committing" (append two bullets)
@@ -190,7 +190,9 @@ Optional "weird random change" test Dan described: on the branch, add a blank li
 
 ---
 
-### Task 4: MCP smoke from a fresh client (GitHub Copilot), zero repo access
+### Task 4: MCP smoke from a fresh client (GitHub Copilot), zero repo access — ✅ scripted leg 7/7 PASS 2026-08-28; Copilot leg = Autumn hands-on (`~/mcp-smoke`)
+
+> Results table: `plans/2026-08-27-mcp-app-parity.md` § "Fresh-client smoke (2026-08-28)". Token expires 2026-08-29 19:38 UTC; revoke earlier via Settings → Developer if the Copilot run finishes sooner.
 
 Dan: test with something that can't see the code or conversation history. Copilot in a VS Code window opened on an **empty folder outside the repo** satisfies that.
 
@@ -264,7 +266,7 @@ Surface for approval, then commit as `docs(plans): record fresh-client MCP smoke
 
 ---
 
-### Task 5: Record "internal chat does not use MCP" where the next engineer will look
+### Task 5: Record "internal chat does not use MCP" where the next engineer will look — ✅ DONE 2026-08-28 (D7 in the MCP plan, commit `4bfaaffc`)
 
 Verified today: nothing in `apps/web` or the chat-respond task calls our `/mcp` (the only `mcp-client` in `apps/workflows` is Airtable's MCP capture, unrelated). This is a guardrail note, not a code change.
 

@@ -146,3 +146,26 @@ MCP parity (this plan) is now Stream C and jumps the queue per Dan. Astro 7 (Str
 independent — interleave it whenever a day is free; it doesn't touch apps/api (tsup, not astro).
 Support backends (Stream B) stay behind both. Suggested start: Phase 0 + Phase 1 back-to-back
 (~2.5d to "an MCP client can create and run a report"), demo that to Dan, then 2 → 3 → 4 → 5.
+
+## Fresh-client smoke (2026-08-28) — scripted leg PASS 7/7
+
+Client: a 60-line raw JSON-RPC script in the session scratchpad (no SDK, no repo access, no
+conversation history — the "fresh client" Dan asked for, minus the LLM). Local pair: apps/server
+`wrangler dev --port 8787` (top-level config) + apps/api `node scripts/dev.mjs --port 8788`, dev
+master DB. Token `copilot-smoke-2026-08-28` — Space-bound (Staging / "Huh?"), scopes
+`org:read schema:read documents:read documents:write views:read data:read`, 24h expiry, inserted
+directly into `api_tokens` (SHA-256 hash + prefix only, same shape as `POST /api/tokens`).
+
+| probe | result | notes |
+|---|---|---|
+| `initialize` | PASS | protocol 2025-06-18, serverInfo `baseout 1.0.0` |
+| `tools/list` scope filter | PASS | 27 of 36 tools listed; every reports/backups/views-write tool absent; `get_api_usage` present and correctly so (`org:read`) |
+| `get_org` | PASS | `plan: "core"`, name `Huh?` |
+| `search_schema` + deep link | PASS | 2 table hits for "quest"; `appUrl` → `/schema?entity=tbl…` |
+| `search_records` + deep link | PASS | hits grouped base→table; `appUrl` → `/data?record=rec…&table=tbl…` |
+| `create_document` (markdown body) | PASS | id returned |
+| `delete_document` | PASS | `{deleted:true}`; tool carries `destructiveHint: true` so clients confirm first |
+
+Follow-ups: none from the protocol leg. **LLM leg still owed (Autumn, hands-on):** GitHub Copilot
+in `~/mcp-smoke` (config + prompts in its README; folder is outside the repo) — checks tool
+*selection* and the confirm-before-delete UX, which a script can't. Delete the folder after.
