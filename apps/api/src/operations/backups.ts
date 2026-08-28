@@ -2,6 +2,7 @@
 // Scope: backups:read.
 
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { z } from "zod";
 import {
   backupConfigurationBases,
   backupConfigurations,
@@ -45,6 +46,15 @@ export const backupOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces/{spaceId}/backups/runs",
     scope: "backups:read",
     summary: "List backup runs (newest first) with status/kind/date/base filters.",
+    querySchema: z.object({
+      status: z.string().optional(),
+      kind: z.string().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+      baseId: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+      cursor: z.string().optional(),
+    }),
     handler: async (c) => {
       const { spaceId } = await requireSpace(c, "backups:read");
       const limit = parseLimit(c.query.get("limit"));

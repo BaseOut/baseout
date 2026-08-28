@@ -6,6 +6,7 @@ import { z } from "zod";
 import { atBases, connections, organizations, platforms, spacePlatforms, spaces } from "../db/schema";
 import { paginate, parseCursor, parseLimit } from "../lib/pagination";
 import { requireOrg, requireSpace } from "../lib/guards";
+import { resolveApiPlan } from "../lib/entitlements";
 import { json } from "../lib/responses";
 import type { Operation, OperationContext } from "../lib/registry";
 
@@ -50,10 +51,10 @@ export const orgOperations: Operation[] = [
         .from(organizations)
         .where(eq(organizations.id, orgId))
         .limit(1);
-      // plan/tier is derived from Stripe subscription metadata (resolveCapabilities,
-      // apps/web); exposed as an additive field, resolved as null until that
-      // resolution is wired into apps/api (documented follow-up).
-      return json({ id: org!.id, name: org!.name, createdAt: iso(org!.createdAt), plan: null }, c.requestId);
+      // plan = the org's resolved entitlement plan slug (api-productionization
+      // D2); null when there is no active/trialing subscription.
+      const plan = await resolveApiPlan(c.db, orgId, c.now);
+      return json({ id: org!.id, name: org!.name, createdAt: iso(org!.createdAt), plan: plan?.planSlug ?? null }, c.requestId);
     },
   },
   {
@@ -61,6 +62,7 @@ export const orgOperations: Operation[] = [
     path: "/v1/orgs/{orgId}/spaces",
     scope: "org:read",
     summary: "List the Organization's Spaces.",
+    querySchema: z.object({ limit: z.number().int().min(1).max(100).optional(), cursor: z.string().optional() }),
     handler: async (c) => {
       const orgId = await requireOrg(c, "org:read");
       const limit = parseLimit(c.query.get("limit"));

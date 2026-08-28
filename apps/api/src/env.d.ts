@@ -28,6 +28,16 @@ export interface Env {
   RATE_LIMITER?: RateLimit;
   /** "true" flips shadow rate limiting to enforcing (429). Default (unset/anything else) = shadow. */
   RATE_LIMIT_ENFORCE?: string;
+
+  /** Web console origin for MCP appUrl deep links (api-search-tools D4).
+   *  Unset (production, until Dan's env lane) → enrichment is a no-op. */
+  PUBLIC_APP_URL?: string;
+
+  /** Analytics Engine SQL-read credentials for the usage surface
+   *  (api-productionization D3). OPTIONAL secrets — unset ⇒ usage reads null.
+   *  NOT in wrangler vars; set via .dev.vars → secret sync when provisioned. */
+  AE_ACCOUNT_ID?: string;
+  AE_API_TOKEN?: string;
 }
 
 /** Workers Rate Limiting binding shape (beta) — minimal typing. */

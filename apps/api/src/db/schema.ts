@@ -4,7 +4,7 @@
 // columns when an endpoint needs them. Per the apps/server mirror convention
 // (CLAUDE.md §5.3) — never migrate from this side; web owns all master migrations.
 
-import { pgSchema, text, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgSchema, text, integer, boolean, numeric, timestamp, jsonb } from "drizzle-orm/pg-core";
 
 const baseout = pgSchema("baseout");
 
@@ -18,6 +18,7 @@ export const apiTokens = baseout.table("api_tokens", {
   isActive: boolean("is_active").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  createdByUserId: text("created_by_user_id"),
 });
 
 export const organizations = baseout.table("organizations", {
@@ -129,6 +130,56 @@ export const backupRunBases = baseout.table("backup_run_bases", {
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   errorMessage: text("error_message"),
+});
+
+// Entitlement query tables (api-productionization D1). The CATALOG tables
+// (plans, features, plan_features, addon_catalog) come from @baseout/db-schema
+// directly; only the org-linked rows are mirrored here (canonical: core.ts +
+// schema/entitlements.ts; migration 0034). Read-only — web owns all writes.
+export const subscriptions = baseout.table("subscriptions", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  status: text("status").notNull(),
+});
+
+export const subscriptionItems = baseout.table("subscription_items", {
+  id: text("id").primaryKey(),
+  subscriptionId: text("subscription_id").notNull(),
+  planId: text("plan_id"),
+});
+
+export const accountFeatureOverrides = baseout.table("account_feature_overrides", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  featureId: text("feature_id").notNull(),
+  valueBool: boolean("value_bool"),
+  valueNumeric: numeric("value_numeric"),
+  valueEnum: text("value_enum"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+});
+
+export const addonPurchases = baseout.table("addon_purchases", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  addonId: text("addon_id").notNull(),
+  quantity: integer("quantity").notNull(),
+  status: text("status").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+});
+
+// Report definitions (canonical: core.ts reportDefinitions). Read-only for
+// report search (api-search-tools D3) — selected columns only.
+export const reportDefinitions = baseout.table("report_definitions", {
+  id: text("id").primaryKey(),
+  spaceId: text("space_id").notNull(),
+  name: text("name").notNull(),
+  sections: jsonb("sections"),
+  isDefault: boolean("is_default").notNull(),
+  scheduleCadence: text("schedule_cadence"),
+  scheduleEnabled: boolean("schedule_enabled").notNull(),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
 });
 
 export const backupRunTables = baseout.table("backup_run_tables", {

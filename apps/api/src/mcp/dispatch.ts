@@ -1,18 +1,24 @@
-// MCP tool dispatch (api-mcp §2.3). Executes a tool by calling its backing REST
-// operation handler IN-PROCESS (no self-HTTP) under the same token grant, scope
-// checks, tenant-safe 404s, and metering (surface="mcp"). orgId/{platform} are
-// injected; spaceId is injected for Space-bound tokens; other path params + query
-// come from the tool args; the search tool's args become the request body. A
-// non-2xx REST response maps to an MCP tool error (isError: true) so the agent
-// sees it — parity with the REST codes.
+// MCP tool dispatch (api-mcp §2.3, write conventions in api-write-foundation).
+// Executes a tool by calling its backing REST operation handler IN-PROCESS (no
+// self-HTTP) under the same token grant, scope checks, tenant-safe 404s, and
+// metering (surface="mcp"). Path params are DERIVED from the operation's path
+// template (no hardcoded list): orgId + {platform} are injected; spaceId is
+// injected for Space-bound tokens; the remaining template params come from the
+// tool args. A tool's bodyArgs declaration splits the rest between the JSON
+// body (validated by the operation's bodySchema — same rigor as REST) and the
+// query string. A non-2xx REST response maps to an MCP tool error
+// (isError: true) so the agent sees it — parity with the REST codes.
 
 import type { Sql } from "postgres";
 import type { ApiDb } from "../db/client";
 import type { Env } from "../env";
 import type { TokenGrant } from "../lib/auth";
+import { validateBodyValue } from "../lib/body";
+import { DEFAULT_PLATFORM } from "../lib/platform";
 import type { Operation, OperationContext } from "../lib/registry";
 import { MCP_TOOLS } from "./tools";
-import { opForTool } from "./catalog";
+import { enrichWithAppUrl } from "./app-urls";
+import { opForTool, pathParamNames } from "./catalog";
 
 export interface McpToolResult {
   content: { type: "text"; text: string }[];
@@ -21,6 +27,8 @@ export interface McpToolResult {
 
 export interface DispatchDeps {
   operations: Operation[];
+  /** Tool catalog override (tests); defaults to the shipped MCP_TOOLS. */
+  tools?: typeof MCP_TOOLS;
   db: ApiDb;
   sql: Sql;
   env: Env;
@@ -30,9 +38,6 @@ export interface DispatchDeps {
   requestId: string;
 }
 
-const PATH_PARAMS = ["orgId", "spaceId", "platform", "runId", "baseId", "tableId", "fieldId"];
-const pathHas = (path: string, param: string) => path.includes(`{${param}}`);
-
 const textResult = (text: string, isError = false): McpToolResult => ({ content: [{ type: "text", text }], isError });
 
 export async function callTool(
@@ -40,50 +45,73 @@ export async function callTool(
   args: Record<string, unknown>,
   deps: DispatchDeps,
 ): Promise<McpToolResult> {
-  const tool = MCP_TOOLS.find((t) => t.name === toolName);
+  const tools = deps.tools ?? MCP_TOOLS;
+  const tool = tools.find((t) => t.name === toolName);
   if (!tool) return textResult(JSON.stringify({ error: { code: "unknown_tool", message: `No such tool: ${toolName}` } }), true);
   const op = opForTool(deps.operations, tool);
   if (!op) return textResult(JSON.stringify({ error: { code: "unknown_tool", message: `Tool ${toolName} has no operation` } }), true);
 
-  // Build path params: orgId + platform injected; spaceId injected for
-  // Space-bound tokens, else from args; remaining path params from args.
+  // Path params — derived from the operation's path template: orgId + platform
+  // injected; spaceId injected for Space-bound tokens, else from args; every
+  // other template param from the same-named tool arg.
+  const templateParams = pathParamNames(op.path);
   const params: Record<string, string> = { orgId: deps.grant.organizationId };
-  if (pathHas(op.path, "platform")) params.platform = "at";
-  if (pathHas(op.path, "spaceId")) {
-    const spaceId = deps.grant.spaceId ?? (typeof args.spaceId === "string" ? args.spaceId : undefined);
-    if (!spaceId) return textResult(JSON.stringify({ error: { code: "invalid_request", param: "spaceId", message: "spaceId is required for an org-wide token." } }), true);
-    params.spaceId = spaceId;
-  }
-  for (const p of PATH_PARAMS) {
-    if (p === "orgId" || p === "spaceId" || p === "platform") continue;
-    if (pathHas(op.path, p) && typeof args[p] === "string") params[p] = args[p] as string;
-  }
-
-  // Query (GET) or body (search): remaining args that aren't path params.
-  const query = new URLSearchParams();
-  let body: unknown;
-  if (tool.bodyTool) {
-    const { spaceId: _s, ...rest } = args;
-    body = rest;
-  } else {
-    for (const [k, v] of Object.entries(args)) {
-      if (PATH_PARAMS.includes(k)) continue;
-      if (v == null) continue;
-      query.set(k, String(v));
+  for (const p of templateParams) {
+    if (p === "orgId") continue;
+    if (p === "platform") {
+      params.platform = DEFAULT_PLATFORM;
+    } else if (p === "spaceId") {
+      const spaceId = deps.grant.spaceId ?? (typeof args.spaceId === "string" ? args.spaceId : undefined);
+      if (!spaceId) return textResult(JSON.stringify({ error: { code: "invalid_request", param: "spaceId", message: "spaceId is required for an org-wide token." } }), true);
+      params.spaceId = spaceId;
+    } else if (typeof args[p] === "string") {
+      params[p] = args[p] as string;
     }
   }
 
-  const c: OperationContext = {
-    db: deps.db, sql: deps.sql, env: deps.env, ctx: deps.ctx, grant: deps.grant,
-    params, query, body, requestId: deps.requestId, headers: new Headers(), now: deps.now,
-  };
+  // Split the remaining args between JSON body and query per the tool's
+  // bodyArgs declaration.
+  const isPathParam = (k: string) => templateParams.includes(k) || k === "spaceId";
+  const query = new URLSearchParams();
+  let body: unknown;
+  const bodyEntries: Record<string, unknown> = {};
+  let hasBody = false;
+  for (const [k, v] of Object.entries(args)) {
+    if (isPathParam(k)) continue;
+    if (v == null) continue;
+    const inBody = tool.bodyArgs === "all" || (Array.isArray(tool.bodyArgs) && tool.bodyArgs.includes(k));
+    if (inBody) {
+      bodyEntries[k] = v;
+      hasBody = true;
+    } else {
+      query.set(k, String(v));
+    }
+  }
+  if (tool.bodyArgs != null || hasBody) body = bodyEntries;
 
   try {
+    // Same validation rigor as the REST router (design D1): the operation's
+    // bodySchema gates the MCP-built body too.
+    if (op.bodySchema && body !== undefined) body = validateBodyValue(op.bodySchema, body);
+
+    const c: OperationContext = {
+      db: deps.db, sql: deps.sql, env: deps.env, ctx: deps.ctx, grant: deps.grant,
+      params, query, body, requestId: deps.requestId, headers: new Headers(), now: deps.now,
+    };
     const res = await op.handler(c);
     const text = await res.text();
-    return textResult(text || "{}", res.status < 200 || res.status >= 300);
+    const isError = res.status < 200 || res.status >= 300;
+    // appUrl deep links (api-search-tools D4): parse the 2xx result once,
+    // enrich per tool, re-stringify. No-op when PUBLIC_APP_URL is unset.
+    if (!isError && deps.env.PUBLIC_APP_URL && text) {
+      try {
+        const enriched = enrichWithAppUrl(toolName, args, JSON.parse(text), deps.env.PUBLIC_APP_URL);
+        return textResult(JSON.stringify(enriched), false);
+      } catch { /* non-JSON body — return it untouched */ }
+    }
+    return textResult(text || "{}", isError);
   } catch (err) {
-    // ApiError thrown by guards/handlers → surface its wire body as a tool error.
+    // ApiError thrown by validation/guards/handlers → surface its wire body as a tool error.
     const e = err as { type?: string; code?: string; message?: string; param?: string };
     if (e && typeof e.code === "string") {
       return textResult(JSON.stringify({ error: { type: e.type, code: e.code, message: e.message, ...(e.param ? { param: e.param } : {}) } }), true);

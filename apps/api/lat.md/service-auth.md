@@ -1,37 +1,30 @@
 # Service Auth
 
-Two distinct auth boundaries: **inbound** customer API keys (per-customer, hashed in DB) and **outbound** HMAC service tokens (per-Worker, secret) when forwarding to `apps/server`.
+Two auth boundaries: **inbound** customer bearer tokens (per-Org, hashed in DB) and **outbound** calls to `apps/server` via the `SERVER` service binding gated by `INTERNAL_TOKEN`. There is no HMAC scheme in this app.
 
-Conflating these is a security bug. Customer API keys are revocable per-customer; HMAC service tokens are infrastructure-level.
+## Inbound: Bearer API Tokens
 
-## Inbound: Customer API Keys
+Tokens (`bo_live_…`) are issued in `apps/web`'s settings UI; the DB stores **only the SHA-256 hash** in `api_tokens.token_hash` per [shared/Baseout_PRD.md §21.3](../../../shared/Baseout_PRD.md). Plaintext is shown once at creation.
 
-API keys are issued in `apps/web`'s settings UI. The DB stores **only the hash** in `api_tokens.token_hash` per [shared/Baseout_PRD.md §21.3](../../../shared/Baseout_PRD.md). Plaintext tokens are shown to the user **once** at creation.
+Per request ([src/lib/auth.ts](../src/lib/auth.ts)):
 
-Per request:
+1. Read `Authorization: Bearer <token>`; parse + SHA-256.
+2. Look up by hash in the mirrored `api_tokens` table ([src/db/schema.ts](../src/db/schema.ts)). 401 on miss, inactive, or expired.
+3. The row becomes the request's `TokenGrant`: org id, optional Space binding (`space_id` NULL = all Spaces), scope list, and `createdByUserId` — the issuing user, joined at auth time and threaded into mutation attribution (design D5; no second query, no service-ghost users).
+4. `authorizeGrant` per operation: path-Org mismatch → tenant-safe 404 `org_not_found` (never 403); Space-bound token on another Space → 404 `space_not_found`; missing scope → 403 `insufficient_scope`.
+5. `last_used_at` is written behind the response via `ctx.waitUntil`.
 
-1. Read `Authorization: Bearer <token>`.
-2. Hash with the same algorithm used at issuance.
-3. Look up by hash in `api_tokens`. 401 on miss.
-4. Check token's `is_revoked` and `expires_at`. 401 if revoked or expired.
-5. Resolve the Organization + scopes attached to the token; populate request locals.
+## Scopes
 
-Per [root security-model](../../../lat.md/security-model.md), tokens are scoped to the narrowest viable set — never grant Org-wide write when a single Space-scoped read will do.
+Ten scopes, declared in `SCOPES` ([src/lib/auth.ts](../src/lib/auth.ts)); each operation declares exactly one. A `:write` scope does NOT imply its `:read` — tokens compose scopes explicitly (api-write-foundation D2).
 
-## Outbound: HMAC Service Token
+The list: `org:read`, `backups:read`, `schema:read`, `views:read`, `views:write`, `documents:read`, `documents:write`, `reports:read`, `reports:write`, `data:read`. Document reads are deliberately NOT under `schema:read` — schema structure and internal documentation are different sensitivity classes (api-documents-tools D2). Web's token-creation UI offers all nine; write scopes render unchecked by default with warning copy. Per [root security-model](../../../lat.md/security-model.md), grant the narrowest viable set.
 
-When forwarding to `apps/server`, `apps/api` mints an HMAC service token per request via `@baseout/shared`. The shape:
+## Outbound: SERVER Service Binding
 
-```
-header: x-baseout-signature
-value:  hmac_sha256(secret, "<method>\n<path>\n<body-hash>\n<timestamp>")
-header: x-baseout-timestamp: <unix-seconds>
-header: x-baseout-app: api
-```
+Per-Space schema reads go to `apps/server`'s `/api/internal/*` through the `SERVER` binding with the `x-internal-token: INTERNAL_TOKEN` header ([src/lib/server-client.ts](../src/lib/server-client.ts)).
 
-`apps/server` verifies the signature, rejects requests older than 60 seconds, and uses `x-baseout-app` for audit only — never for trust decisions.
-
-The HMAC secret lives in Cloudflare Secrets and is shared between `apps/api` and `apps/server`. Rotation requires updating both Worker Secret namespaces in lockstep.
+The token is byte-identical to the value `baseout-server` holds (the same secret web's `BACKUP_ENGINE_INTERNAL_TOKEN` carries). The binding gives network-level isolation; the token stays as defense-in-depth. Secrets come from `.dev.vars` via the deploy script's `wrangler secret bulk` sync — never hand-set (CLAUDE.md §3.3).
 
 ## Where to Look
 
@@ -39,5 +32,5 @@ Pointers to related rules and helpers.
 
 - Cross-app token map: [root cross-app-comm](../../../lat.md/cross-app-comm.md)
 - Root security model: [root security-model](../../../lat.md/security-model.md)
-- HMAC helpers: `packages/shared` (per [root monorepo-layout](../../../lat.md/monorepo-layout.md))
+- Token generation/hash helpers: `packages/shared/src/api-tokens.ts`
 - API token table: [shared/Baseout_PRD.md §21.3](../../../shared/Baseout_PRD.md)

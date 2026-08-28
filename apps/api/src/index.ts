@@ -8,6 +8,7 @@
 
 import { createMasterDb, type ApiDb } from "./db/client";
 import { authenticate, touchLastUsed } from "./lib/auth";
+import { parseValidatedBody } from "./lib/body";
 import { ApiError, errorResponse, notFound, unauthorized } from "./lib/errors";
 import { log } from "./lib/log";
 import { meterRequest, type UsagePoint } from "./lib/metering";
@@ -121,7 +122,10 @@ export default {
       }
 
       let body: unknown;
-      if (op.method === "POST") body = await request.json().catch(() => ({}));
+      if (op.method !== "GET") {
+        const raw = await request.text().catch(() => "");
+        body = parseValidatedBody(op.bodySchema, request.headers.get("content-type"), raw);
+      }
 
       const c: OperationContext = {
         db, sql, env, ctx, grant, params,

@@ -7,7 +7,7 @@ import type { Operation } from "../src/lib/registry";
 import type { TokenGrant } from "../src/lib/auth";
 import { ApiError } from "../src/lib/errors";
 
-const orgWide: TokenGrant = { id: "t", organizationId: "org_1", spaceId: null, scopes: ["org:read", "backups:read", "schema:read"] };
+const orgWide: TokenGrant = { id: "t", organizationId: "org_1", spaceId: null, scopes: ["org:read", "backups:read", "schema:read"], createdByUserId: null };
 const spaceBound: TokenGrant = { ...orgWide, spaceId: "space_1" };
 
 describe("MCP ↔ REST contract", () => {

@@ -19,7 +19,7 @@ export interface OperationContext {
   /** Path params extracted from the matched template ({orgId}, {spaceId}, …). */
   params: Record<string, string>;
   query: URLSearchParams;
-  /** Parsed JSON body for POST ops (already schema-checked when bodySchema is set); undefined for GET. */
+  /** Parsed JSON body for POST/PATCH/DELETE ops (already schema-checked when bodySchema is set); undefined for GET. */
   body: unknown;
   requestId: string;
   /** Request headers (e.g. If-None-Match for ETag/304). */
@@ -29,7 +29,7 @@ export interface OperationContext {
 }
 
 export interface Operation {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   /** Template with `{param}` segments, e.g. `/v1/orgs/{orgId}/spaces`. */
   path: string;
   scope: Scope;
