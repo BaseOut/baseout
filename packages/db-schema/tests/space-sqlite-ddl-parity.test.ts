@@ -26,8 +26,8 @@ describe("per-Space SQLite DDL ↔ migration parity", () => {
     expect(fromModule).toEqual(fromMigration);
   });
 
-  it("covers all 44 bo_at_ tables", () => {
+  it("covers all 45 bo_at_ tables", () => {
     const creates = (SPACE_SQLITE_DDL.match(/CREATE TABLE/g) ?? []).length;
-    expect(creates).toBe(44);
+    expect(creates).toBe(45);
   });
 });

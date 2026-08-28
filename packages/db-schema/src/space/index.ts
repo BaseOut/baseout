@@ -61,4 +61,7 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // already lives on bo_at_pages.interface_id (server-interfaces-normalize); no
 // parent_id column on bo_at_interfaces. Purely additive (new table + indexes);
 // the idempotent DDL covers existing Spaces.
-export const SPACE_SCHEMA_VERSION = 14
+// v15: Saved views (server-saved-views) — bo_at_saved_views (Data Browse
+// presets; config jsonb opaque, table_id immutable post-create). Purely
+// additive (one new table + index); the idempotent DDL covers existing Spaces.
+export const SPACE_SCHEMA_VERSION = 15

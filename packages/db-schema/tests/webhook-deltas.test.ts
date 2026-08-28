@@ -11,8 +11,8 @@ import * as pg from "../src/space/pg";
 import * as sqlite from "../src/space/sqlite";
 
 describe("SPACE_SCHEMA_VERSION", () => {
-  test("at 14 (v14 automations/interfaces manual CRUD entity tags + partial uniques)", () => {
-    expect(SPACE_SCHEMA_VERSION).toBe(14);
+  test("at 15 (v15 saved views — bo_at_saved_views)", () => {
+    expect(SPACE_SCHEMA_VERSION).toBe(15);
   });
 });
 

@@ -254,6 +254,26 @@ export const exportJobs = pgTable('bo_at_export_jobs', {
   byStatus: index('bo_at_export_jobs_status_idx').on(t.status),
 }))
 
+// ---- Saved views (server-saved-views) ----
+// Data Browse presets — one row per SAVED preset (drafts stay client-side).
+// `config` is the web-owned SerializedConfig (apps/web preset-serialize.ts),
+// stored opaquely — never inspected here (same posture as documents.body).
+// `table_id` is immutable after creation (Dan's Save-locks-table rule,
+// enforced in the broker: 400 table_locked).
+export const savedViews = pgTable('bo_at_saved_views', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: text('name').notNull(),
+  tableId: text('table_id').notNull(),
+  config: jsonb('config').notNull(),
+  pinned: boolean('pinned').notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  byTable: index('bo_at_saved_views_table_idx').on(t.tableId),
+}))
+
 // Documentation lives inline as `ai_description` / `ai_overview` /
 // `description_override` columns on bo_at_bases/tables/fields/records (the
 // `annotation` set above) — no separate bo_at_documentation table. The Data

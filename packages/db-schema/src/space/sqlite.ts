@@ -669,3 +669,18 @@ export const exportJobs = sqliteTable('bo_at_export_jobs', {
 }, (t) => ({
   byStatus: index('bo_at_export_jobs_status_idx').on(t.status),
 }))
+
+// ---- Saved views (server-saved-views) ----
+export const savedViews = sqliteTable('bo_at_saved_views', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  tableId: text('table_id').notNull(),
+  config: text('config').notNull(),                   // JSON-encoded SerializedConfig
+  pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+}, (t) => ({
+  byTable: index('bo_at_saved_views_table_idx').on(t.tableId),
+}))
