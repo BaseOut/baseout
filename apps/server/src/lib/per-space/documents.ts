@@ -7,9 +7,10 @@
 // into the Space's schema. The Plate `body` and React Flow diagram `state` are
 // stored as opaque JSON — never inspected here (no editor-library coupling).
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { spacePg } from "@baseout/db-schema/space";
 import type { SpaceTx } from "./space-db-pg";
+import { escapeLike } from "./schema-query";
 import {
   deriveExcerpt,
   entityKey,
@@ -125,8 +126,10 @@ async function replaceTags(tx: SpaceTx, documentId: string, tags: DocumentTagInp
 
 // ───────────────────────── reads ─────────────────────────
 
-/** Docs list for the Docs tab — newest first, with a tag count. */
-export async function listDocuments(tx: SpaceTx) {
+/** Docs list for the Docs tab — newest first, with a tag count. Optional `q`
+ *  filters by title/excerpt ILIKE (api-search-tools D3 — document search). */
+export async function listDocuments(tx: SpaceTx, q?: string) {
+  const pattern = q && q.trim() ? `%${escapeLike(q.trim())}%` : null;
   const docs = await tx
     .select({
       id: spacePg.documents.id,
@@ -137,6 +140,7 @@ export async function listDocuments(tx: SpaceTx) {
       updatedAt: spacePg.documents.updatedAt,
     })
     .from(spacePg.documents)
+    .where(pattern ? or(ilike(spacePg.documents.title, pattern), ilike(sql`coalesce(${spacePg.documents.excerpt}, '')`, pattern)) : undefined)
     .orderBy(desc(spacePg.documents.updatedAt));
   const tags = await tx
     .select({ documentId: spacePg.documentTags.documentId })
@@ -248,6 +252,36 @@ export async function addTag(tx: SpaceTx, documentId: string, tag: DocumentTagIn
     .onConflictDoNothing({
       target: [spacePg.documentTags.documentId, spacePg.documentTags.targetType, spacePg.documentTags.targetId],
     });
+}
+
+/** Remove a tag by its (targetType, targetId) pair. Returns whether a row was removed. */
+export async function removeTagByTarget(
+  tx: SpaceTx,
+  documentId: string,
+  targetType: DocTargetType,
+  targetId: string,
+): Promise<boolean> {
+  const removed = await tx
+    .delete(spacePg.documentTags)
+    .where(
+      and(
+        eq(spacePg.documentTags.documentId, documentId),
+        eq(spacePg.documentTags.targetType, targetType),
+        eq(spacePg.documentTags.targetId, targetId),
+      ),
+    )
+    .returning({ id: spacePg.documentTags.id });
+  return removed.length > 0;
+}
+
+/** Does the document exist? (Tag routes 404 before touching tag rows.) */
+export async function documentExists(tx: SpaceTx, id: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: spacePg.documents.id })
+    .from(spacePg.documents)
+    .where(eq(spacePg.documents.id, id))
+    .limit(1);
+  return !!row;
 }
 
 /** Remove a single tag by its id. Returns whether a row was removed. */

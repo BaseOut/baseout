@@ -55,6 +55,8 @@ function parseFilters(url: URL): MediaFilters {
   if (!Number.isNaN(after.getTime())) filters.capturedAfter = after;
   const before = new Date(url.searchParams.get("before") ?? "");
   if (!Number.isNaN(before.getTime())) filters.capturedBefore = before;
+  const q = url.searchParams.get("q");
+  if (q && q.trim()) filters.q = q.trim();
   return filters;
 }
 

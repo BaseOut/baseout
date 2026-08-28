@@ -58,7 +58,10 @@ import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bas
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
 import { spacesDocumentsHandler } from "./pages/api/internal/spaces/documents";
 import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
+import { spacesDocumentTagsHandler } from "./pages/api/internal/spaces/document-tags";
 import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
+import { spacesViewsHandler } from "./pages/api/internal/spaces/views";
+import { spacesViewHandler } from "./pages/api/internal/spaces/view";
 import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
 import { spacesSchemaChangelogHandler } from "./pages/api/internal/spaces/schema-changelog";
 import { spacesSchemaSearchHandler } from "./pages/api/internal/spaces/schema-search";
@@ -203,6 +206,12 @@ const SPACES_DOCUMENTS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/documents$/;
 const SPACES_DOCUMENT_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/documents\/([^/]+)$/;
+const SPACES_DOCUMENT_TAGS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/documents\/([^/]+)\/tags$/;
+const SPACES_VIEWS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/views$/;
+const SPACES_VIEW_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/views\/([^/]+)$/;
 const SPACES_DOCS_BY_ENTITY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/docs-by-entity$/;
 const SPACES_SCHEMA_READ_RE =
@@ -705,6 +714,10 @@ export default {
       // Schema Docs broker (openspec/changes/shared-schema-docs §2). apps/web's
       // authenticated /api/spaces/:spaceId/{documents,docs-by-entity} routes
       // proxy here; the browser never touches the per-Space DB.
+      const docTags = SPACES_DOCUMENT_TAGS_RE.exec(url.pathname);
+      if (docTags) {
+        return await spacesDocumentTagsHandler(request, env, ctx, locals, docTags[1]!, docTags[2]!);
+      }
       const docItem = SPACES_DOCUMENT_RE.exec(url.pathname);
       if (docItem) {
         return await spacesDocumentHandler(request, env, ctx, locals, docItem[1]!, docItem[2]!);
@@ -712,6 +725,15 @@ export default {
       const docCollection = SPACES_DOCUMENTS_RE.exec(url.pathname);
       if (docCollection) {
         return await spacesDocumentsHandler(request, env, ctx, locals, docCollection[1]!);
+      }
+      // Saved-views broker (server-saved-views).
+      const viewItem = SPACES_VIEW_RE.exec(url.pathname);
+      if (viewItem) {
+        return await spacesViewHandler(request, env, ctx, locals, viewItem[1]!, viewItem[2]!);
+      }
+      const viewCollection = SPACES_VIEWS_RE.exec(url.pathname);
+      if (viewCollection) {
+        return await spacesViewsHandler(request, env, ctx, locals, viewCollection[1]!);
       }
       const docsByEntity = SPACES_DOCS_BY_ENTITY_RE.exec(url.pathname);
       if (docsByEntity) {

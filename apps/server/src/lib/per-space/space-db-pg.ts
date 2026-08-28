@@ -13,6 +13,7 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Sql } from "postgres";
 import type { AppDb } from "../../db/worker";
 import { spacePg } from "@baseout/db-schema/space";
+import { escapeLike } from "./schema-query";
 import { schemaNameForSpace } from "../provisioning/posture";
 import type { LifecycleOp, PriorView, PriorWorkingSet, SchemaDiffResult } from "./schema-diff";
 import type { InterfaceDiffResult, PriorInterfaceWorkingSet } from "./interfaces-sync";
@@ -906,6 +907,8 @@ export interface MediaFilters {
   maxSize?: number;
   capturedAfter?: Date;
   capturedBefore?: Date;
+  /** Filename ILIKE filter (api-search-tools D3 — attachment search). */
+  q?: string;
 }
 
 function mediaFilterConditions(f: MediaFilters) {
@@ -915,12 +918,14 @@ function mediaFilterConditions(f: MediaFilters) {
   if (f.maxSize !== undefined) conds.push(sql`${spacePg.assets.sizeBytes} <= ${f.maxSize}`);
   if (f.capturedAfter) conds.push(sql`${spacePg.assets.firstSeenAt} >= ${f.capturedAfter.toISOString()}::timestamptz`);
   if (f.capturedBefore) conds.push(sql`${spacePg.assets.firstSeenAt} <= ${f.capturedBefore.toISOString()}::timestamptz`);
-  if (f.baseId || f.tableId) {
+  if (f.baseId || f.tableId || (f.q && f.q.trim())) {
+    const pattern = f.q && f.q.trim() ? `%${escapeLike(f.q.trim())}%` : null;
     conds.push(sql`EXISTS (
       SELECT 1 FROM ${spacePg.assetRefs} fr
       WHERE fr.asset_id = ${spacePg.assets.id} AND fr.status = 'active'
       ${f.baseId ? sql`AND fr.base_id = ${f.baseId}` : sql``}
       ${f.tableId ? sql`AND fr.table_id = ${f.tableId}` : sql``}
+      ${pattern ? sql`AND fr.filename ILIKE ${pattern}` : sql``}
     )`);
   }
   return conds;
