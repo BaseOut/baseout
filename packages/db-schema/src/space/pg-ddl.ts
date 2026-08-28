@@ -5,7 +5,7 @@
  * (workerd, no filesystem), so it cannot read the .sql migration at runtime —
  * it needs the DDL bundled. This module is the bundled copy.
  *
- * GENERATED FROM migrations/space-pg/0000_minor_morbius.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
+ * GENERATED FROM migrations/space-pg/0000_young_domino.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
  * tests/space-pg-ddl-parity.test.ts asserts this stays in lockstep with that
  * migration (drift fails CI). Regenerate after a per-Space schema change:
  *   node packages/db-schema/scripts/gen-space-pg-ddl.mjs
@@ -226,6 +226,16 @@ CREATE TABLE "bo_at_documents" (
 	"created_by_user_id" uuid,
 	"created_at" timestamp with time zone,
 	"updated_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_entity_tags" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entity_kind" text NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"target_type" text NOT NULL,
+	"target_id" text NOT NULL,
+	"source" text DEFAULT 'manual' NOT NULL,
+	"added_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_export_jobs" (
@@ -484,6 +494,18 @@ CREATE TABLE "bo_at_records" (
 	"description_override" text
 );
 --> statement-breakpoint
+CREATE TABLE "bo_at_saved_views" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"name" text NOT NULL,
+	"table_id" text NOT NULL,
+	"config" jsonb NOT NULL,
+	"pinned" boolean DEFAULT false NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL,
+	"created_by_user_id" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "bo_at_schema_updates" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"run_id" uuid NOT NULL,
@@ -565,6 +587,7 @@ CREATE INDEX "bo_at_assets_keyset_idx" ON "bo_at_assets" USING btree ("first_see
 CREATE INDEX "bo_at_attachments_record_idx" ON "bo_at_attachments" USING btree ("record_id");--> statement-breakpoint
 CREATE INDEX "bo_at_attachments_hash_idx" ON "bo_at_attachments" USING btree ("content_hash");--> statement-breakpoint
 CREATE INDEX "bo_at_automations_base_idx" ON "bo_at_automations" USING btree ("base_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_automations_base_entity_uq" ON "bo_at_automations" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_automations"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_base_access_uq" ON "bo_at_base_access" USING btree ("base_id","interface_id","scope","principal_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_access_principal_idx" ON "bo_at_base_access" USING btree ("principal_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_access_base_idx" ON "bo_at_base_access" USING btree ("base_id");--> statement-breakpoint
@@ -583,6 +606,9 @@ CREATE INDEX "bo_at_document_links_doc_idx" ON "bo_at_document_links" USING btre
 CREATE INDEX "bo_at_document_tags_doc_idx" ON "bo_at_document_tags" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_tags_target_idx" ON "bo_at_document_tags" USING btree ("target_type","target_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_document_tags_uq" ON "bo_at_document_tags" USING btree ("document_id","target_type","target_id");--> statement-breakpoint
+CREATE INDEX "bo_at_entity_tags_entity_idx" ON "bo_at_entity_tags" USING btree ("entity_kind","entity_id");--> statement-breakpoint
+CREATE INDEX "bo_at_entity_tags_target_idx" ON "bo_at_entity_tags" USING btree ("target_type","target_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_entity_tags_uq" ON "bo_at_entity_tags" USING btree ("entity_kind","entity_id","target_type","target_id");--> statement-breakpoint
 CREATE INDEX "bo_at_export_jobs_status_idx" ON "bo_at_export_jobs" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "bo_at_fields_table_idx" ON "bo_at_fields" USING btree ("table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_form_fields_form_idx" ON "bo_at_form_fields" USING btree ("form_id");--> statement-breakpoint
@@ -597,6 +623,7 @@ CREATE INDEX "bo_at_health_metric_scores_base_idx" ON "bo_at_health_metric_score
 CREATE INDEX "bo_at_health_metric_state_base_idx" ON "bo_at_health_metric_state" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_scores_base_idx" ON "bo_at_health_scores" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_interfaces_base_idx" ON "bo_at_interfaces" USING btree ("base_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_interfaces_base_entity_uq" ON "bo_at_interfaces" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_interfaces"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_invite_links_uq" ON "bo_at_invite_links" USING btree ("base_id","interface_id","link_scope","airtable_invite_id");--> statement-breakpoint
 CREATE INDEX "bo_at_invite_links_base_idx" ON "bo_at_invite_links" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_page_fields_page_idx" ON "bo_at_page_fields" USING btree ("page_id");--> statement-breakpoint
@@ -607,35 +634,20 @@ CREATE INDEX "bo_at_page_tables_table_idx" ON "bo_at_page_tables" USING btree ("
 CREATE UNIQUE INDEX "bo_at_page_tables_uq" ON "bo_at_page_tables" USING btree ("page_id","table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_pages_base_idx" ON "bo_at_pages" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_pages_interface_idx" ON "bo_at_pages" USING btree ("interface_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_pages_base_entity_uq" ON "bo_at_pages" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_pages"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_principals_uq" ON "bo_at_principals" USING btree ("principal_id");--> statement-breakpoint
 CREATE INDEX "bo_at_rfd_table_field_idx" ON "bo_at_record_field_data" USING btree ("table_id","field_id");--> statement-breakpoint
 CREATE INDEX "bo_at_record_updates_cell_idx" ON "bo_at_record_updates" USING btree ("record_id","field_id");--> statement-breakpoint
 CREATE INDEX "bo_at_record_updates_run_idx" ON "bo_at_record_updates" USING btree ("run_id");--> statement-breakpoint
 CREATE INDEX "bo_at_records_table_idx" ON "bo_at_records" USING btree ("table_id");--> statement-breakpoint
+CREATE INDEX "bo_at_saved_views_table_idx" ON "bo_at_saved_views" USING btree ("table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_schema_updates_run_idx" ON "bo_at_schema_updates" USING btree ("run_id");--> statement-breakpoint
 CREATE INDEX "bo_at_schema_updates_entity_idx" ON "bo_at_schema_updates" USING btree ("entity_type","entity_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_schema_versions_base_hash_uq" ON "bo_at_schema_versions" USING btree ("base_id","schema_hash");--> statement-breakpoint
 CREATE INDEX "bo_at_synced_view_candidates_base_idx" ON "bo_at_synced_view_candidates" USING btree ("base_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_synced_view_candidates_pair_uq" ON "bo_at_synced_view_candidates" USING btree ("base_id","source_table_id","dest_table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_tables_base_idx" ON "bo_at_tables" USING btree ("base_id");--> statement-breakpoint
-CREATE INDEX "bo_at_views_table_idx" ON "bo_at_views" USING btree ("table_id");
---> statement-breakpoint
-CREATE TABLE "bo_at_entity_tags" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"entity_kind" text NOT NULL,
-	"entity_id" uuid NOT NULL,
-	"target_type" text NOT NULL,
-	"target_id" text NOT NULL,
-	"source" text DEFAULT 'manual' NOT NULL,
-	"added_at" timestamp with time zone
-);
---> statement-breakpoint
-CREATE INDEX "bo_at_entity_tags_entity_idx" ON "bo_at_entity_tags" USING btree ("entity_kind","entity_id");--> statement-breakpoint
-CREATE INDEX "bo_at_entity_tags_target_idx" ON "bo_at_entity_tags" USING btree ("target_type","target_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "bo_at_entity_tags_uq" ON "bo_at_entity_tags" USING btree ("entity_kind","entity_id","target_type","target_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "bo_at_automations_base_entity_uq" ON "bo_at_automations" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_automations"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "bo_at_interfaces_base_entity_uq" ON "bo_at_interfaces" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_interfaces"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "bo_at_pages_base_entity_uq" ON "bo_at_pages" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_pages"."airtable_entity_id" IS NOT NULL;`;
+CREATE INDEX "bo_at_views_table_idx" ON "bo_at_views" USING btree ("table_id");`;
 
 /** Split SPACE_PG_DDL into individual executable statements. */
 export function spacePgDdlStatements(): string[] {
