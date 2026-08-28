@@ -76,6 +76,10 @@ Contract tests enforce REST↔MCP parity (every tool must be a REST operation fi
   `saved` presets.
 - **D6 — Backup tools stay read-only** (Dan's exclusion). The 8 existing backup read tools
   remain; no run/config mutations ship even though the plumbing would be easy.
+- **D7 — The in-app chat does NOT go through the MCP server** (Dan, 2026-08-28). Chat calls the
+  server brokers directly (same functions the API operations call); it must not be configured
+  against `/mcp`, and no MCP-specific UI exists or should be invented. Sharing logic = share the
+  broker, not the transport.
 
 ## Phases (each = one openspec change per §3.6 naming; sizes are working-day estimates)
 
