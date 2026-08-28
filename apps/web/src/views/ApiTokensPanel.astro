@@ -86,9 +86,12 @@ const statusVariant: Record<string, 'success' | 'error' | 'warning'> = {
         <span class="label-text block mb-2">Scopes</span>
         <div class="flex flex-wrap gap-4">
           {scopeOptions.map((s) => (
-            <Checkbox label={s.label} name="scopes" value={s.value} checked />
+            <Checkbox label={s.label} name="scopes" value={s.value} checked={!s.value.endsWith(':write')} />
           ))}
         </div>
+        <p class="text-xs opacity-70 mt-2">
+          Write scopes let integrations modify your Space's content (views, documents, reports). Grant them only to integrations you trust.
+        </p>
       </div>
       <div
         id="token-form-error"

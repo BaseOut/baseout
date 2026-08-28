@@ -23,7 +23,20 @@ import { logEvent } from '../../../lib/log'
 import type { AccountContext } from '../../../lib/account'
 import type { AppDb } from '../../../db'
 
-export const ALLOWED_SCOPES = ['org:read', 'backups:read', 'schema:read'] as const
+// api-write-foundation: write scopes let integrations MODIFY Space content —
+// opt-in per token; a :write scope never implies its :read (D2).
+export const ALLOWED_SCOPES = [
+  'org:read',
+  'backups:read',
+  'schema:read',
+  'documents:read',
+  'documents:write',
+  'reports:read',
+  'reports:write',
+  'views:read',
+  'views:write',
+  'data:read',
+] as const
 export const EXPIRY_PRESET_DAYS = [30, 90, 365] as const
 
 const MAX_NAME_LENGTH = 100

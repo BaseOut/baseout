@@ -824,6 +824,10 @@ const healthGroups = [{ items: [
 <script>
   import { createPager } from '../ui/tablePager';
   import { mountRefineCollapse } from '../../lib/refineCollapse';
+  import { wireDeepLinks } from '../../lib/deep-link-events';
+
+  // ?entity= deep links (web-entity-deeplinks): MCP appUrl → the entity panel.
+  wireDeepLinks();
   import { wireRowKeys } from '../../lib/wireRowKeys';
   import { BR_FLAT_SORT_KEYS } from './schemaTableHead';
 

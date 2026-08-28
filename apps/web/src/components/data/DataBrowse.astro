@@ -67,6 +67,10 @@ interface Props {
   primaryByTable?: Record<string, string | undefined>;
   /** SSR page-1 nextCursor for the landing table (`null` = exhausted). */
   recordsNextCursor?: string | null;
+  /** Saved presets from the engine (web-saved-views D2): the server-side SAVED
+   *  layer. `null` = fetch failed/unavailable — the client falls back to its
+   *  local mirror and disables sync for the session. */
+  savedViews?: import('../../lib/backup-engine').SavedViewRow[] | null;
   /** Async surface state. In production the grid streams row windows over a cursor, so a fetch can be
    *  in-flight ('loading') or fail ('error'). The harness sets this via ?fixture=loading|error. */
   loadState?: 'ready' | 'loading' | 'error';
@@ -82,6 +86,7 @@ const {
   spaceId,
   primaryByTable = {},
   recordsNextCursor,
+  savedViews = null,
   loadState = 'ready',
 } = Astro.props;
 const landing = tables.find((t) => t.id === landingTableId) ?? tables[0];
@@ -119,6 +124,7 @@ const snapshot = {
   views,
   viewGroups,
   commentedRecordIds,
+  savedPresets: savedViews,
 };
 
 // Server-render the field-type icon so the column headers match Schema's field icons.
@@ -678,7 +684,15 @@ const fieldIconSvg = (type?: string) => {
 
 <script>
   import { mountRefineCollapse } from '../../lib/refineCollapse';
+  import {
+    serializeConfig, deserializeConfig as dsConfig, configEq,
+    type SerializedConfig, type SerializedPreset,
+  } from '../../lib/data-browse/preset-serialize';
+  import { wireDeepLinks } from '../../lib/deep-link-events';
   import { wireListSheet, listSheetToggleLabel } from '../../lib/listSheet';
+
+  // ?record=&table= deep links (web-entity-deeplinks): MCP appUrl -> the record panel.
+  wireDeepLinks();
   import { createPager } from '../ui/tablePager';
   import { clampBelow } from '../ui/popoverPlace';
   import { pushEscape } from '../../lib/escapeStack';
@@ -710,7 +724,11 @@ const fieldIconSvg = (type?: string) => {
     views: SavedViewJSON[];
     viewGroups: ViewGroupJSON[];
     commentedRecordIds?: string[];
+    /** Server-saved presets (web-saved-views D2); null = SSR fetch failed. */
+    savedPresets?: ServerSavedView[] | null;
   };
+  // A bo_at_saved_views row as the engine returns it (config = SerializedConfig).
+  type ServerSavedView = { id: string; name: string; tableId: string; config: SerializedConfig; pinned: boolean; sortOrder: number };
   // A single condition (leaf) — one field/operator/value predicate.
   type Cond = { kind: 'cond'; field: Field; op: string; val: string; val2?: string };
   // A group of conditions/sub-groups joined by ONE conjunction (all siblings AND-ed or all OR-ed).
@@ -734,13 +752,9 @@ const fieldIconSvg = (type?: string) => {
   // CURRENT table on load), hiddenCols Set → string[]. See the PERSISTENCE BLOCK in wireDataBrowse()
   // for the single load/save site this powers — the design-mirror stand-in for server-side
   // persistence; the monorepo engineer replaces that block with real API calls, nothing else here.
-  type SerializedCond = { kind: 'cond'; fieldId: string; op: string; val: string; val2?: string };
-  type SerializedGroup = { kind: 'group'; conjunction: 'and' | 'or'; children: SerializedNode[] };
-  type SerializedNode = SerializedCond | SerializedGroup;
-  type SerializedConfig = { tableId: string; hiddenCols: string[]; filterTree: SerializedGroup; sortField: string; sortDir: number; query: string; showRecId: boolean; colOrder: string[]; commentFilter?: CommentFilter };
-  // A runtime-only preset (never in the fixture) — its FULL state, since there is no fixture default
-  // to fall back to on load. `baseline` is present only once the user has Saved it at least once.
-  type SerializedPreset = { id: string; name: string; tableId: string; pinned: boolean; temporary: boolean; groupId?: string; saved: boolean; config: SerializedConfig; baseline?: SerializedConfig };
+  // Serialized* wire types + serialize/deserialize/configEq now live in
+  // lib/data-browse/preset-serialize.ts (web-saved-views D1) — the same shape
+  // bo_at_saved_views stores and the MCP view tools speak. Imported above.
   type PersistedStateV2 = {
     openIds: string[]; activeId: string;
     drafts: SerializedPreset[];                // runtime-only presets — draft, or since-saved
@@ -872,6 +886,53 @@ const fieldIconSvg = (type?: string) => {
     };
     let views: View[] = (snap.views || []).filter((v) => !deletedFixtureIds.has(v.id)).map(rehydrate);
     const groups: Group[] = (snap.viewGroups || []).map((g) => ({ id: g.id, name: g.name, collapsed: false }));
+
+    // ── Server-saved presets (web-saved-views D2/D3): the SAVED layer lives in
+    // bo_at_saved_views; localStorage keeps only drafts + unsaved edits. When the
+    // SSR fetch failed (savedPresets === null) we fall back to the last good
+    // mirror and DISABLE sync for the session — never delete/create against a
+    // server we couldn't read. The row's config IS the baseline; a local
+    // edits[id] overlays as the CURRENT (dirty) config, exactly like fixtures.
+    const SAVED_MIRROR_KEY = 'dg-saved-mirror';
+    let serverRows: ServerSavedView[] | null = Array.isArray(snap.savedPresets) ? snap.savedPresets : null;
+    const syncEnabled = !!snap.spaceId && serverRows !== null;
+    if (serverRows === null) {
+      try {
+        const m = JSON.parse(localStorage.getItem(SAVED_MIRROR_KEY) || 'null');
+        if (Array.isArray(m)) serverRows = m as ServerSavedView[];
+      } catch { /* no mirror; saved presets simply absent this session */ }
+    }
+    // id -> last-synced row JSON: the diff basis for syncSavedViews(). Only rows
+    // the server confirmed live here; an unsynced Save stays in localStorage
+    // drafts until its create lands (no data loss on a dead network).
+    const serverKnown = new Map<string, string>();
+    const serverRowJson = (r: { name: string; tableId: string; pinned: boolean; sortOrder: number; config: SerializedConfig }) =>
+      JSON.stringify({ name: r.name, tableId: r.tableId, pinned: r.pinned, sortOrder: r.sortOrder, config: r.config });
+    for (const r of serverRows || []) {
+      try {
+        if (!r || typeof r.id !== 'string' || views.some((v) => v.id === r.id)) continue;
+        const t = tableById.get(r.tableId) || snap.tables[0];
+        const baseline = deserializeConfig(r.config, t);
+        baseline.tableId = r.tableId; // the row column is authoritative (immutable server-side)
+        const view: View = {
+          id: r.id, name: r.name, tableId: r.tableId, pinned: !!r.pinned, temporary: false,
+          hiddenCols: baseline.hiddenCols, filterTree: baseline.filterTree, sortField: baseline.sortField,
+          sortDir: baseline.sortDir, query: baseline.query, showRecId: baseline.showRecId,
+          colOrder: baseline.colOrder, commentFilter: baseline.commentFilter, saved: true,
+        };
+        view.baseline = baseline;
+        applyConfig(view, baseline);
+        try {
+          const editRaw = editsMap[r.id];
+          if (editRaw) applyConfig(view, deserializeConfig(editRaw, t));
+        } catch { /* corrupt edits; keep the baseline as current */ }
+        views.push(view);
+        if (syncEnabled) serverKnown.set(r.id, serverRowJson({ name: r.name, tableId: r.tableId, pinned: !!r.pinned, sortOrder: r.sortOrder ?? 0, config: r.config }));
+      } catch { /* one corrupt row must not break the rest */ }
+    }
+    if (syncEnabled) {
+      try { localStorage.setItem(SAVED_MIRROR_KEY, JSON.stringify(serverRows)); } catch { /* mirror is best-effort */ }
+    }
     // Runtime-only presets (never in the fixture) — rebuilt from `drafts[]`. A pure draft (never
     // Saved) has no baseline; one the user Saved at least once carries its own baseline + live config,
     // so a locked+saved runtime preset stays locked+saved (with its own dirty diff) across a reload.
@@ -976,71 +1037,15 @@ const fieldIconSvg = (type?: string) => {
     // table. If that field no longer exists (renamed/removed since), the leaf is DROPPED — never
     // thrown, never flattened — while the rest of the tree (siblings, nesting, conjunction) survives
     // intact. A group is never dropped, even if every child under it turns out stale.
-    function serializeNode(n: FNode): SerializedNode {
-      return n.kind === 'group'
-        ? { kind: 'group', conjunction: n.conjunction, children: n.children.map(serializeNode) }
-        : { kind: 'cond', fieldId: n.field.id, op: n.op, val: n.val, val2: n.val2 };
-    }
-    function deserializeNode(n: SerializedNode, t: Table): FNode | null {
-      if (n.kind === 'group') return { kind: 'group', conjunction: n.conjunction, children: n.children.map((c) => deserializeNode(c, t)).filter((c): c is FNode => c !== null) };
-      const field = t.fields.find((f) => f.id === n.fieldId);
-      return field ? { kind: 'cond', field, op: n.op, val: n.val, val2: n.val2 } : null; // stale fieldId — drop the leaf, keep the tree
-    }
-    function serializeConfig(b: Baseline): SerializedConfig {
-      return { tableId: b.tableId, hiddenCols: Array.from(b.hiddenCols), filterTree: serializeNode(b.filterTree) as SerializedGroup, sortField: b.sortField, sortDir: b.sortDir, query: b.query, showRecId: b.showRecId, colOrder: b.colOrder.slice(), commentFilter: b.commentFilter };
-    }
-    function deserializeConfig(sc: SerializedConfig, t: Table): Baseline {
-      // Same staleness guard applied to hiddenCols/colOrder — a field id from a since-changed table
-      // shape is silently dropped rather than left as a ghost entry.
-      const validIds = new Set<string>([REC, ...t.fields.map((f) => f.id)]);
-      return {
-        tableId: sc.tableId,
-        hiddenCols: new Set((sc.hiddenCols || []).filter((id) => validIds.has(id))),
-        filterTree: (deserializeNode(sc.filterTree, t) as FGroup) || emptyGroup(),
-        // Absent/malformed degrades to 'all' — the safe default (comments-explorer).
-        commentFilter: sc.commentFilter === 'with' || sc.commentFilter === 'without' ? sc.commentFilter : 'all',
-        sortField: sc.sortField && t.fields.some((f) => f.id === sc.sortField) ? sc.sortField : '',
-        sortDir: sc.sortDir === -1 ? -1 : 1,
-        query: sc.query || '',
-        showRecId: !!sc.showRecId,
-        colOrder: (sc.colOrder || []).filter((id) => validIds.has(id)),
-      };
-    }
+    // serialize/deserialize moved to lib/data-browse/preset-serialize.ts
+    // (web-saved-views D1); this wrapper pins the grid's synthetic REC column
+    // as a valid non-field id, exactly as the inline version did.
+    function deserializeConfig(sc: SerializedConfig, t: Table): Baseline { return dsConfig(sc, t, [REC]); }
 
     // ── Dirty by DIFF, never a sticky boolean (Dan 2026-07-23) — typing a character into search and
     // deleting it again must leave the preset CLEAN, because it once more equals what was saved.
-    function treeEq(a: FGroup, b: FGroup): boolean {
-      if (a.conjunction !== b.conjunction || a.children.length !== b.children.length) return false;
-      return a.children.every((ca, i) => {
-        const cb = b.children[i];
-        if (ca.kind !== cb.kind) return false;
-        if (ca.kind === 'group') return treeEq(ca, cb as FGroup);
-        const cbc = cb as Cond;
-        return ca.field.id === cbc.field.id && ca.op === cbc.op && ca.val === cbc.val && (ca.val2 || '') === (cbc.val2 || '');
-      });
-    }
-    // Hidden columns are a SET (order doesn't matter), not a sequence.
-    function setEq(a: Set<string>, b: Set<string>): boolean {
-      if (a.size !== b.size) return false;
-      for (const x of a) if (!b.has(x)) return false;
-      return true;
-    }
-    // Structural equality of two baseline snapshots — every field must match for the preset to read CLEAN.
-    //
-    // `join('\0')` MUST STAY THE ESCAPE, NEVER THE RAW BYTE (X-CENSUS-INSTRUMENT-NUL-BYTE, fixed
-    // 2026-08-14). Joining on a separator that cannot occur in a column id is the right idiom and is
-    // unchanged; what was wrong is that the separator had been TYPED as two literal NUL bytes. That
-    // made this file `binary` to every text tool: `git grep` without `-a` and `ugrep -I` (which this
-    // machine's `grep` is a shim for) skipped all 1,900 lines of it and exited 0. Measured in the same
-    // tree in the same second: `role="alert"` 78 vs 79, `toLocale` 46 vs 47 — and the audit's
-    // unexplained `<th` 23→24 and `.tbl-colhead` 17→18 drift was this file going missing. Runtime
-    // behaviour of the escape is byte-identical; only the source encoding changed.
-    function configEq(a: Baseline, b: Baseline): boolean {
-      return a.tableId === b.tableId && a.sortField === b.sortField && a.sortDir === b.sortDir &&
-        a.query === b.query && a.showRecId === b.showRecId && a.colOrder.join('\0') === b.colOrder.join('\0') &&
-        a.commentFilter === b.commentFilter &&
-        setEq(a.hiddenCols, b.hiddenCols) && treeEq(a.filterTree, b.filterTree);
-    }
+    // treeEq/setEq/configEq moved to lib/data-browse/preset-serialize.ts (web-saved-views D1),
+    // NUL-byte-escape note included — configEq is imported above.
     // A preset is dirty iff its live config diverges from its saved baseline. A Draft (no baseline —
     // never saved) has nothing to diverge FROM, so it is never "dirty" by this measure; its unsaved-ness
     // is signalled by the Draft badge instead (see vrow()/renderViews()).
@@ -1062,9 +1067,15 @@ const fieldIconSvg = (type?: string) => {
             // fixture's own config); `edits` only appears while it's actually dirty.
             if (v.baseline) saved[v.id] = serializeConfig(v.baseline);
             if (isDirty(v)) edits[v.id] = serializeConfig(snapConfig(v));
+          } else if (serverKnown.has(v.id)) {
+            // Server-owned saved preset (web-saved-views D2): the server row IS
+            // its baseline — locally we keep only the unsaved edit on top.
+            if (isDirty(v)) edits[v.id] = serializeConfig(snapConfig(v));
           } else {
             // Runtime-only preset: persist its full state — a draft's persisted config IS its current
             // config; a since-Saved one also carries its own baseline (so it stays locked + diffable).
+            // A Saved-but-unsynced preset stays here too, until syncSavedViews()'s
+            // create lands and moves it to the server-owned branch above.
             drafts.push({
               id: v.id, name: v.name, tableId: v.tableId, pinned: v.pinned, temporary: v.temporary, groupId: v.groupId,
               saved: v.saved, config: serializeConfig(snapConfig(v)),
@@ -1079,6 +1090,78 @@ const fieldIconSvg = (type?: string) => {
         const payload: PersistedStateV2 = { openIds, activeId, drafts, saved, edits, deletedFixtureIds: deletedIds };
         localStorage.setItem('dg-presets-v2', JSON.stringify(payload));
       } catch { /* ignore — persistence is best-effort, never blocks the UI */ }
+      scheduleSavedViewsSync();
+    }
+
+    // ── syncSavedViews() — the server half of persistState() (web-saved-views D3).
+    // One diff-based sync site instead of per-action wiring: after every render,
+    // the current SAVED preset set (v.saved with a baseline, non-fixture) is
+    // diffed against `serverKnown` and the delta becomes create/patch/delete
+    // calls to /api/spaces/:spaceId/views. Fire-and-forget: a failure leaves
+    // `serverKnown` untouched, so the next render retries the same delta; the
+    // localStorage drafts layer keeps an unsynced Save safe meanwhile. PATCH
+    // never carries tableId (immutable — 400 table_locked server-side).
+    let syncTimer = 0;
+    let syncInFlight = false;
+    let syncQueued = false;
+    function scheduleSavedViewsSync() {
+      if (!syncEnabled) return;
+      window.clearTimeout(syncTimer);
+      syncTimer = window.setTimeout(() => { void runSavedViewsSync(); }, 250);
+    }
+    async function runSavedViewsSync(): Promise<void> {
+      if (syncInFlight) { syncQueued = true; return; }
+      syncInFlight = true;
+      try {
+        const base = `/api/spaces/${encodeURIComponent(snap.spaceId!)}/views`;
+        const jsonHeaders = { 'content-type': 'application/json' };
+        const savedNow = views.filter((v) => v.saved && v.baseline && !fixtureIds.has(v.id));
+        const desired = new Map(savedNow.map((v, i) => [v.id, {
+          name: v.name, tableId: v.tableId, pinned: v.pinned, sortOrder: i, config: serializeConfig(v.baseline!),
+        }]));
+        // Deletes first (a preset the user removed must not linger server-side).
+        for (const id of [...serverKnown.keys()]) {
+          if (desired.has(id)) continue;
+          const res = await fetch(`${base}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          if (res.ok || res.status === 404) serverKnown.delete(id);
+        }
+        // Creates + patches.
+        for (const [id, row] of desired) {
+          const j = serverRowJson(row);
+          if (!serverKnown.has(id)) {
+            const res = await fetch(base, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(row) });
+            if (!res.ok) continue;
+            const body = (await res.json().catch(() => null)) as { view?: { id?: string } } | null;
+            const serverId = body?.view?.id;
+            serverKnown.set(serverId || id, j);
+            if (serverId && serverId !== id) remapViewId(id, serverId);
+          } else if (serverKnown.get(id) !== j) {
+            const { tableId: _locked, ...patch } = row;
+            const res = await fetch(`${base}/${encodeURIComponent(id)}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(patch) });
+            if (res.ok) serverKnown.set(id, j);
+          }
+        }
+        // Refresh the offline mirror with what the server now holds.
+        try {
+          const mirror: ServerSavedView[] = [...serverKnown.keys()]
+            .map((id) => { const v = views.find((x) => x.id === id); return v && v.baseline ? { id, name: v.name, tableId: v.tableId, config: serializeConfig(v.baseline), pinned: v.pinned, sortOrder: 0 } : null; })
+            .filter((r): r is ServerSavedView => r !== null);
+          localStorage.setItem(SAVED_MIRROR_KEY, JSON.stringify(mirror));
+        } catch { /* best-effort */ }
+      } catch { /* transport failure — the next persistState() retries the delta */ }
+      finally {
+        syncInFlight = false;
+        if (syncQueued) { syncQueued = false; scheduleSavedViewsSync(); }
+      }
+    }
+    // A created preset adopts the server's uuid in place; the re-render repaints
+    // every DOM id, and persistState (its tail) re-emits localStorage keys.
+    function remapViewId(oldId: string, newId: string) {
+      const v = views.find((x) => x.id === oldId);
+      if (v) v.id = newId;
+      openIds = openIds.map((id) => (id === oldId ? newId : id));
+      if (activeId === oldId) activeId = newId;
+      renderViews();
     }
 
     // Every toolbar mutation calls this — dirty is now computed on read, so this is a plain re-render.

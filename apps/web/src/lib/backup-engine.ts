@@ -364,6 +364,8 @@ export interface SchemaDocsError {
     | "space_db_not_ready"
     | "backend_not_implemented"
     | "document_not_found"
+    | "view_not_found"
+    | "table_locked"
     | "not_found"
     | "duplicate_entity"
     | "invalid_parent"
@@ -464,6 +466,64 @@ export type UpdateDocumentResult = { ok: true; document: SchemaDoc } | SchemaDoc
 export type DeleteDocumentResult = { ok: true } | SchemaDocsError;
 export type DocsByEntityResult =
   | { ok: true; entityRemoved: boolean; documents: SchemaDocEntityRef[] }
+  | SchemaDocsError;
+
+// ── Saved views (web-saved-views / server-saved-views) ──
+// `config` is the SerializedConfig wire shape (lib/data-browse/preset-serialize.ts).
+export interface SavedViewRow {
+  id: string;
+  name: string;
+  tableId: string;
+  config: unknown;
+  pinned: boolean;
+  sortOrder: number;
+  createdByUserId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+export interface CreateSavedViewInput {
+  name: string;
+  tableId: string;
+  config: unknown;
+  pinned?: boolean;
+  sortOrder?: number;
+  createdByUserId?: string | null;
+}
+export interface UpdateSavedViewInput {
+  name?: string;
+  config?: unknown;
+  pinned?: boolean;
+  sortOrder?: number;
+}
+export type ListSavedViewsResult = { ok: true; views: SavedViewRow[] } | SchemaDocsError;
+export type SavedViewResult = { ok: true; view: SavedViewRow } | SchemaDocsError;
+export type DeleteSavedViewResult = { ok: true } | SchemaDocsError;
+
+// -- Record search (web-entity-deeplinks / api-search-tools): the server
+// data-search broker (ILIKE over record values + field names, grouped
+// base -> table, scan-budgeted `partial` flag). --
+export interface DataSearchHit {
+  baseId: string;
+  baseName: string | null;
+  tableId: string;
+  tableName: string | null;
+  recordId: string;
+  fieldId: string;
+  snippet: string | null;
+}
+export interface DataSearchTableGroup {
+  tableId: string;
+  tableName: string | null;
+  hits: DataSearchHit[];
+  hasMore: boolean;
+}
+export interface DataSearchBaseGroup {
+  baseId: string;
+  baseName: string | null;
+  tables: DataSearchTableGroup[];
+}
+export type DataSearchResult =
+  | { ok: true; groups: DataSearchBaseGroup[]; partial: boolean }
   | SchemaDocsError;
 
 export interface SchemaEntityBase {
@@ -896,6 +956,12 @@ export interface BackupEngineClient {
     targetType: SchemaDocTargetType,
     targetId: string,
   ): Promise<DocsByEntityResult>;
+  listSavedViews(spaceId: string): Promise<ListSavedViewsResult>;
+  getSavedView(spaceId: string, viewId: string): Promise<SavedViewResult>;
+  createSavedView(spaceId: string, input: CreateSavedViewInput): Promise<SavedViewResult>;
+  updateSavedView(spaceId: string, viewId: string, patch: UpdateSavedViewInput): Promise<SavedViewResult>;
+  deleteSavedView(spaceId: string, viewId: string): Promise<DeleteSavedViewResult>;
+  dataSearch(spaceId: string, q: string, opts?: { baseId?: string; tableId?: string }): Promise<DataSearchResult>;
   getSchema(spaceId: string): Promise<GetSchemaResult>;
   getHealthOverview(spaceId: string, baseId: string): Promise<GetHealthOverviewResult>;
   getHealthConfig(spaceId: string, baseId: string): Promise<GetHealthConfigResult>;
@@ -1025,6 +1091,8 @@ const KNOWN_SCHEMA_DOCS_ERROR_CODES: ReadonlySet<SchemaDocsError["code"]> = new 
   "space_db_not_ready",
   "backend_not_implemented",
   "document_not_found",
+  "view_not_found",
+  "table_locked",
   "not_found",
   "duplicate_entity",
   "invalid_parent",
@@ -1821,6 +1889,54 @@ export function createBackupEngine(
       const res = await schemaDocsRequest(options, "DELETE", path);
       if (!res.ok) return res;
       return { ok: true };
+    },
+
+    // Saved views (web-saved-views): same broker wire shape as documents.
+    async listSavedViews(spaceId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/views`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, views: (res.body.views ?? []) as SavedViewRow[] };
+    },
+
+    async getSavedView(spaceId, viewId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/views/${encodeURIComponent(viewId)}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, view: res.body.view as SavedViewRow };
+    },
+
+    async createSavedView(spaceId, input) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/views`;
+      const res = await schemaDocsRequest(options, "POST", path, input);
+      if (!res.ok) return res;
+      return { ok: true, view: res.body.view as SavedViewRow };
+    },
+
+    async updateSavedView(spaceId, viewId, patch) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/views/${encodeURIComponent(viewId)}`;
+      const res = await schemaDocsRequest(options, "PATCH", path, patch);
+      if (!res.ok) return res;
+      return { ok: true, view: res.body.view as SavedViewRow };
+    },
+
+    async deleteSavedView(spaceId, viewId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/views/${encodeURIComponent(viewId)}`;
+      const res = await schemaDocsRequest(options, "DELETE", path);
+      if (!res.ok) return res;
+      return { ok: true };
+    },
+
+    async dataSearch(spaceId, q, opts) {
+      const qs = engineQuery({ q, baseId: opts?.baseId, tableId: opts?.tableId });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/data/search${qs}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        groups: (res.body.groups ?? []) as DataSearchBaseGroup[],
+        partial: Boolean(res.body.partial),
+      };
     },
 
     async docsByEntity(spaceId, targetType, targetId) {

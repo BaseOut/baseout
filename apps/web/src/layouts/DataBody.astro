@@ -73,6 +73,13 @@ const modeQuery =
         .limit(1)
     : Promise.resolve([] as { mode: string | null }[]);
 
+// Saved Data Browse presets (web-saved-views D2): server is the saved layer.
+// null = fetch failed/unavailable (DataBrowse then falls back to its local
+// mirror and disables sync); [] = genuinely no saved views.
+const savedViewsP = rawEngine && spaceId
+  ? rawEngine.listSavedViews(spaceId).then((r) => (r.ok ? r.views : null)).catch(() => null)
+  : Promise.resolve(null);
+
 const cachedPayload = spaceId ? peekDataPageSnapshot(spaceId) : undefined;
 const payloadP = cachedPayload
   ? Promise.resolve(cachedPayload)
@@ -87,11 +94,12 @@ const payloadP = cachedPayload
       })
     : Promise.resolve(emptyDataPagePayload());
 
-const [docsLevel, payload, latestRows, cfgRows] = await Promise.all([
+const [docsLevel, payload, latestRows, cfgRows, savedViews] = await Promise.all([
   docsLevelP,
   payloadP,
   latestRunQuery,
   modeQuery,
+  savedViewsP,
 ]);
 const aiEnabled = docsLevel === 'manual_ai';
 
@@ -152,6 +160,7 @@ const hasData = tables.length > 0 || lastSyncedAt !== null;
       landingTableId={landingTableId}
       primaryByTable={primaryByTable}
       recordsNextCursor={recordsNextCursor}
+      savedViews={savedViews}
       loadState="ready"
       docsLevel={docsLevel}
       aiEnabled={aiEnabled}

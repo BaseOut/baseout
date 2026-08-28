@@ -68,6 +68,8 @@ interface Props {
   primaryByTable?: Record<string, string | undefined>;
   /** SSR page-1 `nextCursor` for the landing table (`null` = no further pages). */
   recordsNextCursor?: string | null;
+  /** Saved Data Browse presets from the engine (web-saved-views): null = fetch failed. */
+  savedViews?: import('../lib/backup-engine').SavedViewRow[] | null;
   /** Async surface state for Browse (SSR page-1 is `ready`). */
   loadState?: 'ready' | 'loading' | 'error';
   /** Schema Docs entitlement (Features §7) — gates the Docs tab. */
@@ -98,6 +100,7 @@ const {
   spaceId = null,
   primaryByTable = {},
   recordsNextCursor,
+  savedViews = null,
   loadState = 'ready',
   docsLevel = 'none',
   aiEnabled = false,
@@ -186,6 +189,7 @@ const fmtStamp = (iso: string) => {
             landingTableId={landingTableId}
             primaryByTable={primaryByTable}
             recordsNextCursor={recordsNextCursor}
+            savedViews={savedViews}
             loadState={loadState}
           />
         ) : (

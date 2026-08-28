@@ -145,7 +145,18 @@ describe('handlePost — validation matrix (D7)', () => {
   })
 
   it('exposes the allow-lists the UI renders from', () => {
-    expect(ALLOWED_SCOPES).toEqual(['org:read', 'backups:read', 'schema:read'])
+    expect(ALLOWED_SCOPES).toEqual([
+      'org:read',
+      'backups:read',
+      'schema:read',
+      'documents:read',
+      'documents:write',
+      'reports:read',
+      'reports:write',
+      'views:read',
+      'views:write',
+      'data:read',
+    ])
     expect(EXPIRY_PRESET_DAYS).toEqual([30, 90, 365])
   })
 })

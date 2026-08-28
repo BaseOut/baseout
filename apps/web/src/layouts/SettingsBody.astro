@@ -86,6 +86,14 @@ const scopeOptions = [
   { value: 'org:read', label: 'Organization (org:read)' },
   { value: 'backups:read', label: 'Backups (backups:read)' },
   { value: 'schema:read', label: 'Schema (schema:read)' },
+  { value: 'views:read', label: 'Views (views:read)' },
+  { value: 'documents:read', label: 'Documents (documents:read)' },
+  { value: 'data:read', label: 'Data (data:read)' },
+  { value: 'reports:read', label: 'Reports (reports:read)' },
+  // Write scopes let integrations modify Space content — grant deliberately.
+  { value: 'views:write', label: 'Views — write (views:write)' },
+  { value: 'documents:write', label: 'Documents — write (documents:write)' },
+  { value: 'reports:write', label: 'Reports — write (reports:write)' },
 ];
 
 const tokens: SettingsTokensProps = {

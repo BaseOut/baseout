@@ -102,8 +102,11 @@ export function schemaDocsErrorStatus(code: string): number {
     case 'invalid_parent':
       return 400
     case 'document_not_found':
+    case 'view_not_found':
     case 'not_found':
       return 404
+    case 'table_locked':
+      return 400
     case 'duplicate_entity':
     case 'space_db_not_ready':
       return 409
