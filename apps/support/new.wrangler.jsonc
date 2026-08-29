@@ -1,0 +1,50 @@
+// apps/support — PROPOSED replacement for wrangler.jsonc (3 named envs).
+//
+//   Top level      = shared config only; always deploy with --env.
+//   env.dev        = baseout-support-dev     (staging account)
+//   env.staging    = baseout-support-staging (staging account, `staging` branch)
+//   env.production = baseout-support         (SEPARATE production account)
+//
+// Static-assets Worker (no `main`, no runtime secrets — docs-index.ts gates
+// drafts on import.meta.env.PROD at build time, not on any env var). No
+// `secrets` block: there is nothing to validate. Add one the moment the
+// support chat gains an API key.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-support",
+  "compatibility_date": "2026-07-01",
+  "assets": { "directory": "./dist" },
+
+  "env": {
+    "dev": {
+      "account_id": "f094d60e8a0996752eb1efd971bda45a",
+      // Keep the workers.dev alias alive (screenshot tooling + pre-domain links).
+      "workers_dev": true
+    },
+
+    "staging": {
+      // account_id intentionally omitted — Workers Builds runs inside the
+      // owning account and supplies it. Pinning it here can only create a
+      // mismatch, since production builds read this same file in a
+      // different account. env.dev keeps its pin for local wrangler use.
+      "workers_dev": true,
+      "routes": [{ "pattern": "staging.support.baseout.dev", "custom_domain": true }]
+    },
+
+    "production": {
+      // PROVISION: production account id.
+      // account_id intentionally omitted — supplied by Workers Builds in the
+      // production account. Never pin it: this file is read by both accounts.
+      "workers_dev": true,
+      // Domain attachment lives HERE, not the dashboard (Dan, 2026-08-27):
+      // wrangler owns worker config, so a deploy restates it. custom_domain
+      // binds the hostname to this Worker (was a 525 while unattached).
+      // Requires the baseout.com zone to exist in the PRODUCTION account.
+      "routes": [{ "pattern": "support.baseout.com", "custom_domain": true }]
+    }
+  }
+  // PROVISION with tasks 2.1/2.2 of openspec/changes/support-portal — add to
+  // each env when they exist (both are auto-provisionable if you omit the id):
+  //   "d1_databases": [{ "binding": "SUPPORT_DB", "database_name": "baseout-support-<env>" }],
+  //   "kv_namespaces": [{ "binding": "CHAT_LIMITS" }]
+}

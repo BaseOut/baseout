@@ -1,0 +1,78 @@
+// apps/design — PROPOSED wrangler.jsonc (there is none today).
+//
+// ⚠ BLOCKED ON A CODE CHANGE — this config cannot deploy as-is. apps/design
+// currently targets Node, not workerd:
+//   1. astro.config.mjs uses `adapter: node({ mode: 'standalone' })`. It must
+//      become `@astrojs/cloudflare` (as apps/web and apps/admin use) before
+//      wrangler has anything to deploy.
+//   2. That same config aliases the `cloudflare:workers` virtual module to
+//      src/lib/cloudflare-workers-stub.ts (an empty `env` object) so web
+//      components that read feature-gate vars don't crash under Node SSR.
+//      Under workerd the real module exists — DROP the alias, or the stub will
+//      shadow it and every gate silently stays false.
+// Until both land, `pnpm --filter @baseout/design build` emits a Node server,
+// and this file is a placeholder for the intended shape.
+//
+// WHY IT NEEDS NO BINDINGS AND NO SECRETS: the design harness is fixtures-only.
+// src/middleware.ts assigns FIXTURE_USER / FIXTURE_ACCOUNT from
+// src/fixtures/account.ts and never touches the master DB; a full sweep of
+// src/ for `import.meta.env.*`, `process.env.*`, and `env.*` found ZERO env
+// reads. No Hyperdrive, no KV, no email, no service binding, no `secrets`
+// block — adding any would be cargo-culting from apps/web.
+//
+//   Script names are DERIVED: `name` lives only at the top level and wrangler
+//   appends the env, so:
+//     env.dev        -> baseout-design-dev         (staging account)
+//     env.staging    -> baseout-design-staging     (staging account, `staging` branch)
+//     env.production -> baseout-design-production  (SEPARATE production account)
+//   Never set `name` inside an env block — it overrides the derivation.
+//
+// ⚠ ACCESS: 33 pages that mirror the real product UI. Fixture data only, so
+// nothing customer-owned leaks, but put every env behind Cloudflare Access
+// anyway — an unauthenticated clone of the console invites phishing reuse.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-design",
+  "compatibility_date": "2026-04-22",
+  // nodejs_compat matches apps/web. `nodejs_compat_populate_process_env` is
+  // deliberately absent: nothing here reads process.env.
+  "compatibility_flags": ["nodejs_compat"],
+  // ── Astro build outputs ─────────────────────────────────────────────────
+  // Same rationale as apps/web: declared here so `wrangler deploy --env <x>`
+  // runs against THIS file instead of the adapter-generated (single-env)
+  // dist/server/wrangler.json. Only meaningful once the adapter swap lands.
+  // ⚠ VERIFY the `main` path against dist/ after the first build.
+  "main": "./dist/server/entry.mjs",
+  "no_bundle": true,
+  "rules": [{ "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }],
+  // publicDir resolves to ../web/public, so web's assets land in dist/client too.
+  "assets": { "binding": "ASSETS", "directory": "./dist/client" },
+  "observability": { "enabled": false, "logs": { "enabled": false } },
+  // publicDir resolves to ../web/public (astro.config.mjs) — the build copies
+  // web's assets in, so no separate `assets` block is needed.
+  "dev": { "port": 4332 },
+
+  "env": {
+    "dev": {
+      "account_id": "f094d60e8a0996752eb1efd971bda45a",
+      "workers_dev": true
+    },
+
+    "staging": {
+      // account_id intentionally omitted — Workers Builds runs inside the
+      // owning account and supplies it. Pinning it here can only create a
+      // mismatch, since production builds read this same file in a
+      // different account. env.dev keeps its pin for local wrangler use.
+      "workers_dev": true
+    },
+
+    // Arguably unnecessary — a fixtures-only harness has no reason to exist in
+    // the production account. Kept for parity with the other six apps; delete
+    // this block if design should never leave the staging account.
+    "production": {
+      // account_id intentionally omitted — supplied by Workers Builds in the
+      // production account. Never pin it: this file is read by both accounts.
+      "workers_dev": true
+    }
+  }
+}

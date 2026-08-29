@@ -1,0 +1,122 @@
+// apps/api — PROPOSED replacement for wrangler.jsonc (3 named envs).
+//
+//   Top level      = shared config only; always deploy with --env.
+//   env.dev        = baseout-api-dev     (staging account)
+//   env.staging    = baseout-api-staging (staging account, `staging` branch)
+//   env.production = baseout-api         (SEPARATE production account)
+//
+// CHANGED vs the old file:
+//   - env.production/staging were name-only, so a `--env` deploy would have
+//     shipped with NO Hyperdrive, NO service binding, NO rate limiter and NO
+//     analytics dataset (those keys are non-inheritable).
+//   - the rate limiter moved off `unsafe.bindings` onto the first-class
+//     `ratelimits` key (wrangler 4.112 schema).
+//   - compatibility_date bumped 2025-01-01 → 2026-04-22 to match web/server.
+//     Safe here because this Worker is not deployed yet; do NOT bump a live
+//     Worker's date without checking the compat-flag diff.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-api",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "env": {
+    "dev": {
+      "account_id": "f094d60e8a0996752eb1efd971bda45a",
+      "vars": {
+        // Launch state: shadow-only. "true" enforces 429 — config, not code.
+        "RATE_LIMIT_ENFORCE": "false"
+      },
+      // Direct postgres-js TLS from workerd HANGS (~3 min, then fails) under
+      // `wrangler dev` — the same trap apps/server documents. Local dev must go
+      // through wrangler's Hyperdrive simulator: `pnpm dev` runs scripts/dev.mjs,
+      // which feeds .dev.vars DATABASE_URL in via
+      // WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ba2652f40f864918a2da0849f24d12a2",
+          "localConnectionString": "postgres://run-via-scripts-dev-mjs.invalid:5432/unset"
+        }
+      ],
+      "services": [{ "binding": "SERVER", "service": "baseout-server-dev", "remote": true }],
+      // Per-request usage metering (api-usage-tracking); queryable via the AE SQL API.
+      "analytics_engine_datasets": [{ "binding": "API_USAGE", "dataset": "baseout_api_requests_dev" }],
+      // Provisional 100 req / 60s placeholder — pending product-owner
+      // confirmation. Enforcement is gated by RATE_LIMIT_ENFORCE, not this.
+      "ratelimits": [
+        { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 100, "period": 60 } }
+      ]
+    },
+
+    "staging": {
+      // account_id intentionally omitted — Workers Builds runs inside the
+      // owning account and supplies it. Pinning it here can only create a
+      // mismatch, since production builds read this same file in a
+      // different account. env.dev keeps its pin for local wrangler use.
+      "vars": { "RATE_LIMIT_ENFORCE": "false" },
+      // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
+      // `secrets` is NOT inherited from the top level (wrangler treats it like
+      // `vars`), so it MUST be restated per env — a top-level-only block
+      // validates nothing on a --env deploy and warns. `pnpm secrets:check`
+      // asserts the two lists match; CI fails on drift.
+      // env.dev deliberately has NO block: dev secrets come from .dev.vars
+      // and are not deploy-gated.
+      "secrets": {
+        "required": [
+          "INTERNAL_TOKEN",
+          "MASTER_ENCRYPTION_KEY",
+          "SERVICE_HMAC_TO_BACKUP"
+        ]
+      },
+      // PROVISION: baseout-staging-pg
+      // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
+      // filled in. Do NOT use "id": "" — that silently DROPS the binding and
+      // the Worker deploys with no database at all (verified on 4.112).
+      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "services": [{ "binding": "SERVER", "service": "baseout-server-staging" }],
+      "analytics_engine_datasets": [{ "binding": "API_USAGE", "dataset": "baseout_api_requests_staging" }],
+      "ratelimits": [
+        { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 100, "period": 60 } }
+      ],
+      "routes": [{ "pattern": "staging.api.baseout.dev/*", "zone_name": "baseout.dev" }]
+    },
+
+    "production": {
+      // PROVISION: production account id.
+      // account_id intentionally omitted — supplied by Workers Builds in the
+      // production account. Never pin it: this file is read by both accounts.
+      "vars": { "RATE_LIMIT_ENFORCE": "false" },
+      // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
+      // `secrets` is NOT inherited from the top level (wrangler treats it like
+      // `vars`), so it MUST be restated per env — a top-level-only block
+      // validates nothing on a --env deploy and warns. `pnpm secrets:check`
+      // asserts the two lists match; CI fails on drift.
+      // env.dev deliberately has NO block: dev secrets come from .dev.vars
+      // and are not deploy-gated.
+      "secrets": {
+        "required": [
+          "INTERNAL_TOKEN",
+          "MASTER_ENCRYPTION_KEY",
+          "SERVICE_HMAC_TO_BACKUP"
+        ]
+      },
+      // PROVISION in the production account: baseout-live-pg
+      // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
+      // filled in. Do NOT use "id": "" — that silently DROPS the binding and
+      // the Worker deploys with no database at all (verified on 4.112).
+      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "services": [{ "binding": "SERVER", "service": "baseout-server-production" }],
+      "analytics_engine_datasets": [{ "binding": "API_USAGE", "dataset": "baseout_api_requests" }],
+      "ratelimits": [
+        { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 100, "period": 60 } }
+      ],
+      // The baseout.com zone must exist in the PRODUCTION account for this to
+      // deploy — moving a zone between accounts is a separate migration.
+      "routes": [{ "pattern": "api.baseout.com/*", "zone_name": "baseout.com" }]
+    }
+  }
+  // Still deploy-blocked pending the ops follow-up (task 5.3): Logpush +
+  // 4xx/5xx alerting.
+}

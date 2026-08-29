@@ -1,0 +1,91 @@
+// apps/sql — PROPOSED replacement for wrangler.jsonc (3 named envs).
+//
+//   Top level      = shared config only; always deploy with --env.
+//   env.dev        = baseout-sql-dev     (staging account)
+//   env.staging    = baseout-sql-staging (staging account, `staging` branch)
+//   env.production = baseout-sql         (SEPARATE production account)
+//
+// CHANGED vs the old file:
+//   - the Hyperdrive binding and routes were commented out; both are now
+//     declared per-env (a name-only env deploys with no DB access at all).
+//   - binding renamed MASTER_DB → HYPERDRIVE to match every other app. No code
+//     reads it yet (apps/sql/src has zero env references), so this is free —
+//     if you prefer MASTER_DB, change it here before the first handler lands.
+//   - the secret list in the old comment said SERVICE_HMAC_TO_SERVER while
+//     .dev.vars.example says SERVICE_HMAC_TO_BACKUP. Using the .dev.vars name;
+//     see the note in my message — one of the two is wrong.
+//   - compatibility_date bumped 2025-01-01 → 2026-04-22 (not yet deployed).
+//
+// Direct SQL access is Business+ and READ-ONLY by default (PRD §10 /
+// Features §14.2); write access is an explicit opt-in.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-sql",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "env": {
+    "dev": {
+      "account_id": "f094d60e8a0996752eb1efd971bda45a",
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ba2652f40f864918a2da0849f24d12a2",
+          "localConnectionString": "postgres://run-via-scripts-dev-mjs.invalid:5432/unset"
+        }
+      ]
+    },
+
+    "staging": {
+      // account_id intentionally omitted — Workers Builds runs inside the
+      // owning account and supplies it. Pinning it here can only create a
+      // mismatch, since production builds read this same file in a
+      // different account. env.dev keeps its pin for local wrangler use.
+      // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
+      // `secrets` is NOT inherited from the top level (wrangler treats it like
+      // `vars`), so it MUST be restated per env — a top-level-only block
+      // validates nothing on a --env deploy and warns. `pnpm secrets:check`
+      // asserts the two lists match; CI fails on drift.
+      // env.dev deliberately has NO block: dev secrets come from .dev.vars
+      // and are not deploy-gated.
+      "secrets": {
+        "required": [
+          "MASTER_ENCRYPTION_KEY",
+          "SERVICE_HMAC_TO_BACKUP"
+        ]
+      },
+      // PROVISION: baseout-staging-pg
+      // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
+      // filled in. Do NOT use "id": "" — that silently DROPS the binding and
+      // the Worker deploys with no database at all (verified on 4.112).
+      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "routes": [{ "pattern": "staging.sql.baseout.dev/v1/*", "zone_name": "baseout.dev" }]
+    },
+
+    "production": {
+      // PROVISION: production account id.
+      // account_id intentionally omitted — supplied by Workers Builds in the
+      // production account. Never pin it: this file is read by both accounts.
+      // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
+      // `secrets` is NOT inherited from the top level (wrangler treats it like
+      // `vars`), so it MUST be restated per env — a top-level-only block
+      // validates nothing on a --env deploy and warns. `pnpm secrets:check`
+      // asserts the two lists match; CI fails on drift.
+      // env.dev deliberately has NO block: dev secrets come from .dev.vars
+      // and are not deploy-gated.
+      "secrets": {
+        "required": [
+          "MASTER_ENCRYPTION_KEY",
+          "SERVICE_HMAC_TO_BACKUP"
+        ]
+      },
+      // PROVISION in the production account: baseout-live-pg
+      // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
+      // filled in. Do NOT use "id": "" — that silently DROPS the binding and
+      // the Worker deploys with no database at all (verified on 4.112).
+      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "routes": [{ "pattern": "sql.baseout.com/v1/*", "zone_name": "baseout.com" }]
+    }
+  }
+}
