@@ -25,6 +25,7 @@ brainstorm-agenda.html
 
 # Environment + secrets (NEVER commit)
 .dev.vars
+.dev.vars.prev
 .dev.vars.local
 .env
 .env.local
