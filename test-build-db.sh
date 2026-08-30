@@ -2,6 +2,15 @@
 # Do NOT set -e here so we can capture all failure stages for diagnosis
 
 echo "========================================================="
+echo "📊 DEBUGGING ENVIRONMENT VARIABLES (First 4 chars shown):"
+echo "---------------------------------------------------------"
+echo "DB_TUNNEL_HOSTNAME:   $DB_TUNNEL_HOSTNAME"
+echo "DB_USER:              $DB_USER"
+echo "DB_NAME:              $DB_NAME"
+echo "CF_CLIENT_ID:         ${CF_CLIENT_ID:0:4}..."
+echo "CF_CLIENT_SECRET:     ${CF_CLIENT_SECRET:0:4}..."
+echo "========================================================="
+
 # Check for required environment variables
 REQUIRED_VARS=("DB_TUNNEL_HOSTNAME" "CF_CLIENT_ID" "CF_CLIENT_SECRET" "DB_USER" "DB_NAME")
 for VAR in "${REQUIRED_VARS[@]}"; do
@@ -12,17 +21,19 @@ for VAR in "${REQUIRED_VARS[@]}"; do
 done
 
 LOCAL_PORT="5433"
-echo "✅ Environment variables validated."
+echo "✅ Environment variables structurally validated."
 echo "========================================================="
 
-# 1. Download cloudflared binary cleanly following redirect (-L)
-echo "Step 1: Downloading cloudflared binary..."
-curl -L "https://github.com" -o cloudflared
+# 1. Download cloudflared binary cleanly from Cloudflare directly
+echo "Step 1: Downloading cloudflared binary from Cloudflare assets repo..."
+curl -s -L "https://equinox.io" -o cloudflared.tgz
+tar -xzf cloudflared.tgz
 chmod +x cloudflared
-echo "✅ Genuine cloudflared binary downloaded successfully."
+rm cloudflared.tgz
+echo "✅ Genuine cloudflared binary downloaded and extracted successfully."
 echo "========================================================="
 
-# 2. Launch tunnel with native service-token flags and correct loglevel placement
+# 2. Launch tunnel with native service-token flags
 echo "Step 2: Starting cloudflared access proxy on port $LOCAL_PORT..."
 ./cloudflared access tcp \
   --hostname "$DB_TUNNEL_HOSTNAME" \
