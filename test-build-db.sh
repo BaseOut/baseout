@@ -17,26 +17,26 @@ echo "========================================================="
 
 # 1. Download cloudflared binary cleanly following redirect (-L)
 echo "Step 1: Downloading cloudflared binary..."
-curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" -o cloudflared
+curl -L "https://github.com" -o cloudflared
 chmod +x cloudflared
 echo "✅ Genuine cloudflared binary downloaded successfully."
 echo "========================================================="
 
-# 2. Launch tunnel with logging
+# 2. Launch tunnel with native service-token flags and correct loglevel placement
 echo "Step 2: Starting cloudflared access proxy on port $LOCAL_PORT..."
 ./cloudflared access tcp \
   --hostname "$DB_TUNNEL_HOSTNAME" \
   --url 127.0.0.1:$LOCAL_PORT \
-  --header "CF-Access-Client-Id: $CF_CLIENT_ID" \
-  --header "CF-Access-Client-Secret: $CF_CLIENT_SECRET" \
-  --v=2 > cloudflared_debug.log 2>&1 &
+  --service-token-id "$CF_CLIENT_ID" \
+  --service-token-secret "$CF_CLIENT_SECRET" \
+  --loglevel debug > cloudflared_debug.log 2>&1 &
 
 TUNNEL_PID=$!
 echo "🔄 Waiting 5 seconds for tunnel to stabilize (PID: $TUNNEL_PID)..."
 sleep 5
 echo "========================================================="
 
-# 3. Test Local Port Loopback using native Bash sockets (replaces 'nc')
+# 3. Test Local Port Loopback using native Bash sockets
 echo "Step 3: Checking if local proxy is listening..."
 if (echo > /dev/tcp/127.0.0.1/$LOCAL_PORT) >/dev/null 2>&1; then
   echo "✅ Local loopback proxy is actively listening on port $LOCAL_PORT."
@@ -59,7 +59,7 @@ if npx pg_isready -h 127.0.0.1 -p $LOCAL_PORT -u "$DB_USER" -d "$DB_NAME" -t 5; 
 else
   echo "❌ ERROR: Database handshake failed or timed out."
   echo "========================================================="
-  echo "📊 DUMPING CLOUDFLARED VERBOSE LOGS FOR TROUBLESHOOTING:"
+  echo "📊 DUMPING CLOUDFLARED DEBUG LOGS FOR TROUBLESHOOTING:"
   echo "---------------------------------------------------------"
   cat cloudflared_debug.log
   echo "---------------------------------------------------------"
