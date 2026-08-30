@@ -6,7 +6,7 @@ echo "========================================================="
 REQUIRED_VARS=("DB_TUNNEL_HOSTNAME" "CF_CLIENT_ID" "CF_CLIENT_SECRET" "DB_USER" "DB_NAME")
 for VAR in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!VAR}" ]; then
-    echo "❌ ERROR: Environment variable $VAR is missing!"
+    echo "❌ ERROR : Environment variable $VAR is missing!"
     exit 1
   fi
 done
