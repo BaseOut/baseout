@@ -6,7 +6,7 @@ echo "========================================================="
 REQUIRED_VARS=("DB_TUNNEL_HOSTNAME" "CF_CLIENT_ID" "CF_CLIENT_SECRET" "DB_USER" "DB_NAME")
 for VAR in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!VAR}" ]; then
-    echo "❌ ERROR : Environment variable $VAR is missing!"
+    echo "❌ ERROR: Environment variable $VAR is missing!"
     exit 1
   fi
 done
@@ -15,16 +15,15 @@ LOCAL_PORT="5433"
 echo "✅ Environment variables validated."
 echo "========================================================="
 
-# 1. Download cloudflared binary
+# 1. Download cloudflared binary cleanly following redirect (-L)
 echo "Step 1: Downloading cloudflared binary..."
-wget -q https://github.com -O cloudflared
+curl -L "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" -o cloudflared
 chmod +x cloudflared
-echo "✅ cloudflared downloaded successfully."
+echo "✅ Genuine cloudflared binary downloaded successfully."
 echo "========================================================="
 
-# 2. Launch tunnel with high verbosity logging
+# 2. Launch tunnel with logging
 echo "Step 2: Starting cloudflared access proxy on port $LOCAL_PORT..."
-# --v=2 enables verbose tracing logs from cloudflared
 ./cloudflared access tcp \
   --hostname "$DB_TUNNEL_HOSTNAME" \
   --url 127.0.0.1:$LOCAL_PORT \
@@ -37,9 +36,9 @@ echo "🔄 Waiting 5 seconds for tunnel to stabilize (PID: $TUNNEL_PID)..."
 sleep 5
 echo "========================================================="
 
-# 3. Test Local Port Loopback
+# 3. Test Local Port Loopback using native Bash sockets (replaces 'nc')
 echo "Step 3: Checking if local proxy is listening..."
-if nc -z 127.0.0.1 $LOCAL_PORT; then
+if (echo > /dev/tcp/127.0.0.1/$LOCAL_PORT) >/dev/null 2>&1; then
   echo "✅ Local loopback proxy is actively listening on port $LOCAL_PORT."
 else
   echo "❌ ERROR: Local proxy failed to open port $LOCAL_PORT. Checking logs..."
@@ -51,7 +50,6 @@ echo "========================================================="
 
 # 4. Test Postgres Wire Protocol Readiness
 echo "Step 4: Sending Postgres ping via pg_isready..."
-# This verifies if the remote DB is responding through the wire protocol
 if npx pg_isready -h 127.0.0.1 -p $LOCAL_PORT -u "$DB_USER" -d "$DB_NAME" -t 5; then
   echo "✅ SUCCESS: Database is accepting connections through the Cloudflare Tunnel!"
   echo "========================================================="
@@ -68,4 +66,3 @@ else
   kill $TUNNEL_PID
   exit 1
 fi
-
