@@ -168,6 +168,28 @@ async function main() {
     });
   }
 
+  // @cloudflare/vite-plugin spins up a miniflare environment even for `build`,
+  // and it HARD-FAILS if a Hyperdrive binding has neither
+  // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING> nor a
+  // localConnectionString. Locally that variable comes from .dev.vars; in
+  // Cloudflare Workers Builds there is no .dev.vars, so the build died on
+  // `applyHyperdriveEnvVars` before compiling anything.
+  //
+  // A placeholder is correct rather than a workaround here: astro.config.mjs is
+  // output:'server' with ZERO prerendered routes, so nothing renders at build
+  // time and no query is ever issued against this string. The deployed Worker
+  // ignores it completely and connects via the Hyperdrive `id`. We deliberately
+  // do NOT put a localConnectionString back in wrangler.jsonc — a dummy sitting
+  // in committed config reads as real configuration; scoped to `build` here, it
+  // provably cannot be used.
+  if (!isDev && !process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE) {
+    process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE =
+      'postgres://build:build@127.0.0.1:5432/build';
+    console.log(
+      '  ✓ HYPERDRIVE placeholder set for build (never queried — no prerendered routes)',
+    );
+  }
+
   const child = spawn('npx', ['astro', command], {
     stdio: 'inherit',
     shell: true,

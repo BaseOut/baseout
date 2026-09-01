@@ -96,6 +96,21 @@ function propagateSourceEnvKeys() {
   console.log(`  \u2713 carried env.${env} keys into dist/server/wrangler.json: ${copied.join(', ')}`);
 }
 
+// @cloudflare/vite-plugin spins up a miniflare environment even for `build`,
+// and it HARD-FAILS if a Hyperdrive binding has neither
+// CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING> nor a
+// localConnectionString. Locally that comes from .dev.vars; Cloudflare Workers
+// Builds has no .dev.vars, so the build dies on `applyHyperdriveEnvVars` before
+// compiling anything. Placeholder is safe: output:'server' with no prerendered
+// routes means nothing renders at build time, so this string is never queried.
+// The deployed Worker connects via the Hyperdrive `id` and ignores it. Same
+// treatment as apps/web/scripts/launch.mjs.
+if (!isDev && !process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE) {
+  process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE =
+    'postgres://build:build@127.0.0.1:5432/build';
+  console.log('  ✓ HYPERDRIVE placeholder set for build (never queried — no prerendered routes)');
+}
+
 const child = spawn('node', [ASTRO, command], { stdio: 'inherit', shell: false, cwd: ROOT });
 child.on('exit', (code) => {
   if (code === 0 && command === 'build') propagateSourceEnvKeys();
