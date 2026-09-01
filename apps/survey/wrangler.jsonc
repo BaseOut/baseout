@@ -1,0 +1,49 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doap-ui-survey",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    {
+      "pattern": "survey.ui.baseout.dev",
+      "custom_domain": true
+    }
+  ],
+  // Astro-session KV. The @astrojs/cloudflare adapter injects a SESSION binding
+  // into the generated deploy config unconditionally. Left un-pinned, wrangler
+  // AUTO-PROVISIONS a namespace titled "<worker-name>-session" and writes the id
+  // back into the config — which works locally but NOT in Workers Builds, where
+  // the checkout is ephemeral: every build re-attempts the create and fails with
+  //   a namespace with this account ID and title already exists [code: 10014]
+  // Pin the id here instead. Find it with:
+  //   cfuse staging && npx wrangler kv namespace list   # title: doap-ui-survey-session
+  // NOTE: "" is a hard config error, so the build stays red until it is filled in
+  // (deliberate — a wrong-but-valid id would bind silently to the wrong store).
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "bb7817fba4384aceb17fa138c200eda0"
+    }
+  ],
+  // Local dev uses miniflare's D1 (any database_id works). Before REMOTE deploy:
+  // `wrangler d1 create baseout-survey`, paste the real id here, then
+  // `pnpm --filter @baseout/survey db:migrate:remote`. (survey-resume task 1.3,
+  // shared with survey-app task 2.1.)
+  "d1_databases": [
+    {
+      "binding": "SURVEY_DB",
+      "database_name": "bo-ui-survey-db",
+      "database_id": "188dbfda-fc40-497e-ac84-8d5d34744501",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // Secrets (deploy-time, never committed): BETTER_AUTH_SECRET, RESEND_API_KEY.
+  // Optional var for prod: BETTER_AUTH_URL=https://survey.baseout.com.
+  // Route (survey.baseout.com) attached at deploy time — see survey-app task 2.4.
+}

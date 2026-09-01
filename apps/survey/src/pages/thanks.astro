@@ -1,0 +1,2867 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ScoreLadder from '../components/ScoreLadder.astro';
+import ScoreName from '../components/ScoreName.astro';
+import { IS_PROVISIONAL } from '../lib/maturity';
+import { IS_PLACEHOLDER } from '../lib/distribution';
+import { SECTIONS } from '../lib/questions';
+import { MARK, EDITION, SCORE_SHORT, REPORT_NAME } from '../lib/brand';
+
+/**
+ * THE FINISH PAGE. ONE PAGE, WHERE THERE USED TO BE TWO.
+ *
+ * Dan, 08:12: *"I think this should be the finish page when they're done. Say thank you. Give them
+ * their score... so it's like, thank you for taking the survey, get your sneak peek, and then
+ * below, it's kind of like their audit."* And on the agency block, 08:02: *"I would probably put
+ * the join the agency on this page... work the agency into that top part, so it's like sneak peek
+ * of Baseout, and then for agency it has this as like a sidebar."*
+ *
+ * The order down the page has since moved once more, on Dan's own review of it: thank you and the
+ * score, then the detail the score was cut out of, then the rest of the report, and the sneak peek
+ * with the agency offer sits in 05 among the other things that happen next. `/sneak-peek` is a
+ * redirect into this page; it was a second screen behind a button, and a respondent who closed the
+ * tab on the thank-you never saw the thing that was ready.
+ *
+ * THE SCORE IS A NUMBER NOW. `maturity.ts` computes the DOAP Score out of 100 from the bank's
+ * canonical six-question core index, and the band is the bucket the number falls in. Both the
+ * per-option points and the bucket edges are provisional until Dan writes Appendix B, so
+ * `IS_PROVISIONAL` puts a marker beside the number rather than letting it pass as settled.
+ *
+ * The scoring seam is still a prototype: the score is computed client-side from the answers
+ * `/survey` leaves in localStorage. The backend team replaces it with one returned by
+ * `/api/submit`.
+ */
+
+/**
+ * ONE ENDING, AND IT IS THE ISSUED REPORT.
+ *
+ * This page carried three drawings of the same result behind `?v=a|b|c` while Oleh chose between
+ * them, plus a chip switcher in the chrome to flip between them. He chose the ruled report on
+ * 2026-08-28 and the other two are gone: the markup, the CSS, the two motion systems and the
+ * switcher. `?v=` is no longer read at all, so a stale `?v=a` in somebody's history renders this
+ * ending rather than a blank page.
+ *
+ * The numeral hangs ON the rule that divides one section from the next — a chapter mark rather
+ * than a margin note. That was `?v=c`'s `data-numerals="rule"`; with one treatment left the
+ * attribute is a switch with one position, so the treatment is written into `.rep-sec` itself.
+ */
+
+/** The date the reader received this. Rendered per request, so it is never a stale literal. */
+const issued = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+}).format(new Date());
+
+const token = Astro.url.searchParams.get('t') ?? 'preview';
+const agency = Astro.url.searchParams.get('a') === '1';
+/** The screener's exit. Bank S1: these responses are excluded from the core dataset. */
+const screenedOut = Astro.url.searchParams.get('s') === '1';
+---
+
+<Layout title={`Your ${SCORE_SHORT}: ${MARK}`} noindex>
+  <main>
+    {screenedOut ? (
+      /* The screened-out ending. No score, because nothing was measured: the bank sends these
+         responses to "a thank-you screen and an optional email for the report" and excludes them
+         from the dataset. Pretending to score them would put a number on six unanswered questions. */
+      <section class="finish-out bo-measure">
+        <p class="bo-eyebrow">Recorded</p>
+        <h1 class="bo-display bo-display--sm">Thank you for taking the survey</h1>
+        <p class="bo-lede">
+          This one is built for teams running bases day to day, so we stopped early rather than ask
+          you about restore times you have never needed. We will still send you {REPORT_NAME} when
+          it publishes.
+        </p>
+      </section>
+    ) : (
+      <article class="rep">
+        <!-- ── THE MASTHEAD. What this is, whose copy it is, and when it was issued. ─────────── -->
+        <header class="rep-mast">
+          <span class="rep-mast__mark">{EDITION}</span>
+          <span class="rep-mast__meta">Your copy &middot; {issued}</span>
+        </header>
+
+        <!-- ── THE OPENING ──────────────────────────────────────────────────────────────────
+             The thank-you no longer promises an email and stops. It says what this page IS, because
+             the page IS the short report: Oleh, 2026-08-27, "по факту він на цій сторінці бачить
+             вже короткий репорт". The email keeps a small line here and a panel of its own in 05,
+             where it belongs among the other things that happen next. -->
+        <div class="rep-open bo-measure">
+          {/*
+            THE EYEBROW NAMES THE DOCUMENT NOW, WHICH IS THE WHOLE POINT OF AN EYEBROW.
+
+            It said "Recorded", which is what the `h1` under it already says: thank you for taking
+            the survey means the answers are in. Two lines, one fact, and the page never stated what
+            it IS — while promising a "report" by email three inches below, so the only name on
+            offer belonged to the other document.
+
+            Dan, 2026-08-28, on this exact block: *"this should kind of be like 'your DOAP report
+            summary' or something, just to separate this information in here"*, and then the rule
+            that settles the noun: *"maybe we don't call this a report; the report is more the
+            industry overall one."*
+
+            SUMMARY HERE, ANALYSIS BELOW, and the two words are doing different work rather than
+            being alternatives. This block IS the summary — thank-you, the number, the band, one
+            sentence — and `#rep-jump` in 01 points down at the analysis that explains it. Naming
+            both "Your DOAP Score analysis" put the same four words twice on one screen and told the
+            reader nothing about which was which. `screenedOut` above keeps "Recorded": nothing was
+            scored there, so there is neither a summary nor an analysis to name.
+          */}
+          {/*
+            ── THE OPENING WAS NINE THINGS DEEP AND IS NOW SIX ─────────────────────────────────
+
+            Oleh, 2026-08-31: *"this block with all the text feels overloaded. Think about how to
+            optimise it, make it shorter, there's just a lot of everything."* He is counting: before
+            this pass the reader met an eyebrow, a heading, a three-line lede, a two-line aside, a
+            second eyebrow, the number, the band, a blurb and a comparison — nine stacked elements
+            before the page gave up its finding.
+
+            Three came out, and each because something else on screen already carries it:
+
+              THE LEDE'S FIRST SENTENCE listed what the survey is about ("how you protect, change
+              and document the bases your business runs on"). The reader spent fifteen minutes on
+              exactly that; it is the one paragraph on this page that tells them nothing they did
+              not just supply. What survives is the half that cannot be inferred and is the actual
+              claim this page rests on: every number is read back, not computed about them.
+
+              THE REPORT ASIDE promised the published report by email. Section 01 begins directly
+              under this block and its "By email" column says the same thing with the address it is
+              going to. That was written when the aside was three screens away from it.
+
+              THE SECOND EYEBROW, "The DOAP Score", labelled a 5.5rem numeral that carries `/ 100`,
+              sits above its own band name and beside a ladder captioned "Where you landed". It was
+              the third time the score was named inside 200px — and the third only exists because
+              the FIRST one does, which is Dan's ask and stays.
+
+            Nothing that was a finding was cut. The number, the band, the sentence that says what
+            the band means and the comparison are all untouched.
+          */}
+          <p class="bo-eyebrow">Your {SCORE_SHORT} summary</p>
+          <h1 class="rep-h1">Thank you for taking the survey</h1>
+          <p class="bo-lede">Every number below is read back from what you told us.</p>
+        </div>
+
+        <!-- ── THE VERDICT. The number takes the room; the instrument answers it on the right. -->
+        <section class="rep-verdict" id="result" hidden>
+          <div>
+            <p class="finish-number rep-number">
+              <span id="result-score">0</span><span class="finish-number__of">/ 100</span>
+              {IS_PROVISIONAL && (
+                <span
+                  class="bo-badge bo-badge--later"
+                  title="The per-option points and the band cutoffs are a reading of an unwritten rubric: the report's Appendix B has not been agreed yet (open question O-2). The six questions scored are the bank's own canonical core index."
+                >Provisional rubric</span>
+              )}
+            </p>
+            <h2 class="rep-band" id="result-band"></h2>
+            <p class="bo-verdict__blurb" id="result-blurb"></p>
+            <p class="verdict-compare">
+              <span id="result-compare"></span>
+              {IS_PLACEHOLDER && (
+                <span class="bo-badge bo-badge--later" title="No responses have been counted yet: /api/submit is a stub and the responses table does not exist (survey-app task 2.1). These shares are a shape, not a finding.">Sample data</span>
+              )}
+            </p>
+
+            {/*
+              THE "EMAIL ME MY REPORT" BUTTON USED TO SIT HERE, under the score. It moved into 01,
+              where the other two things a reader can do already are: Oleh, 2026-08-28, *"the
+              'Email me my report' button can go into the section we call What happens next — then
+              the user has a call to action"*. The verdict block is the finding; the actions are one
+              block, one screen down, and a lone ghost button under a 5.5rem numeral was the odd
+              one out in both.
+            */}
+          </div>
+
+          <div class="rep-instrument">
+            {/*
+              THE LADDER, NOT THE RULER. The tick ruler this replaced (`.bo-meter`, with each
+              band's share printed under it) is gone: this is the banded form Oleh picked off the
+              canvas — one continuous track filled left to right, divided where the bands divide,
+              with the four names underneath. The per-band shares came off with it: they are
+              placeholder figures, and the one comparison worth making is already a sentence beside
+              the score.
+            */}
+            <ScoreLadder scored note="0 to 100">
+              <Fragment slot="eyebrow">Where you landed</Fragment>
+            </ScoreLadder>
+
+            <!-- The sitting itself: how much they gave, which a grade never says back to them. -->
+            <div class="rep-facts" id="rep-facts" hidden>
+              <div><span class="rep-facts__n" id="rep-answered">0</span><span class="rep-facts__l">Questions answered</span></div>
+              <div><span class="rep-facts__n">{SECTIONS.length}</span><span class="rep-facts__l">Sections</span></div>
+              <div><span class="rep-facts__n">6</span><span class="rep-facts__l">Scored practices</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── 01 · what happens next ─────────────────────────────────────────────────────────
+             Every numbered section carries an id, 05 included. Four of them needed one anyway to be
+             shown or hidden; this one never did, and it gets one so that whatever drives the scroll
+             animation later has the same handle on all five rather than four and an exception. -->
+        <section class="rep-sec" id="rep-next-sec">
+          <span class="rep-sec__n">01</span>
+          <div>
+            <h2 class="rep-h2">What happens next</h2>
+            {/*
+              THINGS ON CLOCKS — the version Oleh picked off the canvas.
+
+              The built one laid them out as tiles of equal weight, and they read as scattered
+              because nothing on screen said what separates them. They are not interchangeable
+              offers: one is ready NOW, one takes SECONDS, one arrives WHEN THE REPORT SHIPS, and
+              one exists only for AGENCIES. The label above each column is that distinction, and it
+              is the first thing in the column because it is the thing that orders them.
+
+              THE MIDDLE COLUMN IS THE INBOX, AND IT HOLDS BOTH DELIVERIES. Oleh, 2026-08-28:
+              *"the 'Email me my report' button can go into the section we call What happens
+              next."*
+
+              It was built as two columns first — one for the score email, one for the published
+              report — because they ARE two documents and a button under a heading that says "The
+              full report" reads as the thing that makes the published report arrive, or as a hoop
+              to jump through to get it, and neither is true. OLEH — not Dan; an earlier version of
+              this comment put his words in Dan's mouth, and the attribution matters now that Dan
+              has asked for a fourth column of his own — looked at that and asked the better
+              question: *"why is there a fourth column? I thought 'email me my report' and 'the full
+              report' were the same thing."* He is wrong that they are one document and right that
+              there is only one ADDRESS, given once, already recorded — and two columns each naming
+              an inbox implied two separate asks. Worse, the labels above them, `Now` and `In
+              seconds`, were the same moment written twice in a row that presents itself as a
+              timeline.
+
+              WHAT CAME BACK IS NOT THAT COLUMN. `#rep-jump` leads this row from 2026-08-28. It
+              asks for nothing, names no inbox and delivers nothing — it points down the page at
+              what the reader already has. What was collapsed was two columns competing for one
+              address, and that stays collapsed.
+
+              So: one column, one address, two deliveries, and the distinction moved inside it. The
+              eyebrow names the CHANNEL rather than a moment, because the column spans two moments;
+              the address is read back once, at the top, where it serves both; and each delivery is
+              one short line naming what it is and when. The load-bearing half is "nothing to
+              press": a skimmer must not come away thinking the button is what makes the published
+              report arrive, or that not pressing it costs them the report.
+
+              The grid takes one track per VISIBLE column (`grid-auto-flow: column`), so the
+              conditional partner column cannot leave a hole and no rule has to be kept in step with
+              how many columns there happen to be.
+            */}
+            <div class="rep-clocks">
+              {/*
+                ── THE FIRST THING THAT HAPPENS NEXT IS READING THE REST OF THIS PAGE ─────────────
+
+                Dan, 2026-08-28: *"what happens next — maybe we add another one, like 'review your
+                report', and it links down into this section."* The section he was scrolling through
+                while he said it is 02 onward: the summary, the six scored practices, the coverage
+                and what to fix first.
+
+                It leads the row because it is the only entry that costs nothing and is already
+                paid for. Everything else here is an offer — watch this, wait for this, join this.
+                This one is the thing the reader came for, and until now the page's answer to "what
+                happens next" opened by talking about Baseout.
+
+                IT IS CALLED AN ANALYSIS, NOT A REPORT, and that is the same conversation: *"maybe
+                we don't call this a report; the report is more the industry overall one."* See
+                `lib/brand.ts`. The word "report" on this page now means one document only, the
+                published one, and this column is the other thing.
+
+                HIDDEN UNTIL THERE IS SOMETHING TO JUMP TO, AND REVEALED BY ITS OWN TARGET. A link
+                that scrolls to a `[hidden]` element does nothing at all and says nothing about it,
+                which is the worst version of a broken link. Section 02 is revealed only when a
+                stored result actually produced a summary, so this column is revealed on that same
+                line rather than beside the verdict: tied to the target, the two cannot get out of
+                step, and there is no state where the card is offering a jump into nothing.
+
+                No `scroll-behavior` is set here: `survey.css` already declares smooth scrolling
+                inside a `no-preference` block, so this follows the same setting as the rest of the
+                app and stops moving when the reader has asked for less motion.
+              */}
+              <div class="rep-clock" id="rep-jump" hidden>
+                <p class="bo-eyebrow rep-clock__when">On this page</p>
+                <h3 class="rep-clock__h">Your <ScoreName /> analysis</h3>
+                <p class="rep-clock__line">
+                  What the number means, the six practices behind it, and what to fix first.
+                </p>
+                <a class="bo-btn bo-btn--ghost rep-clock__cta" href="#rep-short-sec">
+                  Read the analysis <span aria-hidden="true">&darr;</span>
+                </a>
+              </div>
+
+              <div class="rep-clock">
+                <p class="bo-eyebrow rep-clock__when">Now</p>
+                <h3 class="rep-clock__h">A first look at Baseout</h3>
+                <p class="rep-clock__line">
+                  Backup, restore and data intelligence for Airtable, from the team that built
+                  On2Air.
+                </p>
+                <button class="video rep-clock__video" type="button" data-video aria-haspopup="dialog">
+                  <div class="video-placeholder">
+                    <span aria-hidden="true">&#9654;</span>
+                    <p>Preview video coming right here</p>
+                  </div>
+                </button>
+              </div>
+
+              <div class="rep-clock">
+                <p class="bo-eyebrow rep-clock__when">By email</p>
+                {/* THE HEADING ANSWERS DAN'S QUESTION BEFORE HE ASKS IT AGAIN. He read two inbox
+                    columns as two requests for an address; the first thing this column says is that
+                    there is one address and two things coming to it. */}
+                <h3 class="rep-clock__h">Two things, one address</h3>
+                {/* THE ADDRESS, ALONE ON ITS OWN LINE, because it is what the column is about and
+                    it now serves BOTH deliveries — which is the whole reason the two columns became
+                    one. "Going to … — the address you gave in the survey" was here and went: they
+                    know where they typed it. */}
+                <p class="rep-clock__to" id="rep-mail-to" hidden>
+                  <strong id="rep-mail"></strong>
+                </p>
+
+                {/* TWO DELIVERIES, TWO SHORT LINES, ONE BUTTON BETWEEN THEM.
+
+                    This ran to about ten lines while its neighbours ran to two, and Dan said so:
+                    *"way too much text and hard to read."* A row of three columns is read ACROSS,
+                    and a column three times the length of the ones beside it stops being a column
+                    and becomes a paragraph with two captions next to it.
+
+                    What came out was every clause that explained something already on screen: what
+                    is in "this page" (the reader is standing on it), where they typed their address,
+                    and what the published report contains (promised twice elsewhere on this page and
+                    again inside the email). The distinction that mattered survives in the nouns and
+                    the timings — YOUR SCORE / NOW against THE FULL REPORT / WHEN IT PUBLISHES — and
+                    "nothing to press" is the one clause kept for a misreading, because it is the
+                    misreading that the whole four-column detour existed to prevent. */}
+                <div class="rep-post">
+                  <div>
+                    <p class="rep-clock__line">Your score &mdash; now, as plain text.</p>
+                    {/* Shown by the script only once there is a score, so it cannot be pressed on a
+                        page that has nothing to send. The address is prefilled into the
+                        confirmation from the stored result and typed when there is none, the same
+                        way the founding-partner dialog handles it. */}
+                    <p class="rep-send" id="rep-send-wrap" hidden>
+                      {/* "EMAIL ME MY REPORT" UNTIL 2026-08-28. It is the score that gets emailed,
+                          and this button stood one line above a sentence promising "the full
+                          report" — so the column had the word "report" meaning two different
+                          documents within an inch of itself, which is exactly the confusion Dan
+                          spent half the video untangling: *"maybe we don't call this a report; the
+                          report is more the industry overall one."* One noun each, and the
+                          ambiguity goes without a word of explanation being added. */}
+                      <button class="bo-btn bo-btn--primary" id="rep-send" type="button" data-token={token} aria-haspopup="dialog">
+                        Email me my score
+                      </button>
+                      <span class="bo-fine rep-send__note" id="rep-send-note" role="status" aria-live="polite"></span>
+                    </p>
+                  </div>
+
+                  <p class="rep-clock__line">
+                    {/* "THE FULL REPORT" NAMED NOTHING. Dan, on this column: *"this one is more
+                        like, get notified when the full report is completed — the SURVEY report."*
+                        With the button beside it now saying "score", "the survey report" is the
+                        only other document on the page and the pair reads without a gloss. */}
+                    The survey report &mdash; when it publishes.
+                    {/* Conditional for the same reason the address line is: it is a claim about a
+                        specific address, and a result stored without one (an older shape, or a
+                        respondent who never gave one) would have the page promising a list nobody
+                        is on. */}
+                    <span id="rep-mail-auto" hidden>Nothing to press; you are on the list.</span>
+                  </p>
+                </div>
+              </div>
+
+              {agency && (
+                <div class="rep-clock">
+                  <p class="bo-eyebrow rep-clock__when">Agencies/Partners</p>
+                  <h3 class="rep-clock__h">Founding partner status</h3>
+                  <p class="rep-clock__line">
+                    You build for clients. Founding partners keep founding-level terms permanently.
+                  </p>
+                  {/*
+                    NOT A ONE-CLICK COMMITMENT ANY MORE. Dan: *"That button just looks dumb, a user
+                    can click it by accident and it's not clear what to expect."* It opens the
+                    confirmation below instead, which shows the address they go on the list under,
+                    lets them fix it, restates what founding status is, and says what happens next.
+
+                    `data-partner` rather than an id: every trigger on the page opens the one
+                    dialog, so a second placement costs an attribute. There is exactly one today —
+                    the `?v=a` ending had the other, and it went with the ending.
+                  */}
+                  <button class="bo-btn bo-btn--primary rep-clock__cta" type="button" data-partner aria-haspopup="dialog">
+                    Claim founding status
+                  </button>
+                  <p class="bo-note bo-note--success" id="partner-confirmed" hidden>
+                    You're on the founding list, we'll be in touch.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <!-- ── 02 · the confidence gap ──────────────────────────────────────────────────── -->
+        <section class="rep-sec" id="rep-short-sec" hidden>
+          <span class="rep-sec__n">02</span>
+          <div>
+            <h2 class="rep-h2">In short</h2>
+            <div class="rep-short">
+              <div>
+                <p class="rep-short__prose" id="rep-summary"></p>
+                <p class="rep-short__trace" id="rep-trace" hidden>
+                  What to do about that is section 04, below.
+                </p>
+              </div>
+              <div class="rep-short__gap" id="rep-gap-sec" hidden>
+                <p class="bo-eyebrow rep-short__gaplabel">The confidence gap</p>
+                <p class="rep-gap" id="rep-gap"></p>
+                <p class="rep-gap__note" id="rep-gap-note"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── 03 · the table ───────────────────────────────────────────────────────────────
+             BACK WHERE IT WAS. This block was briefly moved above the summary on 2026-08-28, on a
+             reading of Dan's *"I do worry that this being at the bottom gets missed"* that took
+             "this" to mean the audit. It cannot have: the table was second of five, and nobody
+             calls the second thing on a page the bottom. Oleh identified what Dan was pointing at
+             (`what happens next`, which was literally last) and it now leads. So the summary reads
+             before the table again, which was the original order and the right one: the sentence
+             says what the number means, the six rows say where it came from. -->
+        <section class="rep-sec" id="rep-table-sec" hidden>
+          <span class="rep-sec__n">03</span>
+          <div>
+            <div class="rep-h2row">
+              <h2 class="rep-h2">What we measured</h2>
+              <span class="bo-eyebrow bo-eyebrow--muted">Six practices &middot; 0 to 3 each</span>
+            </div>
+            <div class="rep-table__head">
+              <span class="bo-eyebrow bo-eyebrow--muted">Practice</span>
+              <span class="bo-eyebrow bo-eyebrow--muted">What you said</span>
+              <span class="bo-eyebrow bo-eyebrow--muted">Score</span>
+              <span class="bo-eyebrow bo-eyebrow--muted rep-table__end">Out of 3</span>
+            </div>
+            <div id="rep-table"></div>
+          </div>
+        </section>
+
+        <!-- ── 04 · coverage ────────────────────────────────────────────────────────────────── -->
+        <section class="rep-sec" id="rep-cov-sec" hidden>
+          <span class="rep-sec__n">04</span>
+          <div>
+            <h2 class="rep-h2">What your backups actually hold</h2>
+            <p class="rep-sub">
+              From what you were confident enough to tick. Anything unticked is not confirmed,
+              rather than known to be missing.
+            </p>
+            <div class="rep-cov">
+              <div>
+                <p class="bo-eyebrow rep-cov__ok">Captured</p>
+                <div class="rep-cov__chips" id="rep-cov-yes"></div>
+              </div>
+              <div>
+                <p class="bo-eyebrow rep-cov__maybe">Not confirmed</p>
+                <div class="rep-cov__chips" id="rep-cov-no"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── 05 · what to fix first ───────────────────────────────────────────────────────── -->
+        <section class="rep-sec" id="rep-fix-sec" hidden>
+          <span class="rep-sec__n">05</span>
+          <div>
+            <h2 class="rep-h2">What to fix first</h2>
+            <div id="rep-fix"></div>
+          </div>
+        </section>
+
+        {/*
+          ── 06 · THE END OF THE DOCUMENT ────────────────────────────────────────────────────────
+
+          The page used to stop on the last line of advice and then hand the reader 200px of nothing
+          before the footer — 120px of the section's own bottom padding and 80 more of the page's.
+          Between sections that space reads as breathing. After the last one it reads as the page
+          giving up. Oleh, 2026-08-31: *"this last screen is missing some closing section."*
+
+          WHAT WAS MISSING WAS NOT COMPOSITION, IT WAS THE OTHER HALF OF A PROMISE. The splash opens
+          on "Nobody has measured it. Help us build the benchmark." The finish page answered every
+          question the respondent had about THEMSELVES — a number, a band, six practices, what to fix
+          — and never once said what their fifteen minutes bought the thing they were asked to help
+          build. This section is that sentence, and the one action that follows from it.
+
+          IT ASKS FOR A LINK TO BE COPIED, NOT FOR A SHARE. No backend, no new promise to keep, and
+          it is the honest ask: the report they were promised is worth exactly as many answers as it
+          has, so passing it on is the same transaction continuing rather than an upsell. It is also
+          the only thing on this page that helps the reader's own copy of the report get better.
+
+          ── THE SHAPE, AND THE ONE THING THAT WAS WRONG WITH IT ──────────────────────────────────
+          Drawn as four directions and chosen off the canvas: centred, opening on a short vertical
+          tail, which is the same way the splash's explainer ends. The rhyme is deliberate — the
+          reader met that figure on the way in and meets its echo on the way out.
+
+          The heading was a soft-primary PLATE in the drawing, echoing `.dia__term` literally. Oleh
+          killed it and was right: on the splash that lozenge is a node in a figure with a line
+          running into it, and here, standing alone over a paragraph, a filled and bordered box at
+          an 8px radius is the vocabulary of a BUTTON. Second time this week a shape has read as a
+          control — the `+` chip on the merge node was the first. The rule that keeps emerging: a
+          fill plus a border plus a radius says "press me" no matter what the words are.
+
+          So it is a heading, set like every other section heading on the page and centred. The tail
+          above it does the work the plate was doing, and it cannot be mistaken for anything.
+        */}
+        <section class="rep-sec rep-sec--end" id="rep-end-sec" hidden>
+          <span class="rep-sec__n">06</span>
+          <div class="rep-end">
+            <span class="rep-end__tail" aria-hidden="true"></span>
+            <h2 class="rep-h2 rep-end__h">You are in the first one</h2>
+            <p class="rep-end__body">
+              Nobody had measured how teams protect the bases their business runs on. Now someone
+              has, and your answers are in it. The report gets sharper with every team that answers.
+            </p>
+            {/*
+              ── A FIELD AND A BUTTON, WHICH IS THE SHAPE PEOPLE ALREADY KNOW ────────────────────
+              Oleh, 2026-08-31: *"let's replace this thing with an input plus a Copy the Link
+              button. I think that will be a bit better. And in that input let it write the address
+              of this new deploy we made."*
+
+              He is right, and it is worth saying why the lone button was weaker: a button that
+              copies something invisible asks the reader to trust that the right thing went to the
+              clipboard. The pair shows the value first and acts on it second, which is the share
+              pattern every tool uses because it is the one that can be verified before it is used.
+
+              IT IS A REAL `<input readonly>`, not a styled `<span>`. Three things come free and all
+              three matter here: a long-press selects it on a phone, `select()` is the whole
+              clipboard fallback rather than a `Range` dance, and a screen reader announces a field
+              with a value instead of a run of text. `readonly` and not `disabled` — disabled fields
+              are skipped by the keyboard and unselectable, which would remove the manual path this
+              exists to protect.
+
+              THE ADDRESS COMES FROM `location`, still. It resolves to whatever origin is serving
+              the page, so it is right on the deploy, on a preview and on localhost. Today is the
+              argument for it: `survey.baseout.dev` stopped resolving because the domain moved to
+              `survey.ui.baseout.dev`, and a hardcoded constant would have been quietly handing out
+              a dead address from the moment that landed.
+            */}
+            <p class="rep-end__act">
+              <label class="bo-sr" for="rep-url">Link to the survey</label>
+              <input
+                class="bo-field rep-end__url"
+                id="rep-url"
+                type="text"
+                readonly
+                value=""
+              />
+              {/* BOTH WORDS ARE IN THE BUTTON AT ONCE, stacked in one grid cell. Oleh: *"and the
+                  button size must not change."* Swapping the text alone would resize it — "Copied"
+                  is wider than "Copy" — and a `min-width` in px is a magic number that goes wrong at
+                  a different zoom or font fallback. Two children in the same cell make the button
+                  as wide as the WIDER of them, measured by the browser, and it never moves again.
+
+                  `visibility` and not `display`, so the resting word keeps its cell (that is what
+                  holds the width) and still leaves the accessibility tree — otherwise the button
+                  would be announced as "Copy Copied". */}
+              <button class="bo-btn bo-btn--ghost rep-end__copy" id="rep-copy" type="button" data-state="idle">
+                <span data-label="idle">Copy</span>
+                <span data-label="done">Copied</span>
+              </button>
+            </p>
+          </div>
+        </section>
+      </article>
+    )}
+    {!screenedOut && (
+      /*
+        ONE LIGHTBOX, ONE TRIGGER TODAY AND ROOM FOR MORE. Every `[data-video]` opens it, so a
+        second place to play the preview costs an attribute rather than a second dialog to keep in
+        step with this one.
+
+        `<dialog>` rather than a div: `showModal()` brings the focus trap, the inert background,
+        Escape, and the return of focus to the button that opened it — four behaviours that are
+        tedious and easy to get wrong by hand, and all of them free here.
+      */
+      <dialog class="lightbox" id="video-lightbox" aria-label="A first look at Baseout">
+        <button class="lightbox__close" id="video-close" type="button" aria-label="Close the video">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+          </svg>
+        </button>
+        <div class="lightbox__frame">
+          {/* TODO(survey-app task 2.3): the unlisted embed goes here. Until it exists the dialog
+              shows the same placeholder the page does, at the size the real thing will be. */}
+          <div class="video-placeholder">
+            <span aria-hidden="true">&#9654;</span>
+            <p>Preview video coming right here</p>
+          </div>
+        </div>
+      </dialog>
+    )}
+
+    {!screenedOut && (
+      /*
+        THE "EMAIL ME MY REPORT" CONFIRMATION.
+
+        Oleh, 2026-08-28: *"when the user clicks 'Email me my report' they should also see a modal
+        that asks again: do you agree that the report will come to you, yes or no?"* The same
+        instrument and the same shape as the founding-partner dialog below, deliberately — two
+        confirmations on one page that are built differently read as two applications.
+
+        WHAT IT HAS TO SETTLE IS WHICH REPORT. The column beside this one promises the published
+        report; this email is the score, the band and the six practices, and the list below is the
+        actual contents of what `lib/email.ts` composes, not a flattering summary of it. The line
+        naming the other document is in here as well as on the page, because the dialog is the last
+        thing read before the press.
+
+        ON TIMING, WHAT IS TRUE. Oleh guessed "up to an hour". `/api/send-report` calls Resend
+        synchronously and the mail is away before the button says "Sent", so an hour is an invented
+        delay that this page — whose whole argument is that every number on it traces to something
+        real — would be caught in the moment it landed in ten seconds. The friction that does exist
+        is stated instead: spam, and an address nothing here can tell them later has bounced.
+      */
+      <dialog class="pmodal" id="mail-modal" aria-labelledby="mmodal-title">
+        <form method="dialog" class="pmodal__form" id="mail-form">
+          <p class="bo-eyebrow">By email</p>
+          <h2 class="pmodal__h" id="mmodal-title">Send this page to you</h2>
+
+          <p class="pmodal__lede">One plain-text email with what you are reading now:</p>
+          <ul class="pmodal__perks">
+            <li>Your <ScoreName /> out of 100, and the band it falls in</li>
+            <li>All six practices, scored 0 to 3, with what you answered to each</li>
+            <li>What to fix first, weakest practice first</li>
+          </ul>
+
+          <p class="pmodal__lede">
+            {REPORT_NAME} is a different document. It publishes later and comes to you on its
+            own: pressing this does not bring it any closer, and not pressing it costs you nothing.
+          </p>
+
+          <label class="pmodal__label" for="mail-email">The address we will send it to</label>
+          <input
+            class="bo-field"
+            id="mail-email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            inputmode="email"
+            spellcheck="false"
+            placeholder="you@company.com"
+          />
+          <p class="bo-note bo-note--error pmodal__err" id="mail-error" hidden></p>
+
+          <p class="bo-fine pmodal__next">
+            It sends the moment you confirm, so the address has to be right: nothing on this page
+            can tell you later that it bounced. If it is not in your inbox, look in spam. Your
+            analysis stays on this page either way.
+          </p>
+
+          <div class="pmodal__actions">
+            <button class="bo-btn bo-btn--ghost" id="mail-cancel" type="button" value="cancel">
+              Cancel
+            </button>
+            <button class="bo-btn bo-btn--primary" id="mail-go" type="button" data-token={token}>
+              Confirm
+            </button>
+          </div>
+        </form>
+      </dialog>
+    )}
+
+    {agency && !screenedOut && (
+      /*
+        THE FOUNDING-PARTNER CONFIRMATION.
+
+        Same instrument as the lightbox above, for the same reasons: `showModal()` brings the focus
+        trap, the inert background, Escape, and the return of focus to the button that opened it.
+        A div with a z-index brings none of those and this dialog asks somebody to commit to
+        something, so the one that gets the keyboard right is not optional.
+
+        WHAT IS IN IT IS THE ANSWER TO "IT'S NOT CLEAR WHAT TO EXPECT": the address they go on the
+        list under and a field to correct it, what founding status actually is (the same four lines
+        the page has always promised — no new promise is invented here), and what happens after
+        Confirm. Cancel is a real way out and it is the button that closes on Escape too.
+      */
+      <dialog class="pmodal" id="partner-modal" aria-labelledby="pmodal-title">
+        <form method="dialog" class="pmodal__form" id="partner-form">
+          <p class="bo-eyebrow">Agencies/Partners</p>
+          <h2 class="pmodal__h" id="pmodal-title">Founding partner status</h2>
+
+          <p class="pmodal__lede">
+            You said you build for clients. Founding partners get founding perks:
+          </p>
+          <ul class="pmodal__perks">
+            <li>Founding-partner status and badge, permanently</li>
+            <li>Early access for you and your clients</li>
+            <li>Direct line to the team building it</li>
+            <li>Founding-level program terms</li>
+          </ul>
+
+          <label class="pmodal__label" for="partner-email">The address we will add you under</label>
+          <input
+            class="bo-field"
+            id="partner-email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            inputmode="email"
+            spellcheck="false"
+            placeholder="you@agency.com"
+          />
+          <p class="bo-note bo-note--error pmodal__err" id="partner-error" hidden></p>
+
+          <p class="bo-fine pmodal__next">
+            Confirming puts you on the founding list. Nothing is charged and nothing is public: we
+            email you from this address when the partner program opens, before it is announced.
+          </p>
+
+          <div class="pmodal__actions">
+            <button class="bo-btn bo-btn--ghost" id="partner-cancel" type="button" value="cancel">
+              Cancel
+            </button>
+            <button class="bo-btn bo-btn--primary" id="partner-go" type="button" data-token={token}>
+              Confirm
+            </button>
+          </div>
+        </form>
+      </dialog>
+    )}
+  </main>
+</Layout>
+
+<style>
+  /* THE NUMBER IS THE LOUDEST THING ON THE PAGE, because it is the thing Dan asked people to come
+     for. The denominator is set small and muted beside it: "/ 100" is a unit, not a second number,
+     and matching their sizes would make the score read as a fraction to be worked out. */
+  .finish-number {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--bo-space-2);
+    margin: 0 0 var(--bo-space-1);
+    font-size: clamp(3.5rem, 8vw, 5.5rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--bo-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .finish-number__of {
+    font-size: var(--bo-t-20);
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--bo-muted);
+  }
+
+  /* The comparison sits under the blurb and above the scale: you read what you are, then how common
+     that is, then where it falls on the range. */
+  .verdict-compare {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--bo-space-1);
+    margin: var(--bo-space-2) 0 0;
+    max-width: 34rem;
+    font-size: var(--bo-t-16);
+    color: var(--bo-base-content);
+  }
+
+  /* The video well is a SURFACE, not a picture: base-200 with a base-300 hairline, so it tracks the
+     theme instead of staying a near-black rectangle on a dark page.
+
+     It is a BUTTON now, so the browser's own defaults have to be undone before the surface shows:
+     a button brings its own font, padding, border and background, and each one of those would
+     otherwise fight a rule below. */
+  .video {
+    display: block;
+    width: 100%;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    overflow: hidden;
+  }
+
+  .video-placeholder {
+    aspect-ratio: 16 / 9;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 8px;
+    background: var(--bo-base-200);
+    color: var(--bo-muted);
+  }
+
+  .video-placeholder span { font-size: var(--bo-t-32); line-height: 1; }
+  .video-placeholder p { margin: 0; font-size: var(--bo-t-14); }
+
+  /* The one hover the page has: the well lifts its hairline and its glyph, so the still rectangle
+     says it can be opened without a caption saying so. */
+  .video:hover { border-color: var(--bo-muted); }
+  .video:hover .video-placeholder { color: var(--bo-base-content); }
+
+  /* ── TAKE IT WITH YOU ─────────────────────────────────────────────────────────────────────────
+     A COLUMN, NOT A LINE. This used to sit under the score with its status text beside it, where
+     there was a full measure to wrap in. In 01 it is one of three narrow columns, and a button
+     with a sentence next to it at 260px is a button with one word next to it: the note goes under
+     the button and both start at the left edge of the column. `margin-top` matches the founding
+     column's CTA, so the two actions in the row sit on the same line as each other. */
+  .rep-send {
+    display: grid;
+    justify-items: start;
+    gap: var(--bo-space-2);
+    margin: var(--bo-space-1) 0 0;
+  }
+
+  /* The note is a status line, not a caption: it keeps the ink of ordinary text when it is
+     reporting success and takes the error colour when it is reporting a failure, because a failure
+     the reader has to act on cannot be set in the same grey as "sent". */
+  .rep-send__note { display: none; }
+  .rep-send__note[data-state] { display: block; }
+  .rep-send__note[data-state='sent'] { color: var(--bo-success); }
+  .rep-send__note[data-state='failed'] { color: var(--bo-error); }
+
+  /* ── THE FOUNDING-PARTNER CONFIRMATION ───────────────────────────────────────────────────────
+     A panel, not a screen: it is one decision with one address on it, so it is capped at a reading
+     measure and centred by the dialog element's own margin rather than by a transform. The backdrop
+     matches the lightbox's, because two modals on one page that dim the page differently read as
+     two different applications. */
+  .pmodal {
+    width: min(32rem, 92vw);
+    max-width: none;
+    max-height: 92vh;
+    padding: var(--bo-space-4);
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    background: var(--bo-base-100);
+    color: var(--bo-base-content);
+  }
+
+  .pmodal::backdrop {
+    background: oklch(from #000 l c h / 0.72);
+    backdrop-filter: blur(2px);
+  }
+
+  .pmodal__form {
+    display: block;
+    margin: 0;
+  }
+
+  .pmodal__h {
+    margin: var(--bo-space-1) 0 var(--bo-space-2);
+    font-size: var(--bo-t-24);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  .pmodal__lede {
+    margin: 0 0 var(--bo-space-2);
+    font-size: var(--bo-t-14);
+    line-height: 1.6;
+    color: var(--bo-muted-strong);
+  }
+
+  .pmodal__perks {
+    margin: 0 0 var(--bo-space-3);
+    padding-left: 20px;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted-strong);
+  }
+
+  .pmodal__perks li { margin-bottom: 4px; }
+
+  .pmodal__label {
+    display: block;
+    margin-bottom: var(--bo-space-1);
+    font-size: var(--bo-t-13);
+    font-weight: 700;
+  }
+
+  .pmodal__err { margin-top: var(--bo-space-2); }
+
+  .pmodal__next {
+    display: block;
+    margin: var(--bo-space-2) 0 0;
+    line-height: 1.6;
+  }
+
+  /* CONFIRM ON THE RIGHT, CANCEL BESIDE IT. Cancel is a button rather than the dialog's own close
+     affordance so that the way out is visible: Escape already closes this, and a way out only
+     somebody who knows the platform can find is not a way out. */
+  .pmodal__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--bo-space-2);
+    margin-top: var(--bo-space-4);
+  }
+
+  /* ── THE LIGHTBOX ────────────────────────────────────────────────────────────────────────────
+     Centred by the dialog element's own margin rather than by a transform, so nothing has to be
+     told the size of the thing it is centring. Sized to the viewport in both directions: a 16:9
+     frame capped only by width overflows a laptop in landscape, which is the shape most of them
+     are. */
+  .lightbox {
+    width: min(76rem, 92vw);
+    max-width: none;
+    max-height: 92vh;
+    padding: 0;
+    border: 0;
+    border-radius: var(--bo-r-12);
+    background: none;
+    overflow: visible;
+    color: var(--bo-base-content);
+  }
+
+  .lightbox::backdrop {
+    background: oklch(from #000 l c h / 0.72);
+    backdrop-filter: blur(2px);
+  }
+
+  .lightbox__frame {
+    aspect-ratio: 16 / 9;
+    max-height: 92vh;
+    margin-inline: auto;
+    overflow: hidden;
+    background: var(--bo-base-200);
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-12);
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 8px;
+  }
+
+  .lightbox__frame .video-placeholder { border: 0; background: none; }
+
+  /* OUTSIDE THE FRAME AT FULL SIZE, INSIDE IT WHEN THERE IS NO ROOM. Sitting over the video is
+     where a close control covers content; sitting outside it is where it disappears on a narrow
+     screen. Neither is right at both widths, so it moves. */
+  .lightbox__close {
+    position: absolute;
+    top: -2.75rem;
+    right: 0;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--bo-r-8);
+    background: none;
+    color: var(--bo-muted);
+    cursor: pointer;
+  }
+
+  .lightbox__close:hover { color: var(--bo-base-content); }
+
+  @media (max-width: 48rem) {
+    .lightbox__close {
+      top: 0.5rem;
+      right: 0.5rem;
+      background: var(--bo-base-100);
+    }
+  }
+
+  /* ══ THE ISSUED REPORT ═════════════════════════════════════════════════════════════════════
+     A document rather than a screen: a masthead that says what this is and when it was issued,
+     then numbered sections down one measure. The vocabulary is the app's own — same type ladder,
+     same hairline, same accent — so it reads as the survey's last page and not as a second brand. */
+  .rep-mast {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--bo-space-3);
+    padding-bottom: var(--bo-space-2);
+    border-bottom: 1px solid var(--bo-base-300);
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .rep-mast__mark { color: var(--bo-primary); }
+  .rep-mast__meta { color: var(--bo-muted); font-variant-numeric: tabular-nums; }
+
+  .rep-h1 {
+    margin: var(--bo-space-1) 0 var(--bo-space-2);
+    font-size: var(--bo-t-32);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  /* THE THANK-YOU AND THE RESULT ARE ONE SCREEN, THE SECTIONS ARE SLIDES.
+     Oleh, 2026-08-27: the message and the score should land together, and everything after them
+     should be far enough apart to be scrolled through like a presentation — which is also the
+     structure a scroll-driven animation will need, so the spacing is where that starts.
+
+     So the verdict closes UP against the opening (a rhythm between them, not three) and the
+     numbered sections open OUT. Nothing else about them changes. */
+  .rep-verdict {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: var(--bo-space-6);
+    align-items: start;
+    padding: var(--bo-space-3) 0 var(--bo-space-5);
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  .rep-number { margin-bottom: var(--bo-space-2); }
+
+  .rep-band {
+    margin: 0 0 var(--bo-space-2);
+    font-size: var(--bo-t-display-sm);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+  }
+
+  /* The sitting itself: how much they gave, which a grade never says back to them. */
+  .rep-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--bo-space-3);
+    padding-top: var(--bo-space-3);
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .rep-facts__n {
+    display: block;
+    font-size: var(--bo-t-32);
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rep-facts__l {
+    display: block;
+    margin-top: 6px;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  /* FIVE RHYTHMS TOP AND BOTTOM, not two. That is 120px each side, so two sections' content sits
+     240px apart and each one arrives on its own rather than as the next paragraph of the last.
+
+     It stays on the 24px rhythm the rest of this app is built on, and it is a single custom
+     property because the scroll-snap step will want to read it: whoever adds `scroll-snap-align`
+     to these sections should change `--rep-slide` and nothing else. */
+  .rep { --rep-slide: calc(var(--bo-rhythm) * 5); }
+
+  /* ── A NUMBERED SECTION · THE NUMERAL ON THE RULE ────────────────────────────────────────────
+     No numeral column, so every section runs the full measure. `position: relative` is here for
+     the numeral, which is lifted onto the hairline above it and given the page's own floor behind
+     it, so the rule appears to break around it rather than to run behind it. `--bo-root-bg` is the
+     floor `body` actually paints, not `--bo-base-100` — a panel colour would show as a lighter
+     notch in the rule.
+
+     THESE THREE DECLARATIONS USED TO SIT ON `.rep`, one specificity step
+     above the `@media (max-width: 62rem)` rule below that re-declares `grid-template-columns` and
+     `gap` for the same element. That media rule never had a say and still does not — folding the
+     treatment down to `.rep-sec` would have handed it one, and changed the layout under 62rem, so
+     its two dead declarations came out in the same edit. */
+  /* `scroll-margin-top` IS NOT COSMETIC HERE. The section's numeral sits ON its top border, half
+     above the line and half below, so an anchor that lands the border-box at y=0 cuts the numeral
+     in two against the top of the window — measured, not guessed, the first time `#rep-jump`'s link
+     was pressed. One rhythm of margin clears it and lands the section with the mark intact. It is
+     declared on every section rather than on the one that is linked today, because the next anchor
+     added to this page would otherwise arrive with the same bug and no reason to expect it. */
+  .rep-sec {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: var(--rep-slide) 0;
+    border-bottom: 1px solid var(--bo-base-300);
+    scroll-margin-top: var(--bo-rhythm);
+  }
+
+  .rep-sec:last-child { border-bottom: 0; }
+
+  /* INSET, SO THE RULE RUNS EITHER SIDE OF IT. Flush left the numeral sat at the start of the
+     hairline and read as a tab on it rather than a mark cut into it — the rule was truncated, not
+     interrupted. A rhythm of inset leaves a stub of rule to its left, which is what makes it read
+     as sitting ON the line. Padding both sides for the same reason. */
+  .rep-sec__n {
+    position: absolute;
+    top: 0;
+    left: var(--bo-space-3);
+    transform: translateY(-50%);
+    padding: 0 var(--bo-space-2);
+    background: var(--bo-root-bg);
+    line-height: 1;
+    font-size: var(--bo-t-13);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--bo-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rep-h2 {
+    margin: 0 0 var(--bo-space-3);
+    font-size: var(--bo-t-24);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  .rep-h2row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--bo-space-3);
+    margin-bottom: var(--bo-space-3);
+  }
+
+  .rep-h2row .rep-h2 { margin: 0; }
+
+  /* A heading directly followed by its own explanatory line closes up: the pair is one unit, and
+     the section's own air is what separates it from what comes next. */
+  .rep-h2:has(+ .rep-sub) { margin-bottom: var(--bo-space-1); }
+
+  .rep-sub {
+    margin: 0 0 var(--bo-space-3);
+    max-width: 42rem;
+    font-size: var(--bo-t-14);
+    line-height: 1.6;
+    color: var(--bo-muted);
+  }
+
+  .rep-gap {
+    margin: 0;
+    max-width: 42rem;
+    font-size: var(--bo-t-18);
+    line-height: 1.6;
+    color: var(--bo-base-content);
+    text-wrap: pretty;
+  }
+
+  .rep-gap__note {
+    margin: var(--bo-space-2) 0 0;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted);
+  }
+
+  .rep-table__head {
+    display: grid;
+    grid-template-columns: minmax(0, 200px) minmax(0, 1fr) minmax(0, 180px) 76px;
+    gap: 0 var(--bo-space-3);
+    align-items: baseline;
+    padding-bottom: var(--bo-space-1);
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  .rep-table__end { text-align: right; }
+
+  .rep-cov {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--bo-space-5);
+  }
+
+  .rep-cov__ok { color: var(--bo-success); }
+  .rep-cov__maybe { color: var(--bo-warning); }
+
+  .rep-cov__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bo-space-1);
+    margin-top: var(--bo-space-2);
+  }
+
+  /* ── 06 · THE CLOSING SECTION ────────────────────────────────────────────────────────────────
+     Centred, which is the only centred block on a page that is otherwise set left. That is the
+     point: the document has ended, and the change of axis says so before a word is read.
+
+     LESS BOTTOM PADDING THAN ITS SIBLINGS. `--rep-slide` gives every section 120px on each side,
+     which is right BETWEEN sections and wrong after the last one — under it there is only the
+     footer, and the reader was already looking at 200px of nothing. The top keeps its full slide;
+     the bottom takes half. */
+  .rep-sec--end {
+    padding-bottom: calc(var(--rep-slide) / 2);
+  }
+
+  .rep-end {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: var(--bo-space-3);
+  }
+
+  /* The same gesture the splash's explainer ends on: a short drop into the conclusion. It is a
+     `<span>` with a background rather than a border on the heading, so it keeps its own space in
+     the grid's `gap` rhythm and nothing has to be nudged around it.
+
+     TWO LAYERS, LIKE THE EXPLAINER. The element is the TRACK, neutral and always drawn; `::after`
+     is the LIT PASS, accent, and it is the only thing that moves. That is the same construction as
+     `.dia__base` under `.dia__on` on the splash — Oleh asked for this line to animate *"like the
+     diagram on the home page, so a blue pulse comes down from the top to the words"*.
+
+     THE LIT LAYER RESTS INVISIBLE, and it is declared here rather than inside the motion block on
+     purpose. With reduced motion the animation is never created, so whatever is declared HERE is
+     what a reader sees — a neutral line and nothing else, which is the honest still frame of a
+     gesture whose whole content is the movement. Compare the splash's explainer, which pins its
+     final lit state instead: there the accent path is information (it shows which way the flow
+     runs) and here it is punctuation. */
+  .rep-end__tail {
+    position: relative;
+    width: 1px;
+    height: calc(var(--bo-rhythm) * 2.5);
+    background: var(--bo-base-300);
+  }
+
+  /* THE BEAM. It is a SHORT SEGMENT that travels the length of the track, not a fill that grows
+     down it — Oleh, 2026-08-31: *"as soon as the blue line arrives it sort of lights up the words
+     underneath it. Then everything goes white again. Like a beam moving from top to bottom, and as
+     soon as it reaches the end the words go blue."*
+
+     The first build grew the line from 0 to full height and left it drawn, which is a PROGRESS BAR:
+     it says how far along something is. A beam says something travelled. They look similar for the
+     first frame and mean opposite things, and what he is after is the second.
+
+     40% of the track, with the accent fading out at both ends, so it has no hard edges to catch on
+     — a segment with square ends reads as a block sliding, and a gradient reads as light. It rests
+     parked above the track at zero opacity, which is also the whole reduced-motion state. */
+  .rep-end__tail::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 40%;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      var(--bo-primary) 40%,
+      var(--bo-primary) 60%,
+      transparent 100%
+    );
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+
+  /* IT IS A HEADING, NOT A PLATE. The drawing had this as a soft-primary lozenge echoing the
+     explainer's terminal node, and Oleh cut it: in the figure that shape is a node with a line
+     running into it, and standing alone above a paragraph a fill plus a border plus an 8px radius
+     is the vocabulary of a button. `.rep-h2` carries the size and weight; only the margin changes,
+     because the grid's `gap` owns the spacing here. */
+  /* ACCENT, on Oleh's note — *"and the heading can probably be blue"*. It is the one heading on
+     this page that is not ink, and that is the point: it is not a section of the report, it is what
+     the report was for. The pulse below runs down into it, so the line and the words it lands on
+     are the same colour and read as one gesture rather than as a decoration beside a title. */
+  .rep-end__h {
+    margin: 0;
+    color: var(--bo-primary);
+  }
+
+  .rep-end__body {
+    margin: 0;
+    max-width: 38rem;
+    font-size: var(--bo-t-16);
+    line-height: 1.6;
+    color: var(--bo-muted-strong);
+  }
+
+  /* The field and the button that acts on it, on one line. `margin: 0` because the section's grid
+     owns the spacing between rows.
+
+     IT WRAPS RATHER THAN SHRINKS. Below about 30rem the field and the button cannot both hold their
+     minimums on one line, and a squeezed field showing half a hostname is worse than two rows. On
+     the wrap the button takes the full width under the field, which is also the bigger target — see
+     the touch pass: this is the last control on the page and the one most likely to be pressed with
+     a thumb. */
+  .rep-end__act {
+    display: flex;
+    /* STRETCH, NOT CENTRE. `.bo-field` renders 49px here and `.bo-btn` 45 — their paddings and
+       line-heights land differently on the same 2.75rem floor — and 4px of mismatch between two
+       boxes sitting on one line is exactly the kind of thing that reads as sloppy without being
+       nameable. Stretching lets the row settle on one height and takes the button up with it, which
+       also makes the target bigger rather than smaller. */
+    align-items: stretch;
+    /* One rung tighter than the section's other gaps. The field and the button are ONE control in
+       two parts, and a rhythm's worth of air between them reads as two separate offers. */
+    gap: var(--bo-space-1);
+    margin: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 30rem;
+  }
+
+  /* `flex: 1` with a `min-width` floor rather than a fixed width: the field takes whatever the
+     button leaves and stops at a width that still shows a hostname, which is the point at which the
+     row wraps instead of continuing to squeeze. */
+  .rep-end__url {
+    flex: 1;
+    min-width: 14rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    cursor: text;
+  }
+
+  /* A read-only field is not an editable one and should not offer the focus ring of a control that
+     takes input — but it IS selectable and reachable, so the ring stays on keyboard focus and only
+     the hover treatment goes. */
+  .rep-end__url:hover {
+    border-color: var(--bo-base-300);
+  }
+
+  /* ── THE COPY BUTTON AND ITS ONE STATE ───────────────────────────────────────────────────────
+     Two labels in one grid cell, so the box is as wide as the wider word and a press cannot resize
+     it. Oleh asked for the confirmation to *"turn green and fade out"*, and the fade is the whole
+     reason the colour goes on a transition rather than being swapped: green arriving instantly and
+     leaving slowly is what makes it read as an acknowledgement rather than as a second button. */
+  .rep-end__copy {
+    display: grid;
+    place-items: center;
+    transition:
+      color 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .rep-end__copy > span {
+    grid-area: 1 / 1;
+    transition:
+      opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0.25s;
+  }
+
+  .rep-end__copy[data-state='idle'] > [data-label='done'],
+  .rep-end__copy[data-state='done'] > [data-label='idle'] {
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  .rep-end__copy[data-state='done'] {
+    color: var(--bo-success);
+    border-color: var(--bo-success);
+  }
+
+  @media (max-width: 30rem) {
+    .rep-end__act > .bo-btn {
+      width: 100%;
+    }
+  }
+
+  /* The opening states what the page is and then gets out of the way. `.rep-open__aside` sat here
+     and carried the report-by-email line; it went with the line on 2026-08-31 rather than being
+     left as a rule with nothing to style. */
+  .rep-open { padding-top: var(--bo-space-5); }
+
+  .rep-instrument {
+    display: grid;
+    align-content: start;
+    gap: var(--bo-space-4);
+  }
+
+  /* ── 02 · the summary and the gap, side by side ──────────────────────────────────────────── */
+  .rep-short {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: var(--bo-space-5);
+    align-items: start;
+  }
+
+  .rep-short__prose {
+    margin: 0;
+    font-size: var(--bo-t-18);
+    line-height: 1.6;
+    color: var(--bo-base-content);
+    text-wrap: pretty;
+  }
+
+  /* The one line that ties a problem to where it gets solved. Oleh asked for exactly this: the
+     summary should not name a failure and leave the reader hunting for what to do about it. */
+  .rep-short__trace {
+    margin: var(--bo-space-2) 0 0;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted);
+  }
+
+  .rep-short__gap { border-left: 2px solid var(--bo-primary); padding-left: var(--bo-space-3); }
+  .rep-short__gaplabel { margin: 0 0 var(--bo-space-1); color: var(--bo-primary); }
+
+  .rep-gap { font-size: var(--bo-t-14); }
+  .rep-gap__note { font-size: var(--bo-t-14); }
+
+  /* ── 01 · THE CLOCKS ─────────────────────────────────────────────────────────────────────────
+     ONE TRACK PER VISIBLE COLUMN. The partner column only exists for agencies, so a fixed track
+     count has to be maintained in two places and gets one of them wrong the day a column is added:
+     this file carried `repeat(2)` and `repeat(3)` behind `data-agency`, and the email column moved
+     that to three and four before the two inbox columns merged back into one. `grid-auto-flow:
+     column` counts the children that are actually there — `[hidden]` is `display: none` and lays no
+     track — so the layout is right for two or three without anybody being told, and a column added
+     or removed later does not need this rule edited at all.
+
+     NO RULE ABOVE THE COLUMNS. There was a `border-top` here and Oleh took it out, correctly:
+     *"delete the horizontal line between 'What happens next' and the cards, it just contradicts
+     the other lines we have here."* Every other full-measure hairline on this page is a
+     `.rep-sec` bottom border and means one section has ended. This one ran the same weight between
+     a heading and the thing it heads, where nothing ends, so the page had two identical rules
+     saying two different things. The vertical dividers below stay: they separate parallel things,
+     which is a different statement and a different axis.
+
+     The air the border used to hold is stated once here, on the rhythm, rather than falling out of
+     a border plus each column's own padding. PADDING RATHER THAN MARGIN, and that is the whole
+     reason the number is right: a `margin-top` here is an adjacent-sibling margin against the
+     `.rep-h2`'s own `space-3` bottom margin, the two collapse to one, and the gap silently halves.
+     Padding does not collapse, so heading + grid is `space-3` + `space-3` — two rhythms, which is
+     what the border and the column padding used to add up to between them. */
+  .rep-clocks {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    padding-top: var(--bo-space-3);
+  }
+
+  /* The columns no longer pad away from a rule above them, so the divider between them starts at
+     the top of the first eyebrow rather than in mid-air below a line. */
+  .rep-clock {
+    display: grid;
+    align-content: start;
+    gap: var(--bo-space-2);
+    padding: 0 var(--bo-space-4) 0 0;
+  }
+
+  /* The rule between columns is the only division. No boxes: three cards of equal weight is what
+     made these read as interchangeable in the first place. */
+  .rep-clock + .rep-clock {
+    padding-left: var(--bo-space-4);
+    border-left: 1px solid var(--bo-base-300);
+  }
+
+  /* A HIDDEN COLUMN LAYS NO TRACK BUT IS STILL A SIBLING. `+` and `:last-child` are structural:
+     they count elements, not boxes, and `[hidden]` only takes the box away. `#rep-jump` leads this
+     row and starts hidden, so without this rule the Baseout column — visually the first thing in
+     the row — inherits a divider and a gutter for a neighbour that is not being drawn, and the row
+     opens on a vertical rule standing in the margin. Only the FIRST column can be hidden today, so
+     one guard covers it; a hidden column in the middle would need the pair either side. */
+  .rep-clock[hidden] + .rep-clock {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .rep-clock:last-child { padding-right: 0; }
+
+  /* THE MIDDLE COLUMN IS THE ONE THAT IS MUTED, and that needed saying the other way round: the
+     base `.bo-eyebrow` is ALREADY the accent, so a `--live` modifier painting it accent did nothing
+     and all three labels came out the same blue. Two of these are things you can act on now; the
+     report is a wait, and it takes `--muted` so the row says so at a glance. */
+
+  .rep-clock__h {
+    margin: 0;
+    font-size: var(--bo-t-18);
+    font-weight: 600;
+  }
+
+  .rep-clock__line {
+    margin: 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.6;
+    color: var(--bo-muted);
+  }
+
+  .rep-clock__to {
+    margin: 0;
+    font-size: var(--bo-t-14);
+    color: var(--bo-base-content);
+  }
+
+  /* ── TWO DELIVERIES INSIDE ONE COLUMN ────────────────────────────────────────────────────────
+     One rhythm between them and nothing else: no labels, no rule, no box. The labelled version of
+     this was the long one — a second labelling system inside a column that the row already labels,
+     and every label needed a sentence under it to earn its place. Two lines of `.rep-clock__line`,
+     the same body type the columns beside this one use, with the button belonging to the first of
+     them because they share a `<div>` and the gap only falls between the two deliveries. */
+  .rep-post {
+    display: grid;
+    gap: var(--bo-space-3);
+  }
+
+  .rep-clock__video { margin-top: var(--bo-space-1); }
+  .rep-clock__cta { justify-self: start; margin-top: var(--bo-space-1); }
+
+  /* STACKED, THE DIVIDER TURNS WITH THE AXIS. This `border-top` is between two columns, not
+     between the heading and the columns, so it is the horizontal twin of the vertical rule above
+     and it stays. `grid-auto-flow: row` is what `grid-template-columns: minmax(0, 1fr)` used to
+     say, now that the track count is implicit. */
+  @media (max-width: 62rem) {
+    .rep-clocks {
+      grid-auto-flow: row;
+      grid-auto-columns: auto;
+    }
+
+    /* A RHYTHM ON BOTH SIDES OF THE RULE. Stacked, the divider used to sit hard against the bottom
+       of the column above it — invisible while that column ended in a paragraph, obvious now that
+       one of them ends in a button. The gap is `space-3` above and below, so the horizontal rule is
+       centred in a rhythm the way the vertical ones are centred in the column gutters. */
+    .rep-clock { padding: 0; }
+
+    /* `padding-left` HAS TO BE RESET HERE, and it is a bug fix rather than housekeeping. The
+       desktop rule that draws the divider between columns also insets them from it, and
+       `.rep-clock + .rep-clock` out-specifies the `.rep-clock { padding: 0 }` above — so stacked,
+       every card except the first sat 36px further right than the section heading, in a ragged step
+       nobody had noticed because on a desktop the same declaration is correct. Measured: card one
+       at padding-left 0 and the other three at 36. */
+    .rep-clock + .rep-clock {
+      padding-left: 0;
+      border-left: 0;
+      border-top: 1px solid var(--bo-base-300);
+    }
+
+    /* The same guard, turned with the axis: stacked, a hidden first column would leave a rule
+       floating above the first column that is actually drawn. */
+    .rep-clock[hidden] + .rep-clock {
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    /* ── 01 GETS SMALLER SO THE SEAMS AROUND IT CAN GET BIGGER ────────────────────────────────
+       Oleh: *"I think the elements need to be made smaller overall. Right now we say 'what happens
+       next' and then in front of the user is a pile of vertical text they have to work out how to
+       use. The video preview could be made small. It all needs to be more compact so they see: ah,
+       these are my next steps."*
+
+       He is describing the shape of the problem exactly. Stacked, four columns become four full
+       sections of prose, each opening with a label and a heading, and the run reads as an article
+       rather than as a short list of things a person can do. Measured before this pass: the four
+       cards came to 1105px and section 01 to 1264 on an 844px viewport.
+
+       Three cuts, and none of them removes anything a reader needs:
+
+         THE HEADING drops 18px to 16. At column widths those headings sit beside each other and
+         carry the row; stacked, each one is alone above its own paragraph and only has to be
+         heavier than the body under it.
+
+         THE VIDEO becomes a THUMBNAIL. It keeps 16/9, because that shape is what says "a video goes
+         here" and a bar would not, but it stops spanning the column: 12rem wide is 192 x 108, which
+         is a preview rather than a player and takes about 50px off the tallest card.
+
+         THE SEAM BETWEEN CARDS halves, 24px a side to 12. Four cards separated by 48px of air plus
+         a rule were competing with the 144px that now separates whole SECTIONS — and a boundary
+         only reads as a boundary when it is bigger than the ones inside it. */
+    .rep-clock:not(:last-child) { padding-bottom: var(--bo-space-2); }
+    .rep-clock + .rep-clock { padding-top: var(--bo-space-2); }
+
+    .rep-clock__h {
+      font-size: var(--bo-t-16);
+    }
+
+    .rep-clock__video {
+      max-width: 12rem;
+    }
+  }
+
+  @media (max-width: 62rem) {
+    .rep-short {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--bo-space-4);
+    }
+  }
+
+  @media (max-width: 62rem) {
+    /* ── MORE AIR BETWEEN SECTIONS, NOT LESS ────────────────────────────────────────────────────
+       This was `--bo-space-5` on the reasoning that "a slide's worth of air is presentation on a
+       desktop and dead scrolling on a phone, where the viewport already separates one section from
+       the next". The premise is false on this page and the measurement says so: section 01 is
+       1264px tall on an 844px viewport, so the viewport never holds a whole section and never
+       separates anything. 48px against 1264 is 3.8% — a boundary that reads as a paragraph break.
+
+       Oleh, 2026-08-31: *"there should be bigger gaps between sections. The analytics sections, the
+       what-to-do-next section. Right now it is all in one lump and it is hard to understand what is
+       going on."*
+
+       So the seam grows to 72 a side, 144 between sections, WHILE the content inside 01 shrinks —
+       see the block below. That pairing is the whole fix: what makes a boundary read is not its
+       absolute size but its size against the rhythm either side of it. Making everything bigger
+       would have changed nothing. */
+    .rep { --rep-slide: var(--bo-space-6); }
+
+    .rep-verdict,
+    .rep-cov {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--bo-space-4);
+      align-items: start;
+    }
+  }
+</style>
+
+<style is:global>
+  /* ── THE REPORT'S BUILT ROWS ─────────────────────────────────────────────────────────────────
+     Script-built, so a scoped rule cannot reach them. */
+  .rep-row {
+    display: grid;
+    grid-template-columns: minmax(0, 200px) minmax(0, 1fr) minmax(0, 180px) 76px;
+    gap: 0 var(--bo-space-3);
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--bo-base-200);
+  }
+
+  .rep-row:last-child { border-bottom: 0; }
+
+  .rep-row__name { font-size: var(--bo-t-16); font-weight: 600; }
+
+  .rep-row__said {
+    font-size: var(--bo-t-14);
+    line-height: 1.45;
+    color: var(--bo-muted);
+  }
+
+  .rep-row__ticks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+  }
+
+  .rep-row__tick {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--bo-base-300);
+  }
+
+  .rep-row__score {
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rep-chip {
+    padding: 6px 12px;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-6);
+    font-size: var(--bo-t-13);
+    color: var(--bo-muted);
+  }
+
+  .rep-chip[data-on='true'] {
+    border-color: color-mix(in oklch, var(--bo-success) 45%, transparent);
+    color: var(--bo-base-content);
+  }
+
+  .rep-fix {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) minmax(0, 180px);
+    gap: var(--bo-space-3);
+    align-items: start;
+    padding: var(--bo-space-3) 0;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .rep-fix__n {
+    font-size: var(--bo-t-32);
+    font-weight: 300;
+    line-height: 1;
+    color: var(--bo-ornament);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rep-fix__body { margin: 0; font-size: var(--bo-t-16); line-height: 1.6; }
+
+  .rep-fix__where {
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+    text-align: right;
+  }
+
+
+  /* ══ THE TRAFFIC LIGHT ════════════════════════════════════════════════════════════════════════
+     `--bo-error`, `--bo-warning` and `--bo-success` mean STATE everywhere else in this app: broken,
+     needs attention, succeeded. Using them for a graded MEASUREMENT is a borrow, and it is only
+     defensible where the claim is specific: a practice scoring 0 of 3 really is a gap, and a band
+     really is a qualitative rung. THE AGGREGATE SCORE DOES NOT TAKE THEM and must not — its cutoffs
+     are provisional (`IS_PROVISIONAL`), so a red 34 would be a loud verdict resting on the one thing
+     we are least sure of, and a rubric change alone would flip a team from red to green. The number
+     and the instrument stay accent.
+
+     `--bo-primary` sits at 2 rather than at the top so the accent keeps
+     meaning "this page's colour" and `--bo-success` can mean "nothing left to do here".
+
+     `.rep-cov__ok` / `.rep-cov__maybe` already read success / warning for the same reason, and this
+     is the same vocabulary rather than a second one. */
+  .rep-row[data-score='0'] .rep-row__tick[data-on='true'] { background: var(--bo-error); }
+  .rep-row[data-score='1'] .rep-row__tick[data-on='true'] { background: var(--bo-warning); }
+  .rep-row[data-score='2'] .rep-row__tick[data-on='true'] { background: var(--bo-primary); }
+  .rep-row[data-score='3'] .rep-row__tick[data-on='true'] { background: var(--bo-success); }
+
+  /* The numeral takes the same colour as its own ticks. A row scoring 0 has no lit tick at all, so
+     without this the one row that most needs to be findable is the one with no colour on it. */
+  .rep-row[data-score='0'] .rep-row__score,
+  .rep-fix[data-score='0'] .rep-fix__where { color: var(--bo-error); }
+
+  .rep-row[data-score='1'] .rep-row__score,
+  .rep-fix[data-score='1'] .rep-fix__where { color: var(--bo-warning); }
+
+  .rep-row[data-score='2'] .rep-row__score,
+  .rep-fix[data-score='2'] .rep-fix__where { color: var(--bo-primary); }
+
+  .rep-row[data-score='3'] .rep-row__score,
+  .rep-fix[data-score='3'] .rep-fix__where { color: var(--bo-success); }
+
+  /* THE BAND NAME, AND NOT THE NUMBER BESIDE IT. The band is a qualitative rung and can carry a
+     qualitative colour; the score it was cut out of is provisional and stays neutral. */
+  #result-band[data-band='Ad hoc'] { color: var(--bo-error); }
+  #result-band[data-band='Aware'] { color: var(--bo-warning); }
+  #result-band[data-band='Engineered'] { color: var(--bo-success); }
+
+  /* MANAGED IS DELIBERATELY NOT PAINTED. Its ramp position is the accent, and the score above it is
+     already the accent, so colouring it turned the whole left column into one blue at exactly the
+     middle band — which is the "too much blue" this treatment was added to fix. Leaving it in the
+     ordinary ink also gives the accent a single job on this page: it is the number. The other three
+     bands keep their colour because none of them collides. */
+  #result-band[data-band='Managed'] { color: var(--bo-base-content); }
+
+  /* ── SCROLL SNAP IS OFF, AND IT IS NOT COMING BACK IN THIS SHAPE ─────────────────────────────
+     The brief (`research/survey-app/animation-brief.md`) asks for "a light scroll settles on the
+     next section". Both attempts at it — `scroll-snap-align: center` and `start` — made the page
+     worse in the same way, and Oleh hit it immediately: the scroll grabs, hangs on a section, and
+     fights anyone trying to get past it.
+
+     THE CAUSE IS ARITHMETIC, NOT TUNING. A snap area taller than the scrollport cannot satisfy its
+     alignment, so the browser keeps pulling back to the edge it can reach. Measured on an 844px
+     viewport: `rep-table-sec` is 1009px and `rep-next-sec` is 976px. Two of the five sections are
+     traps by construction, and `center` is worse than `start` because neither edge is reachable.
+
+     Proximity does not save it either: it changes WHEN the snap engages, never whether the area it
+     engages on is satisfiable.
+
+     So the reveals stay and the snap goes. Getting the effect Oleh asked for needs every section to
+     FIT the viewport — that is a content decision, not a CSS one, and it is his call rather than
+     something to fake with a scroll handler. Hijacking the wheel to animate between sections is the
+     other way people do this, and it is worse: it takes the page away from anyone using a keyboard,
+     a trackpad with momentum, or a screen reader. */
+
+  @media (max-width: 48rem) {
+    .rep-row,
+    .rep-fix {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+
+    .rep-row__score,
+    .rep-fix__where { text-align: left; }
+
+    /* THE HEAD HAS TO COLLAPSE WITH ITS ROWS. It was left out of this block, so below 48rem it kept
+       four tracks while the rows beneath it stacked into one: at 390px the labels overlapped into
+       "WHASTCORE" and stopped labelling anything. A column head only means something while it sits
+       above the column it names, so once the columns are gone it goes too. */
+    .rep-table__head { display: none; }
+  }
+
+  /* ══ MOTION ════════════════════════════════════════════════════════════════════════════════
+     `research/survey-app/animation-brief.md` is the spec.
+
+     THREE THINGS THIS BLOCK IS ARRANGED AROUND.
+
+     · THE RESTING STATE IN THE MARKUP IS THE FINISHED ONE. Every hidden start state below sits
+       behind `[data-anim='on']`, and that attribute is stamped from script. A reader whose
+       JavaScript never arrives is served the whole report rather than an empty page waiting for an
+       observer that will not run.
+     · REDUCED MOTION MEANS NONE OF IT, and it is said twice. The whole block is inside
+       `prefers-reduced-motion: no-preference`, and the script separately refuses to stamp the
+       attribute or build the observer. Either guard alone would hold; the point is that neither is
+       the only one.
+     · NOTHING HERE MOVES A LAYOUT BOX. `opacity` and `transform` do all of it, including the two
+       places where not doing it would have been easier: the ladder fill SCALES rather than growing
+       its `width`, and the needle TRANSLATES rather than shifting its `left`.
+
+     THE STAGGER IS ARITHMETIC IN CSS, NOT A LOOP IN JS. Every revealed element resolves one
+     expression — `(--base + --n) × --rep-step + --after` — and each term is set by an ordinary
+     selector: `--n` by `:nth-child()`, `--after` by the two things that must follow their own
+     neighbour, `--base` by the single ordering CSS cannot count for itself. So the script marks
+     five sections and nothing else; it never walks a list of children.
+
+     WHY THIS IS IN THE GLOBAL BLOCK. The table rows, the coverage chips and the advice rows are
+     built with `createElement`, so they never carry Astro's scope attribute and a rule in the
+     scoped block cannot see them. Three separate defects have been filed against that. */
+  @media (prefers-reduced-motion: no-preference) {
+    /* ── THE CLOCKS ───────────────────────────────────────────────────────────────────────────
+       (This comment used to describe a `scroll-snap-align` rule that was taken out with the snap —
+       see the note above the responsive block — and nothing replaced the text, so it sat over the
+       timing variables describing something that had not been here for two edits.) */
+
+    .rep[data-anim='on'] {
+      --rep-in: 520ms;
+      --rep-step: 60ms;
+      /* Ease-out quint. Decelerates onto its mark; no overshoot, which on a page reporting a
+         measurement would read as the measurement wobbling. */
+      --rep-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* THE WORDS COME AFTER THE NUMBER, which is the whole argument for animating this at all: the
+       reader is meant to read 67 and then read what 67 means. 1080ms is the count-up's 1100 less a
+       frame, so the band name is already moving as the last digit settles. Keyframes rather than a
+       transition because there is no state change to hang a transition on: this fires on load. */
+    .rep[data-anim='on'] .rep-band,
+    .rep[data-anim='on'] .bo-verdict__blurb,
+    .rep[data-anim='on'] .verdict-compare {
+      animation: rep-rule-arrive var(--rep-in) var(--rep-ease) both;
+      animation-delay: calc(1080ms + var(--n, 0) * 110ms);
+    }
+
+    .rep[data-anim='on'] .bo-verdict__blurb { --n: 1; }
+    .rep[data-anim='on'] .verdict-compare { --n: 2; }
+
+    @keyframes rep-rule-arrive {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    /* ── 3 · THE SECTION REVEALS ──────────────────────────────────────────────────────────────
+       ONE LIST, TWO RULES: what is hidden, and what it becomes once its own section has been
+       marked. The `:is()` is kept free of ids so its specificity stays at a single class and the
+       `--after` overrides below can be plain selectors rather than an escalation.
+
+       THE HEADINGS ARE NOT IN THIS LIST, ON PURPOSE. `.rep-h2` is the thing the reader's eye lands
+       on as the section arrives, and the brief's own "not wanted" list ends with motion on
+       anything the reader is trying to read at that moment. The heading holds still and the
+       content arrives against it. */
+    .rep[data-anim='on'] :is(
+      .rep-short__prose,
+      .rep-short__trace,
+      .rep-table__head,
+      .rep-row,
+      .rep-cov__ok,
+      .rep-cov__maybe,
+      .rep-chip,
+      .rep-fix > *,
+      .rep-clock
+    ) {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    .rep[data-anim='on'] .rep-sec[data-arrived='true'] :is(
+      .rep-short__prose,
+      .rep-short__trace,
+      .rep-table__head,
+      .rep-row,
+      .rep-cov__ok,
+      .rep-cov__maybe,
+      .rep-chip,
+      .rep-fix > *,
+      .rep-clock
+    ) {
+      opacity: 1;
+      transform: none;
+      transition:
+        opacity var(--rep-in) var(--rep-ease),
+        transform var(--rep-in) var(--rep-ease);
+      transition-delay: calc((var(--base, 0) + var(--n, 0)) * var(--rep-step) + var(--after, 0ms));
+    }
+
+    /* ── 06 · THE PULSE, AND THE WORDS IT LANDS ON ─────────────────────────────────────────────
+       The line draws top to bottom, the heading turns from ink to accent as it arrives, the line
+       dissolves, the heading fades back, and it all goes round again. Oleh, 2026-08-31: *"let the
+       animation keep going, cyclically. And maybe the line runs, the text is white, and then when
+       it reaches the text the text goes blue — slowly, where the line reaches it, to continue that
+       vertical effect."*
+
+       ONE CLOCK, TWO ANIMATIONS, NO DELAYS. Both are 6s and each encodes its own window in its own
+       keyframes — the same construction as the splash's explainer, and for the same reason its
+       comment gives: equal periods plus different `animation-delay` values drift apart on some
+       engines, one shared period cannot. 6s is that figure's tempo too, so the two moments on this
+       site that use this gesture breathe at the same rate.
+
+       THE SCHEDULE, in seconds of the 6:
+         0.0 - 0.4   the beam fades in at the top of the track
+         0.0 - 1.2   it travels the length of it and exits the bottom
+         0.86- 1.2   the heading lights, opening as the beam's tip lands and closing as it clears
+         1.2 - 3.7   the heading holds accent
+         3.7 - 5.0   it fades back to ink, alone, nothing else moving
+         5.0 - 6.0   rest, then again
+
+       The travel is the fast part and the return is the slow one: a beam that dawdles is not a beam,
+       and a colour that snaps back is a blink. The whole point of looping is that the CAUSE stays
+       visible — a heading left permanently accent after the first pass would have the beam arriving
+       at a conclusion already drawn, on every cycle after the first.
+
+       IT DEPARTS FROM THIS PAGE'S OWN RULE ABOUT HEADINGS, and that is worth being explicit about.
+       The reveal block above says headings are excluded on purpose — "motion on anything the reader
+       is trying to read". A hue shift is a different thing from that ban: nothing moves, nothing
+       changes opacity, the glyphs never leave the place the eye put them, and the type stays over
+       4.5:1 against the ground at both ends. Oleh asked for it and gave the reason — the colour is
+       what carries the gesture from the line into the words.
+
+       THE INK START LIVES IN HERE, NOT OUTSIDE. `.rep-end__h` is accent at rest, which is the state
+       a reduced-motion reader gets and the one Oleh chose. Declaring the ink start inside this
+       `no-preference` block means the animated case begins ink from its first paint — so there is
+       no frame where an accent heading snaps to ink as the section arrives. */
+    .rep[data-anim='on'] .rep-end__h {
+      color: var(--bo-base-content);
+    }
+
+    .rep[data-anim='on'] .rep-sec[data-arrived='true'] .rep-end__tail::after {
+      animation: repTail 6s linear infinite;
+    }
+
+    .rep[data-anim='on'] .rep-sec[data-arrived='true'] .rep-end__h {
+      animation: repEndInk 6s linear infinite;
+    }
+
+    /* `translateY` is a percentage of the BEAM's own height, not the track's: the beam is 40% of a
+       60px track, so 250% of 24px carries its top edge to 60px — the bottom of the track — and the
+       whole segment is clear of it. Parked at -100% it sits entirely above. Linear timing, because
+       a beam that eases is a beam that is braking. */
+    @keyframes repTail {
+      0% {
+        transform: translateY(-100%);
+        opacity: 0;
+      }
+      7% {
+        opacity: 1;
+      }
+      20% {
+        transform: translateY(250%);
+        opacity: 1;
+      }
+      24%,
+      100% {
+        transform: translateY(250%);
+        opacity: 0;
+      }
+    }
+
+    /* IT LIGHTS AS THE BEAM TOUCHES IT, AND THE NUMBER IS DERIVED RATHER THAN PICKED.
+
+       Oleh, on the first pass: *"the gap between the line reaching the bottom and the blue coming
+       on feels a bit long. It should be a bit faster."* He is right, and the cause is that 18% was
+       measured against the wrong edge of the beam.
+
+       The beam is 24px tall and travels from top=-24 to top=60 over the first 20% of the cycle. Its
+       LEADING edge crosses the end of the 60px track when top=36 — which is 60/84 of the way, so
+       14.3% of the cycle. The old turn opened at 18%: 220ms after the light had already arrived,
+       and 220ms is exactly long enough to read as a wait rather than as a consequence.
+
+       So it opens at 14% — the frame the beam's tip lands — and completes at 20%, the frame the
+       beam finishes clearing. 360ms instead of 480, and every one of them spent while the light is
+       still crossing the words rather than after it has gone. */
+    @keyframes repEndInk {
+      0%,
+      14% {
+        color: var(--bo-base-content);
+      }
+      20%,
+      62% {
+        color: var(--bo-primary);
+      }
+      84%,
+      100% {
+        color: var(--bo-base-content);
+      }
+    }
+
+    /* `--n` is the position in the queue. Anything a section opens with sits at 0; the repeated
+       children below count from 1, so a column head is always a step ahead of its own first row. */
+    .rep[data-anim='on'] :is(.rep-row, .rep-chip, .rep-fix, .rep-clock):nth-child(1) { --n: 1; }
+    .rep[data-anim='on'] :is(.rep-row, .rep-chip, .rep-fix, .rep-clock):nth-child(2) { --n: 2; }
+    .rep[data-anim='on'] :is(.rep-row, .rep-chip, .rep-fix, .rep-clock):nth-child(3) { --n: 3; }
+    .rep[data-anim='on'] :is(.rep-row, .rep-chip, .rep-fix, .rep-clock):nth-child(4) { --n: 4; }
+    .rep[data-anim='on'] :is(.rep-row, .rep-chip, .rep-fix, .rep-clock):nth-child(5) { --n: 5; }
+    .rep[data-anim='on'] :is(.rep-row, .rep-chip, .rep-fix, .rep-clock):nth-child(6) { --n: 6; }
+    .rep[data-anim='on'] :is(.rep-row, .rep-chip, .rep-fix, .rep-clock):nth-child(7) { --n: 7; }
+
+    /* ── 03 · WHAT WE MEASURED ────────────────────────────────────────────────────────────────
+       Six rows from the top, a step apart, and then each row reads its own score out: the ticks
+       light left to right AFTER their row has landed, which is what `--after` is for. This is the
+       section the respondent came for, and it is the only place on the page where two clocks are
+       nested rather than queued. */
+    .rep[data-anim='on'] .rep-table__head { --n: 0; }
+
+    .rep[data-anim='on'] .rep-row__tick[data-on='true'] {
+      transform: scaleX(0);
+      transform-origin: 0 50%;
+    }
+
+    .rep[data-anim='on'] .rep-sec[data-arrived='true'] .rep-row__tick[data-on='true'] {
+      transform: none;
+      transition: transform 240ms var(--rep-ease);
+      /* `--n` is inherited from the row, so a tick knows when its own row landed without anyone
+         telling it twice. */
+      transition-delay: calc(var(--n, 0) * var(--rep-step) + var(--rep-in) + var(--t, 0) * 90ms);
+    }
+
+    .rep[data-anim='on'] .rep-row__tick:nth-child(1) { --t: 0; }
+    .rep[data-anim='on'] .rep-row__tick:nth-child(2) { --t: 1; }
+    .rep[data-anim='on'] .rep-row__tick:nth-child(3) { --t: 2; }
+
+    /* ── 02 · IN SHORT ────────────────────────────────────────────────────────────────────────
+       The prose rises; the line that points at section 04 follows it, because it is a footnote to
+       the prose and reads as one only if it arrives as one. */
+    .rep[data-anim='on'] .rep-short__prose { --n: 0; }
+    .rep[data-anim='on'] .rep-short__trace { --n: 1; }
+
+    /* THE CONFIDENCE GAP IS WIPED IN BY ITS OWN EDGE. The panel's 2px accent border is already the
+       leftmost thing in it, so a cover painted the page's floor colour and slid off to the right
+       leaves the edge standing first and draws the text out of it — the edge reads as the pen.
+       `--bo-root-bg` is what `body` actually paints; a panel colour here would show as a pale
+       block over the floor. It is a `transform` rather than the `clip-path` this effect would
+       ordinarily be written with, because the brief asks for transform and opacity and nothing
+       else. */
+    /* `overflow: clip` IS LOAD-BEARING, NOT TIDINESS, AND THAT COST A DEFECT TO LEARN. The cover
+       ends its wipe at `translateX(100%)`, which parks a 490px panel-width block entirely outside
+       its parent's right edge. A transformed box moves no layout box — and still counts toward
+       the SCROLLABLE OVERFLOW AREA. Measured without this line at 1440: `scrollWidth` 1789
+       against `clientWidth` 1425, so 364px of horizontal scrollbar and the whole report shoved
+       left. "No layout shift" and "no overflow" are not the same claim. `clip` rather than
+       `hidden` because
+       `hidden` would make the panel a scroll container and a formatting context it has no reason
+       to be; `clip` cuts at the padding box, which is exactly the rectangle the cover fills, and
+       leaves the accent border it slides out of untouched. */
+    .rep[data-anim='on'] .rep-short__gap {
+      position: relative;
+      overflow: clip;
+    }
+
+    .rep[data-anim='on'] .rep-short__gap::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--bo-root-bg);
+      transform: translateX(0);
+      transition: transform 620ms var(--rep-ease);
+      transition-delay: calc(var(--rep-step) * 2);
+      pointer-events: none;
+    }
+
+    .rep[data-anim='on'] .rep-sec[data-arrived='true'] .rep-short__gap::after {
+      transform: translateX(100%);
+    }
+
+    /* ── 04 · WHAT YOUR BACKUPS HOLD ──────────────────────────────────────────────────────────
+       Captured, then not confirmed: "here is what you have" before "here is what you have not
+       confirmed", which is the reading order the section is written in. The two columns are
+       siblings and CSS cannot count the first one's chips to offset the second, so `--base` is the
+       one number the script hands over — set once on the column, inherited by its label and every
+       chip under it. */
+    .rep[data-anim='on'] :is(.rep-cov__ok, .rep-cov__maybe) { --n: 0; }
+
+    /* ── 05 · WHAT TO FIX FIRST ───────────────────────────────────────────────────────────────
+       The advice is read before it is labelled. The numeral and the sentence arrive on the row's
+       own step; the practice it belongs to follows a fifth of a second behind, so the reader takes
+       in what to do and only then which of the six it repairs. */
+    .rep[data-anim='on'] .rep-fix__where { --after: 200ms; }
+
+    /* ── 01 · WHAT HAPPENS NEXT ───────────────────────────────────────────────────────────────
+       Left to right is the order of their clocks: what is already on this page, then what is ready
+       now, then when the survey report ships, then the one that only exists for agencies.
+       `:nth-child()` above already counts them, and the grid is source-ordered, so the columns
+       arrive in the order they are meant to be read in.
+
+       IT COUNTS SOURCE ORDER, NOT VISIBLE ORDER, which is the one thing to know before adding a
+       fifth: `#rep-jump` is `[hidden]` until the script reveals it, so on the first paint it is
+       still `:nth-child(1)` and everything after it is numbered as though it were there. That is
+       harmless — the stagger is a delay, not a position — but a rule that tried to read a column's
+       PLACE off this number would be wrong for as long as the card stays hidden. */
+  }
+</style>
+
+<script>
+  import { ANSWERS_KEY, RESULT_KEY } from '../lib/storage';
+  import { scoreSurvey } from '../lib/maturity';
+  import type { Band } from '../lib/maturity';
+  import { answeredCount, confidenceGap, coverage, summarise } from '../lib/report';
+  import { DIMENSION_CLAUSES } from '../lib/maturity';
+  import { comparison } from '../lib/distribution';
+  import type { Answers } from '../lib/questions';
+
+  const KEY = ANSWERS_KEY;
+
+  /**
+   * THE STORED RESULT CARRIES ITS OWN SHAPE VERSION, AND THAT IS NOT BOOKKEEPING.
+   *
+   * This page scores once and keeps the RESULT, throwing the answers away. So when the report grew
+   * fields — `answered`, `summary`, `gap`, `cov` — anyone holding a result from the build before
+   * that had a value this page could read but not use, and every section backed by a new field
+   * hid itself. Silently: the guards are right (a section with no data must not print an empty
+   * heading), which is exactly what makes the failure invisible. Reported twice, as "where is the
+   * summary" and "I want to see those metrics".
+   *
+   * Bump this whenever a field is added to what gets stored. A stale shape then reads as no result
+   * at all, and the page re-scores from the answers if they are still in hand.
+   */
+  const RESULT_SHAPE = 3;
+
+  /**
+   * ONE EXPRESSION FOR AN ADDRESS, READ BY BOTH CONFIRMATIONS. This is the same test `/survey`
+   * applies when it collects the address in the first place. It lived inside the founding-partner
+   * block until the send confirmation needed it too; a second copy of a regex literal is a pair of
+   * screens that will one day disagree about what an address is, which is the kind of drift nobody
+   * finds until somebody's mail does not arrive.
+   */
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+  // TWO KEYS, AND THE SECOND ONE IS WHY A REFRESH STILL SHOWS YOUR RESULT.
+  //
+  // `/survey` hands the answers over and stops clearing them (it used to clear on the way out,
+  // which is what made this page always take its empty state). This page scores them once, keeps
+  // the RESULT, and throws the answers away. Keeping the answers instead would prefill a second
+  // survey started in the same tab, because `/survey` seeds its state from that key on load.
+  /**
+   * THE STORED RESULT CARRIES THE WHOLE REPORT, NOT JUST THE SCORE.
+   *
+   * This page scores the answers once and then throws them away, so anything the report needs has
+   * to be derived in the same breath. An earlier shape stored only the six dimensions; a result
+   * stored by that build lacks the fields below, which is why every read of them is guarded.
+   */
+  type Result = ReturnType<typeof scoreSurvey> & {
+    answered?: number;
+    gap?: ReturnType<typeof confidenceGap>;
+    cov?: ReturnType<typeof coverage>;
+    summary?: ReturnType<typeof summarise>;
+    /** Their own address, kept so section 05 can name where the report is going. */
+    email?: string;
+  };
+  let result: Result | null = null;
+
+  try {
+    const stored = localStorage.getItem(RESULT_KEY);
+    const parsed = stored ? (JSON.parse(stored) as Result & { shape?: number }) : null;
+    if (parsed && parsed.shape === RESULT_SHAPE) result = parsed;
+  } catch {
+    /* fall through to scoring, or to the empty state */
+  }
+
+  if (!result) {
+    let answers: Answers | null = null;
+    try {
+      const raw = localStorage.getItem(KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      // An empty object is the same as no answers: nothing was ever recorded to score.
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) answers = parsed;
+    } catch {
+      /* private mode, blocked storage, or a half-written value: the empty state covers all three */
+    }
+
+    if (answers) {
+      const scored = scoreSurvey(answers);
+      result = {
+        ...scored,
+        answered: answeredCount(answers),
+        gap: confidenceGap(answers, scored.band),
+        cov: coverage(answers),
+        summary: summarise(scored.dimensions, DIMENSION_CLAUSES),
+        email: typeof answers.email === 'string' ? answers.email : undefined,
+      };
+      try {
+        localStorage.setItem(RESULT_KEY, JSON.stringify({ shape: RESULT_SHAPE, ...result }));
+        localStorage.removeItem(KEY);
+      } catch {
+        /* storage blocked: the result still renders for this page view */
+      }
+    }
+  }
+
+  if (result) {
+    const { score, band, blurb, dimensions, recommendations } = result;
+
+    const scoreEl = document.getElementById('result-score');
+    const name = document.getElementById('result-band');
+    const line = document.getElementById('result-blurb');
+    if (name) {
+      name.textContent = band;
+      // The band names itself to the stylesheet, which owns the four colours.
+      name.dataset.band = band;
+    }
+    if (line) line.textContent = blurb;
+
+    const compare = document.getElementById('result-compare');
+    if (compare) compare.textContent = comparison(band as Band);
+
+    // THE NUMBER COUNTS UP, and the needle travels to it on the same clock. A number that is simply
+    // printed reads as a label; one that arrives reads as a measurement being taken, which is what
+    // it is. Anyone who has asked for less motion gets the end state immediately.
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // THE LADDER HANGS ON THIS CLOCK RATHER THAN STARTING A SECOND ONE.
+    //
+    // The brief asks for the fill and the needle to arrive WITH the final digit. Two timers set to
+    // the same duration do not do that: they drift by whatever frame each one happened to start
+    // on, and the needle lands a beat off the number it is supposed to be pointing at. So the loop
+    // that prints the digit publishes its own eased progress as `--rep-arrive` on the article, and
+    // the stylesheet drives both instruments off it. One clock, one easing, no synchronisation.
+    const ruled = document.querySelector<HTMLElement>('.rep');
+    const ruledTrack = ruled?.querySelector<HTMLElement>('.bo-ladder__track') ?? null;
+
+    if (scoreEl) {
+      if (still || score === 0) {
+        scoreEl.textContent = String(score);
+      } else {
+        const start = performance.now();
+        const DURATION = 1100;
+        const tick = (now: number) => {
+          const t = Math.min(1, (now - start) / DURATION);
+          // Ease out, so it decelerates onto the number rather than stopping dead on it.
+          const eased = 1 - Math.pow(1 - t, 3);
+          scoreEl.textContent = String(Math.round(score * eased));
+          if (ruled) {
+            // MEASURED ON THE FIRST FRAME, NOT BEFORE IT. `#result` is still `hidden` while this
+            // block runs, and a track inside a `hidden` section has no width for the needle to
+            // travel across. By the first animation frame the section has been shown.
+            if (ruledTrack && !ruled.style.getPropertyValue('--rep-travel')) {
+              const across = (ruledTrack.getBoundingClientRect().width * score) / 100;
+              ruled.style.setProperty('--rep-travel', `${across}px`);
+            }
+            ruled.style.setProperty('--rep-arrive', String(eased));
+          }
+          if (t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+    }
+
+    document.getElementById('result')?.removeAttribute('hidden');
+
+    /**
+     * THE ADVICE ROWS. A numeral, the sentence, and the practice it came out of in that practice's
+     * own colour, so a line of advice can always be traced back to the row that produced it.
+     *
+     * Weakest first, matching how `recommendations` was ordered, so the numeral and the label agree.
+     */
+    const buildAdvice = (into: HTMLElement) => {
+      const weakest = [...dimensions].sort((a, b) => a.score - b.score);
+      into.replaceChildren(
+        ...recommendations.map((text, i) => {
+          const row = document.createElement('div');
+          row.className = 'rep-fix';
+          const d = weakest[i];
+          if (d) row.dataset.score = String(d.score);
+
+          const n = document.createElement('span');
+          n.className = 'rep-fix__n';
+          n.textContent = String(i + 1);
+
+          const body = document.createElement('p');
+          body.className = 'rep-fix__body';
+          body.textContent = text;
+
+          const where = document.createElement('span');
+          where.className = 'rep-fix__where';
+          where.textContent = d ? `${d.label} · ${d.score}/3` : '';
+
+          row.appendChild(n);
+          row.appendChild(body);
+          row.appendChild(where);
+          return row;
+        }),
+      );
+    };
+
+    // ── THE REPORT'S SECTIONS ────────────────────────────────────────────────────────────────
+    // Every block hides itself when the answer behind it is missing rather than printing an empty
+    // heading: a section with nothing under it reads as a fault in the page, not as a gap in the
+    // data.
+    const show = (id: string) => document.getElementById(id)?.removeAttribute('hidden');
+
+    // The ladder is this page's instrument: one filled track, reading `score` directly, so it
+    // cannot drift from the number beside it.
+    const fill = document.getElementById('rep-fill');
+    const repNeedle = document.getElementById('rep-needle');
+    if (fill && repNeedle) {
+      repNeedle.hidden = false;
+      const settle = () => {
+        fill.style.setProperty('--meter-pos', `${score}%`);
+        repNeedle.style.setProperty('--meter-pos', `${score}%`);
+      };
+      if (still) settle();
+      else requestAnimationFrame(settle);
+      document
+        .getElementById('rep-scale')
+        ?.querySelector(`[data-band="${band}"]`)
+        ?.setAttribute('aria-current', 'step');
+    }
+
+    const mailEl = document.getElementById('rep-mail');
+    if (mailEl && result.email) {
+      mailEl.textContent = result.email;
+      document.getElementById('rep-mail-to')?.removeAttribute('hidden');
+      // Only now may the column say the address is already on the list, because only now is there
+      // an address for the claim to be about.
+      document.getElementById('rep-mail-auto')?.removeAttribute('hidden');
+    }
+
+    /**
+     * ── EMAIL ME MY REPORT ───────────────────────────────────────────────────────────────────
+     *
+     * THE ADDRESS AND THE SCORE BOTH COME FROM HERE, AND NEITHER IS REACHABLE SERVER-SIDE TODAY.
+     * `/api/submit` is a stub: it stores nothing and hands back the literal token `preview`, so
+     * there is no row for the route to look an address up in, and the score is computed in this
+     * browser from the answers `/survey` left in localStorage. The page therefore sends what it
+     * is already showing and `/api/send-report` validates it. Once responses are persisted (task
+     * 2.1) the token is enough and every field below comes off the route instead.
+     *
+     * IT IS A CONFIRMATION NOW, NOT A SEND. Oleh, 2026-08-28: *"when the user clicks 'Email me my
+     * report' they should also see a modal that asks again."* The page button opens `#mail-modal`
+     * and only its Confirm posts, which also answers the thing the old one could not: the address
+     * is on screen and correctable before the press rather than baked into a `title` attribute.
+     */
+    const sendWrap = document.getElementById('rep-send-wrap');
+    const sendBtn = document.getElementById('rep-send') as HTMLButtonElement | null;
+    const sendNote = document.getElementById('rep-send-note');
+    const mailModal = document.getElementById('mail-modal') as HTMLDialogElement | null;
+    const mailForm = document.getElementById('mail-form');
+    const mailGo = document.getElementById('mail-go') as HTMLButtonElement | null;
+    const mailCancel = document.getElementById('mail-cancel');
+    const mailField = document.getElementById('mail-email') as HTMLInputElement | null;
+    const mailErr = document.getElementById('mail-error');
+
+    if (sendWrap && sendBtn && sendNote && mailModal && mailGo && mailField) {
+      // THE BUTTON EXISTS WHENEVER THERE IS A SCORE, which is a change: it used to appear only when
+      // an address was already stored, because nothing on the page could ask for one. The
+      // confirmation asks for one, so the address is prefilled when the survey recorded it and
+      // typed when it did not — the same way the founding-partner dialog handles it.
+      sendWrap.removeAttribute('hidden');
+
+      // TWO LATCHES, NOT ONE, and both are now on the dialog's Confirm rather than the page's
+      // button. `busy` is the double-press guard for the second between the press and the response;
+      // `sent` is permanent, because a second copy of the same email is a defect and there is
+      // nothing left to confirm once it is in their inbox.
+      let busy = false;
+      let sent = false;
+
+      const fail = (message: string) => {
+        mailField.setAttribute('aria-invalid', 'true');
+        if (mailErr) {
+          mailErr.textContent = message;
+          mailErr.hidden = false;
+        }
+        mailField.focus();
+      };
+
+      const clearFail = () => {
+        mailField.removeAttribute('aria-invalid');
+        if (mailErr) {
+          mailErr.hidden = true;
+          mailErr.textContent = '';
+        }
+      };
+
+      sendBtn.addEventListener('click', () => {
+        if (sent) return;
+        clearFail();
+        // Their own address, read back, so the dialog can answer "which address?" before it is
+        // asked. Only ever filled when the box is empty: a correction typed and then cancelled
+        // survives a reopen.
+        if (!mailField.value && result?.email) mailField.value = result.email;
+        mailModal.showModal();
+      });
+
+      mailCancel?.addEventListener('click', () => mailModal.close('cancel'));
+      mailField.addEventListener('input', clearFail);
+
+      // ENTER IN THE FIELD MEANS CONFIRM, NOT CANCEL. Left alone, a `method="dialog"` form closes
+      // the dialog on implicit submission, so the one key a reader is most likely to press after
+      // correcting their address would have thrown the correction away.
+      mailForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        mailGo.click();
+      });
+
+      mailGo.addEventListener('click', async () => {
+        if (busy || sent) return;
+        const to = mailField.value.trim().toLowerCase();
+        // CHECKED BEFORE THE DIALOG CLOSES. A bad address caught here is one correction in the box
+        // the reader is already looking at; caught after the close it is a red line on a page they
+        // have to find their way back into.
+        if (!EMAIL_RE.test(to)) {
+          fail('That doesn’t look like an email address.');
+          return;
+        }
+        busy = true;
+        mailGo.disabled = true;
+        mailGo.textContent = 'Sending…';
+        clearFail();
+        sendNote.removeAttribute('data-state');
+        sendNote.textContent = '';
+        try {
+          const res = await fetch('/api/send-report', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              token: mailGo.dataset.token ?? sendBtn.dataset.token ?? 'preview',
+              email: to,
+              score,
+              band,
+              blurb,
+              dimensions: dimensions.map((d) => ({
+                label: d.label,
+                answer: d.answer,
+                score: d.score,
+              })),
+              recommendations,
+            }),
+          });
+          const payload = (await res.json().catch(() => null)) as {
+            ok?: boolean;
+            error?: string;
+          } | null;
+          if (!res.ok || !payload?.ok) throw new Error(payload?.error ?? String(res.status));
+          sent = true;
+          mailModal.close('sent');
+          sendBtn.disabled = true;
+          sendBtn.textContent = 'Sent';
+          sendNote.dataset.state = 'sent';
+          sendNote.textContent = `On its way to ${to}.`;
+        } catch (e) {
+          // THE TWO FAILURES HAVE DIFFERENT ANSWERS, and the dialog stays open for the one the
+          // reader can actually fix. A rejected address is a correction in the field right there;
+          // a provider failure is nothing they can type their way out of, so that one closes and
+          // reports on the page, where pressing again is the whole remedy.
+          if (e instanceof Error && e.message === 'invalid_email') {
+            fail(`We can’t send to ${to}. Check it and confirm again.`);
+          } else {
+            mailModal.close('failed');
+            sendNote.dataset.state = 'failed';
+            sendNote.textContent = 'That didn’t send. Try again in a moment — nothing was lost.';
+          }
+        } finally {
+          busy = false;
+          mailGo.disabled = false;
+          mailGo.textContent = 'Confirm';
+        }
+      });
+    }
+
+    const summaryEl = document.getElementById('rep-summary');
+    if (summaryEl && result.summary) {
+      summaryEl.textContent = result.summary.text;
+      // The pointer to section 04 only appears when there is something for section 04 to say.
+      if (result.summary.hasGaps) document.getElementById('rep-trace')?.removeAttribute('hidden');
+      document.getElementById('rep-short-sec')?.removeAttribute('hidden');
+      // The card in 01 that jumps down here is revealed on this line and no other: it exists only
+      // to point at this section, so it may not outlive it. See the comment on `#rep-jump`.
+      show('rep-jump');
+    }
+
+    const answeredEl = document.getElementById('rep-answered');
+    if (answeredEl && typeof result.answered === 'number') {
+      answeredEl.textContent = String(result.answered);
+      show('rep-facts');
+    }
+
+    const gapEl = document.getElementById('rep-gap');
+    if (gapEl && result.gap) {
+      const { claimed, rungs } = result.gap;
+      gapEl.textContent = `You described your own practice as “${claimed}”. Measured against the six practices below, you land at ${band}.`;
+      const noteEl = document.getElementById('rep-gap-note');
+      if (noteEl) {
+        // The bank's own headline chart is the gap between these two, so the page names its size
+        // rather than leaving the reader to count rungs.
+        noteEl.textContent =
+          rungs === 0
+            ? 'Your own reading and the measurement agree.'
+            : rungs > 0
+              ? `${rungs === 1 ? 'One rung' : `${rungs} rungs`} above where the answers put you.`
+              : `${rungs === -1 ? 'One rung' : `${Math.abs(rungs)} rungs`} below where the answers put you. You are harder on yourself than the measurement is.`;
+      }
+      show('rep-gap-sec');
+    }
+
+    const table = document.getElementById('rep-table');
+    if (table) {
+      table.replaceChildren(
+        ...dimensions.map((d) => {
+          const row = document.createElement('div');
+          row.className = 'rep-row';
+          row.dataset.score = String(d.score);
+
+          const name = document.createElement('span');
+          name.className = 'rep-row__name';
+          name.textContent = d.label;
+
+          const said = document.createElement('span');
+          said.className = 'rep-row__said';
+          said.textContent = d.answer;
+
+          const ticks = document.createElement('span');
+          ticks.className = 'rep-row__ticks';
+          for (let i = 0; i < 3; i += 1) {
+            const tick = document.createElement('span');
+            tick.className = 'rep-row__tick';
+            tick.dataset.on = String(i < d.score);
+            ticks.appendChild(tick);
+          }
+
+          const score = document.createElement('span');
+          score.className = 'rep-row__score';
+          score.textContent = String(d.score);
+
+          row.appendChild(name);
+          row.appendChild(said);
+          row.appendChild(ticks);
+          row.appendChild(score);
+          return row;
+        }),
+      );
+      show('rep-table-sec');
+    }
+
+    const covYes = document.getElementById('rep-cov-yes');
+    const covNo = document.getElementById('rep-cov-no');
+    if (covYes && covNo && result.cov) {
+      const chip = (text: string, on: boolean) => {
+        const el = document.createElement('span');
+        el.className = 'rep-chip';
+        el.dataset.on = String(on);
+        el.textContent = text;
+        return el;
+      };
+      covYes.replaceChildren(...result.cov.captured.map((t) => chip(t, true)));
+      covNo.replaceChildren(...result.cov.notConfirmed.map((t) => chip(t, false)));
+      show('rep-cov-sec');
+    }
+
+    const fix = document.getElementById('rep-fix');
+    if (fix && recommendations.length > 0) {
+      buildAdvice(fix);
+      show('rep-fix-sec');
+    }
+  }
+
+  /**
+   * ── 06 · THE CLOSING SECTION ───────────────────────────────────────────────────────────────
+   *
+   * OUTSIDE `if (result)`, deliberately, and it is the only section that is. Sections 02 to 05 are
+   * readings of an answer and have nothing to show without one. This one says the survey happened
+   * and offers the link — both true for anyone who reached this page at all, including someone
+   * whose stored result failed to parse. It is the last thing on the document and the document
+   * should not end on a void for them of all people.
+   *
+   * THE ADDRESS COMES FROM `location`, not from a constant. It resolves to whatever origin is
+   * serving the page, so it is right on the deploy, on a preview and on localhost, and it cannot
+   * drift from where the page is actually being read. Today is the argument for it:
+   * `survey.baseout.dev` stopped resolving because the domain moved to `survey.ui.baseout.dev`, and
+   * a hardcoded constant would have been quietly handing out a dead address from the moment that
+   * landed.
+   *
+   * `origin` AND A TRAILING SLASH, not `href`: the path the reader is standing on is `/thanks`,
+   * which is emphatically not where to send anyone. The field shows exactly what the clipboard
+   * gets — the same string, not a prettified version of it — because the whole reason for showing
+   * a field rather than a bare button is that the value can be checked before it is used, and a
+   * field that displays something other than what it copies destroys that.
+   *
+   * THE CLIPBOARD API CAN FAIL: it needs a secure context and a user gesture, and Safari can still
+   * refuse. `select()` on a real input is the entire fallback, which is most of why this is an
+   * `<input>` and not a styled `<span>` — the old version had to build a `Range` by hand. The
+   * button never claims a copy that did not happen.
+   */
+  const copyBtn = document.getElementById('rep-copy');
+  const urlEl = document.getElementById('rep-url') as HTMLInputElement | null;
+  if (copyBtn && urlEl) {
+    const link = `${location.origin}/`;
+    urlEl.value = link;
+    // Not `show()` — that helper is scoped to the `if (result)` block above, and this section is
+    // deliberately outside it.
+    document.getElementById('rep-end-sec')?.removeAttribute('hidden');
+
+    // A read-only field people are meant to copy: one tap selects the whole thing, so the manual
+    // route costs a long-press on a phone rather than a drag across a hostname.
+    urlEl.addEventListener('focus', () => urlEl.select());
+
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(link);
+        // The label and the colour are both CSS off this one attribute, so there is no second
+        // place to keep in step and nothing here can leave the button green with the wrong word.
+        copyBtn.dataset.state = 'done';
+        // Back to the offer, so a second reader of the same screen is not told about a copy that
+        // happened before they arrived.
+        setTimeout(() => {
+          copyBtn.dataset.state = 'idle';
+        }, 1800);
+      } catch {
+        urlEl.focus();
+        urlEl.select();
+      }
+    });
+  }
+
+  /**
+   * THE LIGHTBOX. Outside the `if (result)` block on purpose: the video is on the page whether or
+   * not there is a score to show, so it must open whether or not there is one.
+   *
+   * `showModal()` does the work — focus trap, inert background, Escape, and focus returned to the
+   * button that opened it. What is left is the two things it does not do: a click on the backdrop,
+   * which arrives as a click on the dialog itself because the frame does not cover its padding box,
+   * and pausing whatever is playing on the way out, which is a no-op today and will not be once the
+   * embed lands.
+   */
+  const lightbox = document.getElementById('video-lightbox') as HTMLDialogElement | null;
+  if (lightbox) {
+    for (const trigger of document.querySelectorAll('[data-video]')) {
+      trigger.addEventListener('click', () => lightbox.showModal());
+    }
+    document.getElementById('video-close')?.addEventListener('click', () => lightbox.close());
+    lightbox.addEventListener('click', (event) => {
+      if (event.target === lightbox) lightbox.close();
+    });
+    lightbox.addEventListener('close', () => {
+      // TODO(survey-app task 2.3): stop the embed here, or closing it leaves audio playing behind
+      // a dialog nobody can see.
+    });
+  }
+
+
+  /**
+   * ══ INERTIAL SCROLL ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The wheel stops moving the page directly. It moves a TARGET, and the page eases toward that
+   * target every frame, so a flick keeps gliding after the fingers stop.
+   *
+   * WHO IS DELIBERATELY EXCLUDED, AND WHY EACH ONE MATTERS:
+   *
+   *   · TOUCH. `pointer: coarse` never reaches this. A phone's scrolling is already inertial, tuned
+   *     by the platform, and it tracks the finger — replacing it with a lerp makes the page feel
+   *     detached from the thumb that is dragging it.
+   *   · REDUCED MOTION. Somebody who asked for stillness did not ask for the page to keep moving
+   *     after they stopped.
+   *   · EVERYTHING THAT IS NOT THE WHEEL. Keyboard, scrollbar drag, find-in-page and
+   *     `scrollIntoView` are untouched: `preventDefault` is only ever called on `wheel`. The
+   *     listener below resyncs the target whenever the page moved for a reason that was not us, so
+   *     pressing space mid-glide does not snap the reader back to where the glide was heading.
+   *   · PINCH ZOOM (`ctrlKey`) and the open lightbox, which does its own scrolling.
+   *
+   * This is the thing I argued against for snap, so the difference is worth stating: this does not
+   * decide WHERE the reader ends up, only how quickly they get there, and every other input keeps
+   * working exactly as it did. Deleting the block restores the browser's scrolling completely.
+   */
+  const glideHost = document.querySelector('.rep');
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  const glideStill = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (glideHost && !coarsePointer && !glideStill) {
+    // 0.11 is the fraction of the remaining distance covered each frame: high enough that the page
+    // never feels like it is lagging behind the wheel, low enough to read as weight rather than as
+    // a delay. Below ~0.08 it swims; above ~0.2 the glide stops being perceptible.
+    const EASE = 0.11;
+    let target = window.scrollY;
+    let frame = 0;
+    /** The last position this loop set. Anything else means somebody moved the page, not us. */
+    let ours = -1;
+
+    const limit = () => document.documentElement.scrollHeight - window.innerHeight;
+
+    const step = () => {
+      const remaining = target - window.scrollY;
+      // Half a pixel: below that the browser rounds to the same position and the loop would spin
+      // forever moving nothing.
+      if (Math.abs(remaining) < 0.5) {
+        window.scrollTo(0, target);
+        ours = window.scrollY;
+        frame = 0;
+        return;
+      }
+      window.scrollTo(0, window.scrollY + remaining * EASE);
+      ours = window.scrollY;
+      frame = requestAnimationFrame(step);
+    };
+
+    window.addEventListener(
+      'wheel',
+      (event) => {
+        if (event.ctrlKey) return;
+        if (document.querySelector('dialog[open]')) return;
+        event.preventDefault();
+        // Some mice report their delta in LINES rather than pixels. Left unconverted, one notch of
+        // such a mouse moves the page three pixels.
+        const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+        target = Math.max(0, Math.min(limit(), target + delta));
+        if (!frame) frame = requestAnimationFrame(step);
+      },
+      { passive: false },
+    );
+
+    /**
+     * The page moved and it was not this loop: a key, the scrollbar, a link, find-in-page. Adopt
+     * where the reader actually is.
+     *
+     * COMPARING AGAINST `ours` RATHER THAN AGAINST `frame` IS THE WHOLE POINT, and the first
+     * version got it wrong: it only adopted an external scroll while the loop was IDLE, so pressing
+     * space or clicking a link mid-glide was overridden a frame later and the reader was dragged
+     * back to wherever the glide had been heading. Measured — a `scrollTo(2000)` during a glide
+     * ended up back at 600. A scroll this loop caused lands within a pixel of what it just set;
+     * anything further away belongs to somebody else.
+     */
+    window.addEventListener(
+      'scroll',
+      () => {
+        if (!frame || Math.abs(window.scrollY - ours) > 2) target = window.scrollY;
+      },
+      { passive: true },
+    );
+
+    window.addEventListener('resize', () => {
+      target = Math.max(0, Math.min(limit(), target));
+    });
+  }
+
+  /**
+   * ══ THE FOUNDING-PARTNER CONFIRMATION ═════════════════════════════════════════════════════════
+   *
+   * This was one click straight into a green badge. Dan: *"That button just looks dumb, a user can
+   * click it by accident and it's not clear what to expect."* Both halves of that are true — an
+   * accidental press was a commitment, and nothing on screen said what was being committed to — so
+   * the press now opens a dialog and only Confirm posts anything.
+   *
+   * `showModal()` FOR THE SAME REASONS THE LIGHTBOX USES IT: focus trap, inert background, Escape,
+   * and focus returned to the button that opened it. Four behaviours that are tedious to write and
+   * easy to get subtly wrong, and this is a dialog that asks somebody to commit to something.
+   *
+   * OUTSIDE `if (result)` ON PURPOSE. Section 05 renders whether or not there is a score to show,
+   * so the button is on the page either way and has to work either way. The address is prefilled
+   * from the result when there is one and typed when there is not.
+   */
+  {
+    const modal = document.getElementById('partner-modal') as HTMLDialogElement | null;
+    const triggers = [...document.querySelectorAll<HTMLElement>('[data-partner]')];
+    const form = document.getElementById('partner-form');
+    const go = document.getElementById('partner-go') as HTMLButtonElement | null;
+    const cancelBtn = document.getElementById('partner-cancel');
+    const field = document.getElementById('partner-email') as HTMLInputElement | null;
+    const err = document.getElementById('partner-error');
+    const done = document.getElementById('partner-confirmed');
+
+    if (modal && go && field && triggers.length > 0) {
+      let busy = false;
+
+      const fail = (message: string) => {
+        field.setAttribute('aria-invalid', 'true');
+        if (err) {
+          err.textContent = message;
+          err.hidden = false;
+        }
+        field.focus();
+      };
+
+      const clearFail = () => {
+        field.removeAttribute('aria-invalid');
+        if (err) {
+          err.hidden = true;
+          err.textContent = '';
+        }
+      };
+
+      for (const trigger of triggers) {
+        trigger.addEventListener('click', () => {
+          clearFail();
+          // Their own address, read back, which is the thing the old button never said. Only ever
+          // filled when the box is empty: a correction typed and then cancelled survives a reopen.
+          if (!field.value && result?.email) field.value = result.email;
+          modal.showModal();
+        });
+      }
+
+      cancelBtn?.addEventListener('click', () => modal.close('cancel'));
+      field.addEventListener('input', clearFail);
+
+      // ENTER IN THE FIELD MEANS CONFIRM, NOT CANCEL. Left alone, a `method="dialog"` form closes
+      // the dialog on implicit submission, so the one key a reader is most likely to press after
+      // correcting their address would have thrown the correction away.
+      form?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        go.click();
+      });
+
+      go.addEventListener('click', async () => {
+        if (busy) return;
+        const email = field.value.trim().toLowerCase();
+        if (!EMAIL_RE.test(email)) {
+          fail('That doesn’t look like an email address.');
+          return;
+        }
+        busy = true;
+        go.disabled = true;
+        go.textContent = 'Confirming…';
+        clearFail();
+        try {
+          const res = await fetch('/api/partner-interest', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ token: go.dataset.token ?? 'preview', email }),
+          });
+          const payload = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+          if (!res.ok || !payload?.ok) throw new Error(String(res.status));
+          modal.close('confirmed');
+          // The offer is taken, so the way to take it again goes. Every trigger, not just the one
+          // that was pressed: there is one on the page today and the attribute allows more.
+          for (const trigger of triggers) trigger.hidden = true;
+          if (done) done.hidden = false;
+        } catch {
+          fail('That didn’t go through. Press Confirm again in a moment — nothing was sent.');
+        } finally {
+          busy = false;
+          go.disabled = false;
+          go.textContent = 'Confirm';
+        }
+      });
+    }
+  }
+
+  /**
+   * ══ MOTION ════════════════════════════════════════════════════════════════════════════════════
+   *
+   * `research/survey-app/animation-brief.md` is the spec. The stylesheet holds every duration,
+   * every delay and every start state; what is left for script is the three things CSS cannot
+   * decide for itself, and this block is deliberately only those three.
+   *
+   *   · WHETHER THE HIDDEN STATE MAY EXIST AT ALL. `data-anim` is stamped from here, so a reader
+   *     whose JavaScript never arrives is served the finished report rather than an empty page
+   *     waiting for an observer that will never run. Written the other way round — hidden in the
+   *     markup, revealed by script — a failed script is a blank page, and this page is the only
+   *     thing fifteen minutes of someone's afternoon bought them.
+   *   · WHEN EACH SECTION HAS ARRIVED. One attribute per section, set once, and the section is
+   *     unobserved in the same breath. Scrolling back up finds it already there rather than
+   *     replaying at somebody who is trying to re-read it.
+   *   · HOW MANY CHIPS THE FIRST COVERAGE COLUMN HOLDS. The only count in the whole reveal that
+   *     CSS cannot take for itself, because `:nth-child()` counts within a parent and the two
+   *     columns are separate parents.
+   *
+   * REDUCED MOTION IS CHECKED HERE AND AGAIN IN THE STYLESHEET. Neither guard is load-bearing on
+   * its own: the observer is never built, so nothing is ever marked, AND the whole CSS block sits
+   * inside `prefers-reduced-motion: no-preference`, so there would be nothing for a mark to
+   * trigger. This is the rule people regret getting wrong, so it is written down twice.
+   */
+  {
+    const ruledRep = document.querySelector<HTMLElement>(".rep");
+    const ruledStill = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (ruledRep && !ruledStill) {
+      // CAPTURED BEFORE NOT-CONFIRMED, and the offset is a count rather than a guess. A fixed lead
+      // for the second column would either overlap the first when a respondent ticked six boxes or
+      // leave a hole when they ticked one. The chips are already built by the time this runs.
+      const captured = document.getElementById('rep-cov-yes');
+      const notConfirmed = document.getElementById('rep-cov-no')?.parentElement;
+      if (captured && notConfirmed) {
+        notConfirmed.style.setProperty('--base', String(captured.childElementCount));
+      }
+
+      ruledRep.dataset.anim = 'on';
+
+      // THE REAR MARGIN IS MEASURED, NOT PICKED. A section's box starts `--rep-slide` above its own
+      // heading, so a bare intersection fires while nothing but that padding is on screen and the
+      // reveal is spent below the fold. A fifth of the viewport held back puts the trigger at
+      // roughly where the heading actually appears, which is also what keeps 01 at rest when the
+      // page first paints rather than arriving at a reader who has not scrolled yet.
+      const arriving = new IntersectionObserver(
+        (entries, self) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            (entry.target as HTMLElement).dataset.arrived = 'true';
+            self.unobserve(entry.target);
+          }
+        },
+        { rootMargin: '0px 0px -22% 0px' },
+      );
+
+      for (const section of ruledRep.querySelectorAll<HTMLElement>('.rep-sec')) {
+        arriving.observe(section);
+      }
+    }
+  }
+</script>

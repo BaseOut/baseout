@@ -1,0 +1,47 @@
+---
+import { SCORE_ACRONYM } from '../lib/brand';
+
+/**
+ * THE SCORE'S NAME, WITH THE COINED PART MARKED.
+ *
+ * Renders `DOAP Score` with the four letters in the accent and the word "Score" in whatever ink
+ * surrounds it. Oleh, 2026-08-31, after the headline went blue: *"let's go through the abbreviations
+ * as well, at least, and make those blue too."*
+ *
+ * WHY ONLY THE ACRONYM. "Score" is ordinary English; "DOAP" is the thing Dan invented and the thing
+ * a reader has to come away holding. Painting the whole phrase would read as emphasis on a sentence.
+ * Painting four letters reads as a name. That distinction was already made once, by hand, in the
+ * splash's ladder caption — this component is that treatment, extracted, so the other five places
+ * stop being a matter of whether anyone remembered.
+ *
+ * ── WHERE IT MUST NOT GO ──────────────────────────────────────────────────────────────────────
+ * Three surfaces are excluded and each for its own reason, because the exclusion is easy to get
+ * wrong later:
+ *
+ *   1. INSIDE A PRIMARY BUTTON. `Get your DOAP Score` is white on a filled accent surface. Accent
+ *      ink on an accent ground is invisible, not subtle. Three call sites are buttons.
+ *   2. INSIDE A PLAIN `.bo-eyebrow`. The base eyebrow is ALREADY `--bo-primary`, so marking the
+ *      acronym inside one paints accent on accent and changes nothing at all. Only the `--muted`
+ *      variant has anything to gain. (This is the same class of no-op this app has shipped before
+ *      and had to measure its way back out of.)
+ *   3. IN A `<title>` OR ANY OTHER STRING SLOT. There is no markup there. Use `SCORE_SHORT`.
+ *
+ * THE SPACE IS A REAL SPACE, not a margin. `DOAP Score` has to break, copy and get read aloud as
+ * two ordinary words; a gap made of CSS would copy as `DOAPScore` and a screen reader would say it
+ * that way too. The `<span>` carries colour and nothing else.
+ */
+interface Props {
+  /** Adds the definite article, marked-up the same way: "The DOAP Score". */
+  article?: boolean;
+}
+
+const { article = false } = Astro.props;
+---
+
+{article && 'The '}<span class="score-mark">{SCORE_ACRONYM}</span> Score
+
+<style>
+  .score-mark {
+    color: var(--bo-primary);
+  }
+</style>

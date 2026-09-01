@@ -1,0 +1,256 @@
+---
+import { PLATFORM } from "../lib/brand";
+
+/**
+ * THE AIRTABLE MARK, IN TWO PLACES, SO THE CLIENT CAN PICK ONE.
+ *
+ * Dan, on the splash review call: *"we could either leave it here, but it would be good to put the
+ * Airtable logo on there just for visibility, reference, credibility, to put that there. And I was
+ * wondering if maybe it should go in the upper right, like 'Airtable edition' or something over
+ * here. So I don't know which one looks better."* He named two placements and could not choose, so
+ * both were built and shown behind `?logo=`. Oleh chose this one on 2026-08-28 and the other came
+ * out: the full Airtable logo, icon AND wordmark, standing in the right column, level with the top
+ * of the headline's first line and flush to the column's right edge, with "edition" set under it
+ * in our own face. The one that lost put a bare icon after an "Airtable edition" line inside the
+ * headline; with this lockup present that line was the page saying the same two words twice.
+ *                             column of the split, its top edge level with the top of the
+ *                             headline's first line, with "edition" set under it in Urbanist.
+ *
+ * ── WHAT CHANGED IN B, AND WHY (2026-08-28) ───────────────────────────────────────────────────
+ * B used to be a 1.125rem square glyph plus an 11px "AIRTABLE EDITION" micro-label, pinned to the
+ * top right of the page column under the review chip strip. Dan's verdict: *"I don't like the logo
+ * in the corner, it's too small and too much in the corner. I'd put it level with where the main
+ * headline starts. And I'd like to try taking the full logo with the word 'Airtable' in it, and
+ * write 'Edition' in our own font underneath. And make it a bit bigger. Maybe later we fade it so
+ * it doesn't contrast so much, but not now — for now we just align it."*
+ *
+ * So: the real horizontal logo, in the right column beside the headline rather than in the page
+ * corner, bigger, and the word "edition" set in OUR face under it. NOT faded — he said not yet, and
+ * nothing here reduces its contrast.
+ *
+ * ── WHERE THE WORDMARK CAME FROM ──────────────────────────────────────────────────────────────
+ * Airtable's brand guidelines (https://www.airtable.com/company/trademark-guidelines) say there are
+ * "two approved lockups of our icon and wordmark, which you may download here", and "here" is a
+ * shared Airtable base view — a JS app whose rows only arrive over an authenticated XHR this
+ * sandbox will not make. So the asset was taken from the other place Airtable publishes it: the
+ * lockup in the header of www.airtable.com itself, which is that same artwork, live.
+ *
+ * NOTHING IS REDRAWN. The wordmark path is Airtable's own vector, lifted verbatim out of their
+ * nav's `<svg width="94" height="20">`. The icon is the four-colour mark this repo already carried.
+ * The SPACING between the two is not invented either: Airtable's own header lockup was measured in
+ * a live browser, ink box to ink box, and those ratios are what the file uses —
+ *
+ *     icon ink height   : wordmark ink height   =  27.859 : 19.258  = 1.4466
+ *     gap between them  : wordmark ink height   =   6.875 : 19.258  = 0.3570
+ *     both centred on one horizontal axis (their ink centres agree to 0.13px)
+ *
+ * The result is `/logos/airtable-lockup-{light,dark}.svg`, `viewBox="0 0 133.19 27.859"`, whose ink
+ * bounding box fills the viewBox exactly — no padding to reason about, so a CSS height is the ink
+ * height. The full arithmetic is in the comment at the head of each file.
+ *
+ * TWO FILES, ONE PER THEME, WHICH THE PLAIN GLYPH DID NOT NEED. Every path in `airtable.svg` is
+ * saturated brand colour, so one file held on both floors. A wordmark is INK: Airtable set theirs in
+ * `#181D26`, which disappears on this app's `#0a0a0a`. So this follows `Credibility.astro` exactly —
+ * a `-light`/`-dark` pair, one of them always `display: none`, the swap written in both directions
+ * because the stored theme stamps `data-theme` and the default setting stamps nothing. The icon is
+ * identical in both files; only the wordmark's fill changes, `#181D26` ↔ `#FFFFFF`, which is the
+ * reversed treatment Airtable's own guidelines list ("color, white, dark").
+ *
+ * ── SIZE ──────────────────────────────────────────────────────────────────────────────────────
+ * `Credibility.astro` sizes each partner logo so its WORDMARK ink lands at one shared height,
+ * because that is the thing the eye compares when it decides two logos are "the same size". Same
+ * method here, and the same arithmetic — target height divided by the wordmark's share of the file:
+ *
+ *     wordmark share of this lockup      19.258 / 27.859      = 0.6913
+ *     target wordmark ink height         var(--bo-t-24)       = 1.5rem
+ *     ------------------------------------------------------------------
+ *     logo height                        1.5 / 0.6913         = 2.17rem   (→ 10.375rem wide)
+ *
+ * WHY 1.5rem FOR THE WORDMARK. It is `--bo-t-24`, the top of this page's non-display ladder and the
+ * rung both `.splash-rail-h` ("What you get") and `/thanks` give a SECTION HEADING. That is exactly
+ * this thing's rank: it is the second-loudest statement in the split, under an h1 that is 5rem and
+ * over a ladder caption that is 14px. It is also 1.58x the 0.95rem the three partner logos get at
+ * the foot of this page, which is the difference between the platform this edition is about and the
+ * three names that run it — a difference the page should be able to state without a caption.
+ *
+ * The old stamp was an 18px SQUARE. This is a 35px-tall, 166px-wide lockup: nearly twice the height
+ * and nine times the area, which is "a bit bigger" honestly read. It is also comfortably over the
+ * 120px minimum width Airtable's guidance gives for the full lockup, at every width this page has —
+ * the logo does not shrink below 62rem, because the column it sits in stops being a column there.
+ *
+ * ── "edition", IN OUR OWN FACE ────────────────────────────────────────────────────────────────
+ * `--bo-t-11` / 700 / `0.12em` / uppercase / `--bo-muted`. That is not a new treatment: it is this
+ * page's ONE micro-label voice, the `.bo-eyebrow` recipe, and it is already doing this exact job in
+ * `Credibility.astro` — `.cred__role` sets "RUNS THE SURVEY" under each partner's logo in it. The
+ * word under a logo, in muted spaced caps, is a thing this page already knows how to say.
+ *
+ * It has to be unmistakably ours rather than part of their mark, and every axis of it differs from
+ * the wordmark directly above: Urbanist against Airtable's own face, 11px against a 24px wordmark,
+ * spaced caps against tight sentence case, `--bo-muted` against full-contrast ink. Setting it any
+ * larger starts to read as the second word of a two-word logotype, which is the one thing it must
+ * not do. It sits `--bo-space-1` under the lockup, close enough to be read as its annotation.
+ *
+ * ── FLUSH RIGHT, BOTH OF THEM (2026-08-28, second pass) ───────────────────────────────────────
+ * Dan, on seeing it in place: *"I'd put the logo on the right — right-align it, and 'edition'
+ * right-aligned too. Basically drag it as far right as it goes, that'll look better."*
+ *
+ * So the column's flex alignment flips end-wards and the whole lockup goes to the right edge of
+ * the page's content column — the same edge the ladder and its caption below already end on, so
+ * the three now share one margin instead of two. "edition" goes with it, and because the wordmark
+ * is the rightmost ink in the file (the lockup's ink box fills its viewBox exactly, with no
+ * trailing padding), flush-right puts the word under the last letter of "Airtable" rather than
+ * under the icon. That is the alignment he asked for and it is also the better one: the word now
+ * hangs off the type it annotates instead of off a picture two inches to its left.
+ *
+ * ── NO SCRIPT ─────────────────────────────────────────────────────────────────────────────────
+ * Every element here is server-rendered, so the scoped styles below actually reach it. A mark built
+ * with `createElement` or `innerHTML` would never carry this component's `data-astro-cid-*` and
+ * every rule in this block would silently miss — this repo has paid for that lesson three times.
+ */
+
+/**
+ * The horizontal lockup, built from Airtable's own icon and wordmark at their own measured
+ * geometry. Source and arithmetic are in the docblock above and in each file's head comment.
+ */
+const LOCKUP_LIGHT = "/logos/airtable-lockup-light.svg";
+const LOCKUP_DARK = "/logos/airtable-lockup-dark.svg";
+
+/** The file is 133.19 x 27.859. Scaled to integers at the same ratio so the box is reserved before
+    the SVG loads; `width: auto` in CSS then takes the real ratio from the file itself. */
+const LOCKUP_W = 478;
+const LOCKUP_H = 100;
+---
+
+<p class="edm-standing">
+      {/* Two files, one always hidden, exactly as `Credibility.astro` does it. The alternative is
+          one file and a CSS filter, which would repaint the icon's yellow, blue and red along with
+          the wordmark's ink. The visible one carries the platform name as its `alt` and the span
+          below adds "edition", so the pair is announced once, as "Airtable edition". */}
+      <img
+        class="edm-standing__logo edm-standing__logo--light"
+        src={LOCKUP_LIGHT}
+        alt={PLATFORM}
+        width={LOCKUP_W}
+        height={LOCKUP_H}
+      />
+      <img
+        class="edm-standing__logo edm-standing__logo--dark"
+        src={LOCKUP_DARK}
+        alt=""
+        aria-hidden="true"
+        width={LOCKUP_W}
+        height={LOCKUP_H}
+      />
+      <span class="edm-standing__word">edition</span>
+    </p>
+
+<style>
+  /* PLACEMENT B. This is now a block INSIDE the split's right column — `HomeOpening.astro` renders
+     it above the score ladder — rather than a flex child of `main` asking for the page's right
+     edge. That is the whole point of the rework: it is not in the corner any more, it is level with
+     the headline, and the alignment is a consequence of where it sits in the grid rather than
+     something an offset has to keep true. `HomeOpening.astro` carries the row geometry and the one
+     measured offset; everything in here is the lockup itself.
+
+     `margin: 0` because the column, not this element, owns the space around it. */
+  .edm-standing {
+    display: flex;
+    flex-direction: column;
+    /* FLUSH RIGHT. This element is stretched to the full width of the split's right column by the
+       flex column it sits in, so `flex-end` lands the lockup on that column's right edge, which is
+       the page's content edge and the edge the ladder and its caption below already end on. It
+       carries "edition" with it: the span is shrink-to-fit, so the same alignment puts the word
+       under the wordmark's last letter rather than under the icon. `text-align` would not do this
+       — the span's box is only as wide as the word. */
+    align-items: flex-end;
+    gap: var(--bo-space-1);
+    margin: 0;
+  }
+
+  /* ── STACKED, IT CENTRES ON ITS OWN RULE ─────────────────────────────────────────────────────
+     Oleh, 2026-08-31: *"let's put Airtable Edition on that line, centred in the middle."*
+
+     Flush right is correct inside the split, where this shares an edge with the ladder and the
+     caption below it and that shared edge IS the composition. Stacked there is no right column to
+     belong to: the rule above runs the full width, and a mark hugging one end of a full-width rule
+     reads as left over rather than as placed.
+
+     `align-items`, not `text-align`, for the same reason the flush-right rule gives — this is a
+     flex column and "edition" is a shrink-to-fit span, so this is what moves the image and the word
+     together and keeps the word centred under the WORDMARK rather than under the icon.
+
+     THE RULE LIVES HERE AND NOT IN `HomeOpening`, and that is not a preference. It was written
+     there first and did nothing: a parent's scoped `<style>` cannot reach inside a child component,
+     because the parent's rules carry the parent's `data-astro-cid-*` and these elements carry this
+     file's. Fifth time this app has hit that trap. Anything that styles `.edm-standing` belongs in
+     this file. */
+  @media (max-width: 62rem) {
+    .edm-standing {
+      align-items: center;
+    }
+  }
+
+  /* THE ONE NUMBER, AND EVERYTHING ELSE IS DERIVED FROM IT. `--edm-ink` is the height the WORDMARK's
+     ink should come out at; the file's height is that divided by the wordmark's 0.6913 share of it.
+     1.5rem is `--bo-t-24`, the top of this page's non-default type ladder — see the docblock.
+
+     It is a custom property so a caller can resize the whole lockup by setting one value instead of
+     recomputing the divide. `HomeOpening` does that on a phone, where this is a masthead mark
+     beside an eyebrow rather than a standing object beside a headline.
+
+     `rem`, not `em`: this is a standing object in a column of its own, not a mark riding a line of
+     fluid display type, and it must not resize with a headline it is merely level with. */
+  /* A FALLBACK, NOT A DECLARATION. Setting `--edm-ink` on `.edm-standing` itself would BEAT the
+     value a caller inherits down to it — a property set on the element always wins over one coming
+     from an ancestor — so the override would silently do nothing. That is exactly what happened on
+     the first attempt: `HomeOpening` asked for a smaller mark on a phone and got the full-size one.
+     The default belongs in the `var()` fallback, where an inherited value can reach it. */
+  .edm-standing__logo {
+    height: calc(var(--edm-ink, var(--bo-t-24)) / 0.6913);
+    width: auto;
+    max-width: 100%;
+  }
+
+  /* Our annotation of their mark, in our face. `.bo-eyebrow`'s recipe, muted — the same thing
+     `.cred__role` does under the three partner logos at the foot of this page. */
+  .edm-standing__word {
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+    white-space: nowrap;
+  }
+
+  /* THE THEME SWAP IS EXPLICIT IN BOTH DIRECTIONS, for the reason `Credibility.astro` spells out:
+     the stored choice stamps `data-theme` on the root and the default "system" setting stamps
+     nothing, so the media query has to answer for system and the attribute has to be able to
+     overrule it. Defining either alone leaves one of the four combinations showing the wrong file.
+
+     `display: block`, not `flex`: these are the flex ITEMS, and the column above lays them out. */
+  .edm-standing__logo--dark {
+    display: none;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .edm-standing__logo--light {
+      display: none;
+    }
+    :root:not([data-theme="light"]) .edm-standing__logo--dark {
+      display: block;
+    }
+  }
+
+  :root[data-theme="dark"] .edm-standing__logo--light {
+    display: none;
+  }
+  :root[data-theme="dark"] .edm-standing__logo--dark {
+    display: block;
+  }
+  :root[data-theme="light"] .edm-standing__logo--light {
+    display: block;
+  }
+  :root[data-theme="light"] .edm-standing__logo--dark {
+    display: none;
+  }
+</style>

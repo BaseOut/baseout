@@ -1,0 +1,30 @@
+{
+  "name": "@baseout/survey",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The State of DevOps for App Platforms survey — splash, branching survey flow, thank-you, private sneak peek. Target: survey.baseout.com.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev --port 4344",
+    "build": "astro build",
+    "preview": "astro preview --port 4344",
+    "typecheck": "wrangler types && astro check",
+    "db:migrate": "wrangler d1 migrations apply SURVEY_DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply SURVEY_DB --remote",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^13.7.0",
+    "astro": "^6.1.2",
+    "better-auth": "^1.6.20",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.106.0"
+  }
+}

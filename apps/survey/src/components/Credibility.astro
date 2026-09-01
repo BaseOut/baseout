@@ -1,0 +1,366 @@
+---
+import { BRAND, SCORE_SHORT } from '../lib/brand';
+
+/**
+ * WHO IS BEHIND THIS.
+ *
+ * The one thing Dan named as MISSING from the splash, at 02:02: *"I think the thing that's missing
+ * is the credibility of who's behind it. So I would like to add another section of who's behind
+ * the survey, and have our logos of Baseout, BuiltOnAir and On2Air."* He weighed modals for each
+ * and then settled: *"maybe it's just enough for just the logo with some text and then a link that
+ * takes you to them."* Then, on the compact sponsor line already at the foot of the page:
+ * *"instead of this, that's not enough there."*
+ *
+ * So this is a section, not a line, and it takes the splash's footer slot: `index.astro` renders it
+ * with `footer={false}`, per 09:05 (*"this footer can stay there like this for the form, just not
+ * on the splash page"*). Every other page keeps the compact one.
+ *
+ * ── THE LOGOS, AND WHERE EACH ONE CAME FROM ───────────────────────────────────────────────────
+ * All three are real marks now. The first pass set BuiltOnAir and On2Air in the brand's own type
+ * because no asset existed in this repo; Oleh asked for the real ones and they were pulled from the
+ * companies' own sites on 2026-08-27:
+ *
+ *   · Baseout    `apps/web/public/images/logo`, already two files, one per theme.
+ *   · BuiltOnAir `builtonair.com/uploads/boa-web.png`, the header lockup. Cropped above the rule,
+ *                dropping the "All things Airtable" tagline: at the size this row renders, a
+ *                two-deck lockup makes the wordmark half the height of the other two.
+ *   · On2Air     `on2air.com/logo-horizontal.png`. 212px wide is everything they publish, which is
+ *                why the row renders short: at 1.55rem tall it is still better than 2x.
+ *
+ * THE DARK-THEME FILES ARE OURS, NOT THEIRS. Neither company publishes a reversed version, and
+ * both marks are dark ink that disappears on this page's dark theme. The `-dark.png` files knock
+ * the low-saturation ink to white and leave every saturated pixel untouched, so BuiltOnAir keeps
+ * its bird and On2Air keeps its cyan "Air". It is the standard reversed treatment and it invents
+ * nothing, but it is still a derived asset: if either brand kit has an official reversed lockup,
+ * dropping it in over the file is the whole change.
+ *
+ * ── SIZING, AND IT IS MEASURED RATHER THAN EYEBALLED ──────────────────────────────────────────
+ * The first pass picked three heights by eye and got them wrong in the same direction Oleh then
+ * reported: Baseout smallest, BuiltOnAir largest. The cause is not padding. All three files are
+ * already trimmed hard against their ink, so cropping them again changes nothing. It is that the
+ * three lockups give the WORDMARK a different share of their own height:
+ *
+ *     Baseout      wordmark is 50% of the image (200 of 400) — its mark is twice the type
+ *     On2Air       wordmark is 62% of the image (33 of 53)
+ *     BuiltOnAir   wordmark is 74% of the image (102 of 137)
+ *
+ * So at one shared height BuiltOnAir's name renders half again bigger than Baseout's. `mark` sets
+ * each image so the WORDMARK ink lands at the same height, 0.95rem, which is the thing the eye
+ * compares when it decides two logos are "the same size". The numbers are 0.95 divided by the
+ * share above; change the target and recompute, do not nudge them one at a time.
+ *
+ * ── THE SOURCE PARAMETER ──────────────────────────────────────────────────────────────────────
+ * 02:56: *"that's where Baseout would, we could take them to a landing page that you'll be working
+ * on. And that landing page, maybe we'll just have a variable that says like coming from the
+ * survey, so we can maybe tailor it."* `?from=doap` is that variable. It only rides the Baseout
+ * link: the other two are other people's sites and tagging their traffic is not ours to do.
+ */
+
+/** The landing page does not exist yet, so this points at the site and carries the tag regardless. */
+const BASEOUT_HREF = 'https://baseout.com/?from=doap';
+
+const PARTNERS = [
+  {
+    name: 'Baseout',
+    href: BASEOUT_HREF,
+    logo: '/logos/baseout-light.svg',
+    logoDark: '/logos/baseout-dark.svg',
+    width: 900,
+    height: 240,
+    mark: '1.9rem',
+    role: 'Runs the survey',
+    line: 'The backup and data intelligence platform for Airtable, launching this year.',
+  },
+  {
+    name: 'BuiltOnAir',
+    href: 'https://builtonair.com',
+    logo: '/logos/builtonair-light.png',
+    logoDark: '/logos/builtonair-dark.png',
+    width: 928,
+    height: 137,
+    mark: '1.28rem',
+    role: 'Runs the survey',
+    line: 'The Airtable community’s podcast and network, week in and week out since 2019.',
+  },
+  {
+    name: 'On2Air',
+    href: 'https://on2air.com',
+    logo: '/logos/on2air-light.png',
+    logoDark: '/logos/on2air-dark.png',
+    width: 212,
+    height: 53,
+    mark: '1.53rem',
+    role: 'The team behind it',
+    line: 'Has protected Airtable data for teams for years. The credibility anchor, not the sponsor.',
+  },
+];
+---
+
+<section class="cred" aria-labelledby="cred-h">
+  <div class="cred__head">
+    <div>
+      <p class="bo-eyebrow">Who is behind it</p>
+    {
+      /* THE ARTICLE IS TYPED, THE NAME IS NOT. `BRAND` gained the word "Survey" on 2026-08-28 —
+         Dan: *"it should never be 'State of DevOps for App Platforms', it should be survey,
+         because the entity itself is the survey"* — and a name ending in a common noun wants a
+         determiner in running prose in a way the old one could get away with without. */
+    }
+      <h2 id="cred-h" class="cred__h">The {BRAND} is run by people who have done this before</h2>
+      <p class="cred__lede bo-measure">
+        Nobody has benchmarked how teams protect the databases their business runs on. Three groups
+        who have spent years inside this one are doing it together.
+      </p>
+    </div>
+
+    {
+      /*
+        THE ASK, REPEATED, IN SPACE THIS BLOCK WAS ALREADY WASTING. The hero's button is above the
+        fold and the next one is on `/thanks`; between them the page spends a screen on the
+        explainer and another on the four things you get, so a reader convinced by those had to
+        scroll back up to act. It stood alone under the rail for about ten minutes and read as a
+        button abandoned in a field — Oleh, 2026-08-28: put it beside "Who is behind it" and save
+        the space. The heading and its lede are held to `34rem` and `bo-measure`, so the right half
+        of this row was empty at every desktop width; the pair fits there and costs no height at
+        all.
+
+        IT WAS BOTH BUTTONS UNTIL 2026-08-31, on the reasoning that a respondent who left mid-survey
+        is exactly the person still reading this far down. That was wrong about the mechanism: on
+        this device `/survey` resumes them without being asked, and on another device the start gate
+        offers the link. The pair was solving a problem that had no case left.
+
+        Verbatim from the hero: same label, same destination, same classes. A repeat ask that
+        rewords itself reads as a second, different offer and makes the reader work out whether it
+        is one.
+      */
+    }
+    {/* THE SAME PAIR, THE SAME CUT. This block repeats the hero's ask where the reading ends, so it
+        repeats the hero's shape exactly: one button, and no second door. See the long note in
+        `HomeOpening.astro` for why `Resume your survey` went and why nothing replaced it. Two asks
+        on one page that resolved their doors differently would be the worse version of the problem
+        Dan was pointing at. */}
+    <div class="cred__cta">
+      <a class="bo-btn bo-btn--primary" href="/survey">Get your {SCORE_SHORT}</a>
+    </div>
+  </div>
+
+  <ul class="cred__list">
+    {PARTNERS.map((p) => (
+      <li class="cred__item">
+        {/* Two files per logo and one of them is always display:none. The alternative is one file
+            and a CSS filter, which would repaint BuiltOnAir's bird and On2Air's cyan along with the
+            ink. The hidden one is `aria-hidden` and unnamed so the mark is announced once. */}
+        <span class="cred__mark" style={`--mark-h: ${p.mark}`}>
+          <img class="cred__img cred__img--light" src={p.logo} alt={p.name} width={p.width} height={p.height} loading="lazy" />
+          <img class="cred__img cred__img--dark" src={p.logoDark} alt="" aria-hidden="true" width={p.width} height={p.height} loading="lazy" />
+        </span>
+        <p class="cred__role">{p.role}</p>
+        <p class="cred__line">{p.line}</p>
+        <a class="cred__link" href={p.href} rel="noopener">
+          {p.name}
+          <span aria-hidden="true">→</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  <p class="cred__note">Answers are confidential and only appear in aggregate.</p>
+</section>
+
+<style>
+  /* NO RULE ABOVE THIS SECTION. It had one, and Oleh took it off on 2026-08-27: the benefits rail
+     directly above already closes itself with a full-width bottom border, so a second hairline a
+     rhythm below it drew a band of nothing between two things that are simply consecutive. Air
+     separates them now, which is what the rest of this page uses. */
+  .cred {
+    /* Was `var(--bo-space-7, 4rem)` — and `--bo-space-7` HAS NEVER EXISTED in this stylesheet, so
+       this silently took the 4rem fallback and sat a rung off every other seam on the page. Now it
+       is the same section seam as the rest. */
+    margin-top: var(--bo-splash-slide);
+  }
+
+  /* THE PROSE TAKES THE MEASURE IT NEEDS AND THE BUTTONS TAKE WHAT IS LEFT. `1fr auto` rather than
+     two equal halves: the heading is already capped at 34rem and the lede at `bo-measure`, so an
+     equal split would only move the empty space around.
+
+     `center`, not `end`. Sitting the pair on the lede's LAST line put it at the bottom of a
+     three-part block and read as a footnote to the paragraph rather than as the section's ask —
+     Oleh, 2026-08-28, who offered centre or the block's top edge. Top would have aligned two 44px
+     buttons with the 11px eyebrow, the quietest thing in the column, and left them hanging above
+     the heading. Centred, they land opposite the heading, which is the loudest, and the row reads
+     as two halves of one thing. */
+  .cred__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--bo-space-4);
+    margin-bottom: var(--bo-space-5);
+  }
+
+  /* ONE CHILD SINCE 2026-08-31, and this rule is nearly vestigial: `.cred__head` is a grid whose
+     second track is `auto`, and `.bo-btn` is itself `display: flex`, so the button already sizes to
+     its own content and sits centred in the row. An `align-items` here was measured at zero effect
+     for every value it could take — the container is shrink-wrapped to the one thing in it — so it
+     is gone rather than left reading as if it did something.
+
+     What survives is `display: flex`, and only because the stacked override below needs a flex
+     container to hand the button the full width. */
+  .cred__cta {
+    display: flex;
+  }
+
+  .cred__h {
+    margin: 0 0 var(--bo-space-2);
+    max-width: 34rem;
+    font-size: var(--bo-t-24);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+  }
+
+  .cred__lede {
+    margin: 0;
+    font-size: var(--bo-t-16);
+    line-height: 1.55;
+    color: var(--bo-muted-strong);
+  }
+
+  /* Three columns of equal weight, divided by rules rather than boxed. The same argument the
+     benefits rail makes on this page: a rule groups as well as a card and promises less. */
+  .cred__list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .cred__item {
+    display: grid;
+    align-content: start;
+    gap: var(--bo-space-2);
+    padding: var(--bo-space-4) var(--bo-space-4) var(--bo-space-4) 0;
+  }
+
+  .cred__item + .cred__item {
+    padding-left: var(--bo-space-4);
+    border-left: 1px solid var(--bo-base-300);
+  }
+
+  /* A SHARED BOX WITH A PER-LOGO HEIGHT INSIDE IT. The box is one height for all three so the
+     three roles, lines and links below start on the same baseline whatever the marks do; `--mark-h`
+     then sets each logo inside it, because equal image heights do not mean equal apparent size. */
+  .cred__mark {
+    display: flex;
+    align-items: center;
+    height: 2.25rem;
+  }
+
+  .cred__img {
+    height: var(--mark-h, 1.7rem);
+    width: auto;
+    max-width: 100%;
+  }
+
+  .cred__role {
+    margin: 0;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .cred__line {
+    margin: 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.55;
+    color: var(--bo-muted-strong);
+  }
+
+  .cred__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    color: var(--bo-primary);
+    text-decoration: none;
+  }
+
+  .cred__link:hover {
+    text-decoration: underline;
+  }
+
+  .cred__note {
+    margin: var(--bo-space-4) 0 0;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  /* THE THEME SWAP IS EXPLICIT IN BOTH DIRECTIONS. The stored choice stamps `data-theme` on the
+     root and the default setting stamps nothing, so the media query has to answer for "system" and
+     the attribute has to be able to overrule it. Defining either one alone leaves one of the four
+     combinations showing the wrong mark. */
+  .cred__img--dark { display: none; }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .cred__img--light { display: none; }
+    :root:not([data-theme='light']) .cred__img--dark { display: block; }
+  }
+
+  :root[data-theme='dark'] .cred__img--light { display: none; }
+  :root[data-theme='dark'] .cred__img--dark { display: block; }
+  :root[data-theme='light'] .cred__img--light { display: block; }
+  :root[data-theme='light'] .cred__img--dark { display: none; }
+
+  @media (max-width: 62rem) {
+    /* The pair drops under the prose rather than squeezing beside it: the heading is two lines of
+       24px here and the two buttons are 300px of their own, which is more than the row has left.
+       `justify-items: start` keeps them on the page's one left margin instead of stretching them
+       across a width they did not ask for. */
+    .cred__head {
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+      justify-items: start;
+      gap: var(--bo-space-3);
+    }
+
+    .cred__list {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cred__item {
+      padding: var(--bo-space-4) 0;
+      border-bottom: 1px solid var(--bo-base-300);
+    }
+
+    .cred__item + .cred__item {
+      padding-left: 0;
+      border-left: 0;
+    }
+
+    .cred__item:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  /* Matches `.splash-cta` in `HomeOpening.astro`: below 30rem two buttons side by side each end up
+     narrower than their own labels, so they stack and take the column. The two asks on this page
+     must behave the same way or the repeat reads as a different control. */
+  @media (max-width: 30rem) {
+    /* Stacked, the ask gets the full width it was denied at desktop: here it is the only thing in
+       its row rather than the quiet half of a header, so a full-bleed button is the ask being
+       obvious rather than the ask shouting. */
+    .cred__cta {
+      align-self: stretch;
+    }
+
+    .cred__cta .bo-btn {
+      width: 100%;
+      text-align: center;
+    }
+  }
+</style>

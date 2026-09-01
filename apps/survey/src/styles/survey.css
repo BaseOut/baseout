@@ -1,0 +1,1898 @@
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   @baseout/survey — the app's own stylesheet. The ONLY one it has.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+   SELF-CONTAINED, AND THAT IS THE SPEC. `openspec/changes/survey-app/design.md` requires
+   "self-contained CSS (no product design-system dependency)". Oleh, 2026-08-25: that means the app
+   must not CONSUME another app's files — not that it must look like a stranger. So nothing outside
+   `apps/survey/` is imported here, and the VALUES below are read off the product's source of truth,
+   `apps/web/src/styles/themes/baseout.css`, and re-declared locally.
+
+   WHY THE VALUES CANNOT SIMPLY BE IMPORTED. The product declares them inside
+   `@plugin "daisyui/theme" { … }`, which needs Tailwind v4 + daisyUI. This app has neither: its
+   whole dependency list is astro + better-auth + drizzle + wrangler. Plain CSS is the only form
+   these values can take here.
+
+   THE COST, STATED. The palette now lives in three places — the product theme (source of truth),
+   `brand/baseout-bridge.css` (the sheet `apps/support` wears), and this file. That is the defect
+   this repo spent 2026-08-17 removing, accepted here because the alternative is a cross-app
+   dependency the spec forbids. The mitigation is a CHECK, not a promise: every value below is
+   diffed against the product theme and the result is printed. If you change one, re-run that diff.
+
+   READ `brand/baseout-bridge.css` FOR THE APPROACH — how the soft pairs and the muted floor are
+   derived, and why. Do not import it.
+
+   ── THE ONE TRAP THIS FILE'S STRUCTURE EXISTS TO AVOID ──────────────────────────────────────────
+   A `var()` inside a custom property is substituted where the property is DECLARED, not where it is
+   used. A derived pair written once on plain `:root` resolves against the LIGHT ink and keeps doing
+   so inside a nested themed scope while looking correct in the source. The bridge records this
+   costing a day and painting black on black. So every derived value is RE-DECLARED inside each
+   theme block below. The formulas repeat; the hex literals do not.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── TOKEN BLOCK 1 · the ladders. Theme-independent, declared once. ───────────────────────────── */
+:root {
+  /* ── THE TYPE LADDER, IN REM ───────────────────────────────────────────────────────────────────
+     The product declares this ladder in PIXELS, and there it is right: an admin tool is used by
+     people who chose their density once and want it held. This app is answered ONCE, by a stranger,
+     on their own machine, with whatever base size they set in their browser. `typography.md` is
+     blunt about it: never px for body text, because px ignores that setting entirely. So the same
+     nine rungs live here as multiples of the root size.
+
+     The rungs are the product's: 11 · 12 · 13 · 14 · 16 · 18 · 20 · 24 · 32 at a 16px root.
+     Nothing between them exists. */
+  --bo-t-11: 0.6875rem;
+  --bo-t-12: 0.75rem;
+  --bo-t-13: 0.8125rem;
+  --bo-t-14: 0.875rem;
+  --bo-t-16: 1rem;
+  --bo-t-18: 1.125rem;
+  --bo-t-20: 1.25rem;
+  --bo-t-24: 1.5rem;
+  --bo-t-32: 2rem;
+
+  /* ── THE DISPLAY TIER, WHICH SITS ABOVE THE LADDER ─────────────────────────────────────────────
+     DESIGN.md says nine fixed rungs and nothing between them. `typography.md` says a marketing
+     surface needs fluid headings. Both are right inside their own scope, so the scopes are split:
+     the LADDER governs interface text (options, buttons, labels, prose) and never goes fluid; this
+     tier exists for exactly TWO moments, the splash headline and the band name on /thanks, which
+     are not interface text but the two places the page speaks.
+
+     Bounded at max = 2.5 x min, the ceiling `typography.md` sets: past that ratio the page starts
+     shouting on a large monitor and browser zoom stops behaving. */
+  --bo-t-display: clamp(2rem, 1.1rem + 4.5vw, 5rem);
+  --bo-t-display-sm: clamp(1.5rem, 1rem + 2.5vw, 3.25rem);
+
+  /* ── THE RADIUS LADDER ─────────────────────────────────────────────────────────────────────────
+     Four rungs, all on the 4px grid, exactly as DESIGN.md §4 defines them. `999px` (a pill) and
+     `50%` (a circle) are SHAPES, not rungs, and a tile inside a frame takes the rung BELOW its
+     frame.
+
+     THE MAPPING TO COMPONENTS IS THE PRODUCT'S, NOT A METAPHOR (DESIGN.md §5): a button and an
+     input take the 8px rung, a card takes 12px. An earlier pass put every corner on 4px because the
+     visual direction was called "instrument" and instruments look machined. That is a metaphor
+     reasoning its way past a measurement: Baseout's interface is softly rounded, and the survey is
+     the door into it, so it rounds the same way.
+
+     THIS LADDER WAS DELETED BY ACCIDENT while the type ladder was being converted to rem, and
+     nothing shouted, because `var()` with no fallback resolves to nothing and every corner quietly
+     went square. That silence is the argument for DESIGN.md's no-fallback rule: the failure was
+     total and visible on screen rather than partial and plausible in the code. */
+  --bo-r-4: 4px;
+  --bo-r-6: 6px;
+  --bo-r-8: 8px;
+  --bo-r-12: 12px;
+
+  /* ── VERTICAL RHYTHM ───────────────────────────────────────────────────────────────────────────
+     One unit, derived from the body line box (1rem x 1.5 = 24px), and every vertical gap is a
+     multiple of it. `typography.md`: text and space have to share one mathematics or the page reads
+     as unrhythmic even when every individual value looks defensible. That is precisely the defect
+     in the first build, where spacing was picked per element off a 4px grid.
+
+     Every step below also lands on the product's 4px grid, so the two systems agree rather than
+     compete. */
+  --bo-rhythm: 1.5rem;
+  --bo-space-2: calc(var(--bo-rhythm) * 0.5);
+  --bo-space-3: var(--bo-rhythm);
+  --bo-space-4: calc(var(--bo-rhythm) * 1.5);
+  --bo-space-5: calc(var(--bo-rhythm) * 2);
+  --bo-space-6: calc(var(--bo-rhythm) * 3);
+
+  /* THE SPLASH'S SECTION SLIDE. The welcome screen was stacking its sections three rhythms apart
+     (72px) while /thanks gives its own sections five rhythms of padding on EACH side — 240px of
+     clear space between one block and the next — and beside that the splash read as cramped rather
+     than composed. Oleh, 2026-08-28: make the gaps below the hero bigger, "closer to how it is done
+     on the final report screen".
+
+     Six rhythms, one number, one place. It is the seam between sections, so each section below the
+     hero takes it as a TOP margin and none takes a bottom one: `main` is a flex column, where
+     adjacent margins ADD instead of collapsing, so a top-and-bottom pair would silently double
+     every gap. Not the report's literal 240px, because the report's sections are long-form reading
+     and the splash's are short pitches; 144px is double what was there and still lets the offer
+     stay reachable. Raising it is one edit here.
+
+     It steps down on narrow screens for the same reason `--rep-slide` does: a slide's worth of air
+     is composition on a desktop and dead scrolling on a phone, where the viewport already separates
+     one section from the next. */
+  --bo-splash-slide: calc(var(--bo-rhythm) * 6);
+  --bo-space-1: 0.5rem;
+
+  /* ── TOKEN BLOCK 2 · the DARK palette's literals, declared once here and APPLIED by the two
+     blocks further down. Two selectors have to carry dark (an explicit choice, and the system
+     preference) and CSS gives no way to share one declaration across a media-query boundary — so
+     the mapping repeats and the VALUES do not. Every hex is from the product's `baseout` theme. */
+  --d-base-100: #111111;
+  --d-base-200: #1a1a1a;
+  --d-base-300: #27272a;
+  --d-base-content: #ffffff;
+  --d-root-bg: #0a0a0a;
+  --d-primary: #5cceff;
+  --d-primary-content: #03111d;
+  --d-success: #3db878;
+  --d-warning: #c49030;
+  --d-error: #d44f4f;
+}
+
+/* ── TOKEN BLOCK 3 · LIGHT. Values from the product's `baseout-light` theme. ──────────────────── */
+:root {
+  color-scheme: light;
+
+  /* Surfaces.
+
+     THE LIGHT PAGE FLOOR IS WHITE SINCE 2026-08-31. It was `base-200` raised one lightness step —
+     a very pale cool grey — which is the product's own floor and is right THERE: the admin tool is
+     a field of white panels, and they need a ground to sit on. This app is not that. It is four
+     marketing pages of running prose, and Oleh: *"I want the page background white instead of the
+     grey we have. I understand that grey was for the app's interface, but on this page it does
+     nothing, it'll be better."*
+
+     It is `var(--bo-base-100)` rather than a second `#ffffff` so that the two cannot drift, and so
+     the ONE consequence of the change is stated in the token itself: every surface painted
+     `base-100` now sits on its own colour and is carried entirely by its border. Checked on all
+     three pages — options, fields, panels and tiles all draw a `base-300` hairline, and the two
+     that did not are fixed in their own files. Anything added later that paints `base-100` and
+     omits a border will be invisible here and correct in the dark theme, which is the trap. */
+  --bo-base-100: #ffffff;
+  --bo-base-200: #edeef2;
+  --bo-base-300: #d5d7de;
+  --bo-base-content: #111111;
+  --bo-root-bg: var(--bo-base-100);
+
+  /* Brand + status. SOLVED values, not picked ones: each was walked down in lightness upstream
+     until it cleared 4.5 both as text on the white card AND as text on its own tint. Do not
+     re-derive them from a hue and do not brighten one in isolation. */
+  --bo-primary: #156e97;
+  --bo-primary-content: #ffffff;
+  --bo-success: #227547;
+  --bo-warning: #87611c;
+  --bo-error: #b93636;
+
+  /* ── MUTED TEXT, RAISED FOR THIS THEME ON 2026-08-31 ────────────────────────────────────────
+     .65 and .85 became .78 and .92. The old pair was solved against AA and cleared it easily —
+     .65 is 5.92 on a white card, .55 is 4.17, .45 is 3.03 — and AA is not what was wrong.
+
+     Oleh: *"the font is already fairly thin, and when it's grey on top of that it looks bad, like
+     everything shimmers in front of your eyes. Bad contrast. If we want to use that grey it should
+     be where the text is heavier. Where it's thin, it should stay black. Or grey can go on slightly
+     larger type."*
+
+     He is describing a real effect that a contrast ratio does not measure: perceived contrast is
+     stroke weight TIMES colour difference, and Urbanist at 400 is a light face. The same .65 that
+     is solid under an 11px 700 label is a shimmer under 14px of running prose — WCAG says as much
+     in the other direction, exempting large text at 3:1 where body text needs 4.5:1.
+
+     WHY THE TOKEN AND NOT THE SEVENTY-TWO RECIPES. Both levels are read by ~72 rules across five
+     files, and his rule ("heavy or large may be grey, thin may not") does not sort those into two
+     clean piles — plenty are one class serving both. Raising the levels fixes the prose everywhere
+     at once and costs the labels nothing, because a 700 small-cap at .78 still reads as a label
+     against black body copy. The two-step relationship survives: .78 and .92 are still visibly
+     apart, and the ORDER of the ramp is what carries hierarchy, not the size of the gap.
+
+     LIGHT ONLY. The dark blocks keep .65/.85 deliberately. Thin light type on a near-black ground
+     does not shimmer the way thin dark type on white does — it blooms, and raising it there would
+     take muted text closer to the pure white the headings use and flatten the ramp instead.
+
+     .35 is untouched and still ORNAMENT only: a separator, an em dash, the 32px numeral behind a
+     line of advice. Large or decorative, which is exactly the case his rule allows. */
+  --bo-muted: oklch(from var(--bo-base-content) l c h / 0.78);
+  --bo-muted-strong: oklch(from var(--bo-base-content) l c h / 0.92);
+  --bo-ornament: oklch(from var(--bo-base-content) l c h / 0.35);
+
+  /* The soft paints — a selected option, a quiet notice. 20% is the ceiling the LABEL can pay for:
+     the tint darkens the surface under a label that stays put, so at 24% the text falls to 4.68,
+     while at 16% plain primary is already 4.24. 20% + the darkened foreground = 4.96.
+     NEUTRAL IS ABSENT ON PURPOSE — a soft neutral is grey on grey. Ghost treatment instead. */
+  /* THE RAIL'S FOOT WASH, AND IN THIS THEME IT PAYS NOTHING. See `.bo-rail__item`: the gradient
+     under the four drawings is built from this token, and on a WHITE floor any grey it could carry
+     reads as a smudge with a hard bottom edge rather than as the foot of a card — Oleh, 2026-08-31:
+     *"I don't like how the cards look on white. They have some kind of dirty colour."* He is
+     describing base-200's blue cast at 85% over white, which is exactly what was there.
+
+     `transparent` here rather than a rule that switches off in the component, because a component
+     that branches on theme is a component that gets it wrong on the third theme. The gradient is
+     still declared, still one rule, and simply resolves to nothing on light. */
+  --bo-rail-foot: transparent;
+
+  --bo-soft-primary-bg: color-mix(in oklch, var(--bo-primary) 20%, transparent);
+  --bo-soft-primary-bg-hover: color-mix(in oklch, var(--bo-primary) 26%, transparent);
+  --bo-soft-primary-fg: color-mix(in oklch, var(--bo-primary) 85%, var(--bo-base-content));
+  --bo-soft-success-bg: color-mix(in oklch, var(--bo-success) 20%, transparent);
+  --bo-soft-success-fg: color-mix(in oklch, var(--bo-success) 85%, var(--bo-base-content));
+  --bo-soft-error-bg: color-mix(in oklch, var(--bo-error) 20%, transparent);
+  --bo-soft-error-fg: color-mix(in oklch, var(--bo-error) 85%, var(--bo-base-content));
+}
+
+/* ── TOKEN BLOCK 4 · DARK, by SYSTEM PREFERENCE. ──────────────────────────────────────────────────
+   Guarded by `:not([data-theme='light'])` so an explicit light choice beats the OS.
+
+   THIS BLOCK IS WHY THIS FILE EXISTS RATHER THAN AN IMPORT. `brand/baseout-bridge.css` keys dark
+   off `data-theme` ONLY — it carries no `prefers-color-scheme` at all, so a visitor whose OS is
+   dark gets a light page until something stamps the attribute. A survey is answered once, by a
+   stranger, who will not go looking for a toggle first.
+
+   DARK IS NOT LIGHT INVERTED AND NOT LIGHT REUSED — it is its own solved set. EVERY hue differs,
+   and the `-content` pair inverts too, because a bright cyan button needs dark text on it. The
+   upstream tell was a 3.34:1 link: the light primary sitting on the dark surface. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --bo-base-100: var(--d-base-100);
+    --bo-base-200: var(--d-base-200);
+    --bo-base-300: var(--d-base-300);
+    --bo-base-content: var(--d-base-content);
+    --bo-root-bg: var(--d-root-bg);
+    --bo-primary: var(--d-primary);
+    --bo-primary-content: var(--d-primary-content);
+    --bo-success: var(--d-success);
+    --bo-warning: var(--d-warning);
+    --bo-error: var(--d-error);
+
+    /* THE FOOT WASH EARNS ITS KEEP HERE. On a near-black floor base-200 is one step ABOVE it, so
+       the same gradient LIFTS the foot instead of shading it and reads as depth under the drawing.
+       Measured both ways on 2026-08-31 before splitting them: identical rule, opposite result. */
+    --bo-rail-foot: var(--bo-base-200);
+
+    /* Re-declared, not inherited — see the trap in this file's header. */
+    --bo-muted: oklch(from var(--bo-base-content) l c h / 0.65);
+    --bo-muted-strong: oklch(from var(--bo-base-content) l c h / 0.85);
+    --bo-ornament: oklch(from var(--bo-base-content) l c h / 0.35);
+    --bo-soft-primary-bg: color-mix(in oklch, var(--bo-primary) 20%, transparent);
+    --bo-soft-primary-bg-hover: color-mix(in oklch, var(--bo-primary) 26%, transparent);
+    --bo-soft-primary-fg: color-mix(in oklch, var(--bo-primary) 85%, var(--bo-base-content));
+    --bo-soft-success-bg: color-mix(in oklch, var(--bo-success) 20%, transparent);
+    --bo-soft-success-fg: color-mix(in oklch, var(--bo-success) 85%, var(--bo-base-content));
+    --bo-soft-error-bg: color-mix(in oklch, var(--bo-error) 20%, transparent);
+    --bo-soft-error-fg: color-mix(in oklch, var(--bo-error) 85%, var(--bo-base-content));
+  }
+}
+
+/* ── TOKEN BLOCK 5 · DARK, by EXPLICIT CHOICE. Wins on a light OS; same values, same formulas. ── */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bo-base-100: var(--d-base-100);
+  --bo-base-200: var(--d-base-200);
+  --bo-base-300: var(--d-base-300);
+  --bo-base-content: var(--d-base-content);
+  --bo-root-bg: var(--d-root-bg);
+  --bo-primary: var(--d-primary);
+  --bo-primary-content: var(--d-primary-content);
+  --bo-success: var(--d-success);
+  --bo-warning: var(--d-warning);
+  --bo-error: var(--d-error);
+
+  /* The lift, again. Same reason as the media block above. */
+  --bo-rail-foot: var(--bo-base-200);
+
+  --bo-muted: oklch(from var(--bo-base-content) l c h / 0.65);
+  --bo-muted-strong: oklch(from var(--bo-base-content) l c h / 0.85);
+  --bo-ornament: oklch(from var(--bo-base-content) l c h / 0.35);
+  --bo-soft-primary-bg: color-mix(in oklch, var(--bo-primary) 20%, transparent);
+  --bo-soft-primary-bg-hover: color-mix(in oklch, var(--bo-primary) 26%, transparent);
+  --bo-soft-primary-fg: color-mix(in oklch, var(--bo-primary) 85%, var(--bo-base-content));
+  --bo-soft-success-bg: color-mix(in oklch, var(--bo-success) 20%, transparent);
+  --bo-soft-success-fg: color-mix(in oklch, var(--bo-success) 85%, var(--bo-base-content));
+  --bo-soft-error-bg: color-mix(in oklch, var(--bo-error) 20%, transparent);
+  --bo-soft-error-fg: color-mix(in oklch, var(--bo-error) 85%, var(--bo-base-content));
+}
+
+/* ═══ END OF THE TOKEN BLOCKS. No hex literal may appear below this line. ═══════════════════════ */
+
+/* ── BASE ────────────────────────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* `[hidden]` IS A UA STYLE, AND ANY AUTHOR `display` BEATS IT.
+   Every hidden thing in this app is hidden from script by setting `.hidden = true`: the four
+   sections of the survey page, the Back button on question one, the result block before it is
+   scored, the jump panel. The moment a recipe declared `display: inline-flex`, the Back button
+   stopped obeying and sat on question one offering to go back to nothing. This is the one place
+   `!important` is correct: it is not overriding a decision, it is restoring the behaviour the
+   attribute already promises. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  position: relative;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  /* Urbanist is the brand's face (DESIGN.md). The fallback stack is metric-adjusted so the swap
+     does not reflow the page under the reader; `size-adjust` matches the x-height rather than the
+     em box, which is the measurement that actually shows. */
+  font-family: Urbanist, 'Urbanist Fallback', system-ui, -apple-system, sans-serif;
+  font-size: var(--bo-t-16);
+  line-height: 1.5;
+  font-kerning: normal;
+  background-color: var(--bo-root-bg);
+  color: var(--bo-base-content);
+  -webkit-font-smoothing: antialiased;
+}
+
+@font-face {
+  font-family: 'Urbanist Fallback';
+  src: local('Helvetica Neue'), local('Arial');
+  size-adjust: 102%;
+  ascent-override: 92%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+}
+
+/* Light type on a dark ground loses perceived weight on three axes, so it is compensated on three:
+   leading, tracking, and one notch of weight. Fixing only the leading is the common half-measure. */
+body {
+  letter-spacing: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) body {
+    line-height: 1.58;
+    letter-spacing: 0.008em;
+  }
+}
+
+:root[data-theme='dark'] body {
+  line-height: 1.58;
+  letter-spacing: 0.008em;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 78rem;
+  margin: 0 auto;
+  /* The trailing space clears the floating jump control, which is fixed over the bottom-right
+     corner and otherwise lands on the last thing on a short page. It goes back to `--bo-space-5`
+     when that control is removed before send. */
+  padding: var(--bo-space-5) var(--bo-space-4) 5rem;
+}
+
+/* The survey page is a single TASK, so its step centres in the viewport. The splash and the result
+   are DOCUMENTS and keep their natural height, which is why this is scoped to the quiz rather than
+   written as `main > section`: that version stretched the verdict too and opened 370px of void
+   above it. */
+#quiz {
+  flex: 1;
+}
+
+/* The reading column for anything that is prose or a form. Everything else may use the full width. */
+.bo-measure {
+  max-width: 34rem;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--bo-base-content);
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--bo-primary);
+}
+
+:where(a, button, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--bo-primary);
+  outline-offset: 2px;
+  border-radius: var(--bo-r-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── DISPLAY ─ the two moments the page speaks. Never used for interface text. ────────────────── */
+.bo-display {
+  margin: 0 0 var(--bo-space-3);
+  font-size: var(--bo-t-display);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+}
+
+.bo-display--sm {
+  font-size: var(--bo-t-display-sm);
+}
+
+/* The quiet half of a display headline: same face, same size, far lighter weight and muted ink, so
+   the pair reads as one voice at two volumes rather than two competing headlines.
+
+   It frames the splash headline on both sides — "State of" above the name and "Survey" below it —
+   which is Dan's ask of 2026-08-28 to set the genre words apart from the coined one. It carried a
+   single edition line before that and was left behind, unused, when the line was deleted. */
+.bo-display__soft {
+  display: block;
+  font-weight: 300;
+  color: var(--bo-muted-strong);
+}
+
+/* ── EYEBROW / MICRO-LABEL ────────────────────────────────────────────────────────────────────── */
+.bo-eyebrow {
+  margin: 0 0 var(--bo-space-1);
+  font-size: var(--bo-t-11);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bo-primary);
+}
+
+.bo-eyebrow--muted {
+  color: var(--bo-muted);
+}
+
+/* ── THE META ROW ─ the three objections, answered before they are raised ──────────────────────
+   How long, do I lose my place, and do I have to sign up for anything. A visitor weighing ten
+   minutes asks all three before reading a benefit, and a sentence buried under the buttons answers
+   them in prose they have to parse. Set as facts, separated by rules, they are scannable.
+
+   ONE CLAIM IS DELIBERATELY NOT HERE. A reference design carried "ANONYMOUS BY DEFAULT", which
+   would be false in this app: the email gate runs BEFORE question one, so every answer is tied to
+   an address. Confidential and anonymous are not synonyms, and the difference is exactly what a
+   sceptical respondent is checking. The honest claim, which is also Dan's, is aggregate-only. */
+.bo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bo-space-1) 0;
+  margin: var(--bo-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bo-meta li {
+  padding: 0 var(--bo-space-2);
+  border-right: 1px solid var(--bo-base-300);
+  font-size: var(--bo-t-11);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bo-muted);
+  white-space: nowrap;
+}
+
+.bo-meta li:first-child {
+  padding-left: 0;
+}
+
+.bo-meta li:last-child {
+  border-right: 0;
+}
+
+/* ── PROSE HELPERS ────────────────────────────────────────────────────────────────────────────── */
+.bo-lede {
+  margin: 0 0 var(--bo-space-3);
+  font-size: var(--bo-t-18);
+  line-height: 1.55;
+  color: var(--bo-muted-strong);
+}
+
+/* ── FOR SCREEN READERS ONLY ───────────────────────────────────────────────────────────────────
+   A label that has to exist for the accessibility tree and must not be drawn. The clip-rect pattern
+   rather than `display: none` or `visibility: hidden`, both of which take the element OUT of the
+   tree and so remove the very thing it is there to provide. `white-space: nowrap` stops a hidden
+   label wrapping into a 1px box and being announced with broken word boundaries.
+
+   Added 2026-08-31 for the closing section's copy field, which is the app's first input whose
+   label would otherwise have had to be visible or absent. */
+.bo-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.bo-fine {
+  font-size: var(--bo-t-13);
+  color: var(--bo-muted);
+}
+
+/* ── BUTTON ───────────────────────────────────────────────────────────────────────────────────── */
+.bo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bo-space-1);
+  min-height: 2.75rem;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--bo-r-8);
+  font: inherit;
+  font-size: var(--bo-t-16);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bo-btn--primary {
+  background: var(--bo-primary);
+  color: var(--bo-primary-content);
+}
+
+.bo-btn--primary:hover {
+  background: color-mix(in oklch, var(--bo-primary) 88%, var(--bo-base-content));
+}
+
+.bo-btn--primary:active {
+  transform: translateY(1px);
+}
+
+.bo-btn--ghost {
+  background: transparent;
+  border-color: var(--bo-base-300);
+  color: var(--bo-muted-strong);
+}
+
+.bo-btn--ghost:hover {
+  background: var(--bo-base-200);
+  border-color: var(--bo-muted);
+}
+
+.bo-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.bo-btn--primary:disabled:hover {
+  background: var(--bo-primary);
+}
+
+.bo-btn--ghost:disabled:hover {
+  background: transparent;
+  border-color: var(--bo-base-300);
+}
+
+/* ── PANEL ─ used only where content is genuinely a separate object. Never nested. ─────────────── */
+.bo-panel {
+  background: var(--bo-base-100);
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-12);
+  padding: var(--bo-space-4);
+}
+
+.bo-panel--lg {
+  padding: var(--bo-space-5);
+}
+
+/* ── FIELD ────────────────────────────────────────────────────────────────────────────────────── */
+.bo-field {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6875rem 0.875rem;
+  background: var(--bo-base-100);
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-8);
+  font: inherit;
+  font-size: var(--bo-t-16);
+  color: var(--bo-base-content);
+  transition: border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bo-field::placeholder {
+  color: var(--bo-muted);
+}
+
+.bo-field:hover {
+  border-color: var(--bo-muted);
+}
+
+.bo-field[aria-invalid='true'] {
+  border-color: var(--bo-error);
+}
+
+textarea.bo-field {
+  min-height: 7.5rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* ── OPTION ROW ───────────────────────────────────────────────────────────────────────────────── */
+.bo-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--bo-space-2);
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  background: var(--bo-base-100);
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-8);
+  font-size: var(--bo-t-16);
+  cursor: pointer;
+  transition:
+    background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bo-opt:hover {
+  border-color: var(--bo-muted);
+}
+
+/* Modality matters: `render()` focuses the first control of every step, so a row painted on
+   `:focus-within` gives every question a ring around option one, sitting next to the option the
+   respondent actually chose. `:has(:focus-visible)` paints only when the browser judges the focus
+   worth showing, which is the keyboard case the ring exists for. */
+.bo-opt:has(:focus-visible) {
+  outline: 2px solid var(--bo-primary);
+  outline-offset: 2px;
+}
+
+.bo-opt input:focus-visible {
+  outline: none;
+}
+
+.bo-opt:has(:checked) {
+  background: var(--bo-soft-primary-bg);
+  border-color: var(--bo-primary);
+  color: var(--bo-soft-primary-fg);
+}
+
+.bo-opt input {
+  accent-color: var(--bo-primary);
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* ── NOTE / ERROR ─────────────────────────────────────────────────────────────────────────────── */
+.bo-note {
+  margin: 0;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--bo-r-8);
+  font-size: var(--bo-t-14);
+  font-weight: 600;
+}
+
+.bo-note--success {
+  background: var(--bo-soft-success-bg);
+  color: var(--bo-soft-success-fg);
+}
+
+.bo-note--error {
+  background: var(--bo-soft-error-bg);
+  color: var(--bo-soft-error-fg);
+}
+
+.bo-error-text {
+  margin: 0;
+  font-size: var(--bo-t-13);
+  color: var(--bo-error);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   LAYOUT PRIMITIVES
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── PAGE CHROME ─ the theme control. Outside the reading column on purpose: a control
+   that competes with the question is the failure mode a survey cannot afford.
+
+   IT FLOATS, TOP RIGHT. `fixed`, not `absolute`, and that is the part that was actually wrong
+   before any of this: the finish page is six sections long and an `absolute` control scrolls away,
+   so changing the theme meant scrolling back to the top of a document you had started reading.
+
+   THE CORNER MOVED TWICE ON 2026-08-31 and the second move is the one that stands. It went bottom
+   LEFT first, to keep clear of `/thanks`'s masthead and `/survey`'s meta row, which is a real
+   collision — but Oleh: *"and I don't like this theme switcher, let it be in the top right corner.
+   That's more logical."* He is right about the convention: a theme control is chrome, chrome lives
+   at the top, and every product that has one puts it there. The collision it was avoiding is not a
+   collision any more anyway, because the control is `fixed` and floats OVER those rows rather than
+   being laid out among them, which is what made it read as pushed in among them in the first place.
+
+   `--bo-space-3` from each edge — a rhythm, the same measure the page's own margins are cut from,
+   rather than a number chosen to look about right. */
+.bo-chrome {
+  position: fixed;
+  top: var(--bo-space-3);
+  right: var(--bo-space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--bo-space-1);
+  z-index: 10;
+}
+
+/* ── THE THEME BUTTON ─ the support portal's control, in a floating container ──────────────────
+   `apps/support/src/components/ThemeToggle.astro` is the reference and the geometry is copied from
+   it: 32 x 32, no padding, an 8px radius, muted at rest and full ink on hover. Oleh asked for one
+   shared experience across the apps and that is what it is made of.
+
+   WHERE IT DIFFERS, AND WHY IT HAS TO. The support portal's button is TRANSPARENT at rest with a
+   border only on hover, because it sits in a header row on a known surface. This one floats over
+   whatever the reader has scrolled to — a paragraph, a table, the ladder — so it carries its own
+   surface and its own hairline permanently. A transparent 16px glyph over running text is not a
+   quieter control, it is an unreadable one. */
+.bo-theme {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  background: var(--bo-base-100);
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-8);
+  color: var(--bo-muted);
+  cursor: pointer;
+  transition:
+    color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bo-theme:hover {
+  border-color: var(--bo-muted);
+  color: var(--bo-base-content);
+}
+
+.bo-theme:focus-visible {
+  outline: 2px solid var(--bo-primary);
+  outline-offset: 2px;
+}
+
+/* ONLY ONE GLYPH IS EVER IN THE BOX, and which one is decided by the attribute the pre-paint script
+   already writes on `<html>`. Doing it here rather than in the click handler means the correct icon
+   is in the FIRST PAINT: the old control swapped `textContent` after hydration and showed the wrong
+   glyph for a frame on every load — the same class of flash the pre-paint script exists to prevent.
+   Copied from the support portal along with the reasoning.
+
+   The three selectors are the three states `data-theme` can be in: explicitly light, absent (follow
+   the system, which is the default and needs the `:not()` so it does not also fire under dark), and
+   explicitly dark. */
+.bo-theme__i {
+  display: none;
+  line-height: 0;
+}
+
+html[data-theme='light'] .bo-theme__i[data-when='light'],
+html:not([data-theme='dark']) .bo-theme__i[data-when='light'] {
+  display: inline-flex;
+}
+
+html[data-theme='dark'] .bo-theme__i[data-when='light'] {
+  display: none;
+}
+
+html[data-theme='dark'] .bo-theme__i[data-when='dark'] {
+  display: inline-flex;
+}
+
+/* `.bo-chip` AND `.bo-seg` STOOD HERE AND ARE GONE, 2026-08-31. The chip was the theme toggle's
+   recipe and the toggle was rebuilt on the support portal's control (`.bo-theme`, above), which
+   left the chip with no markup at all. `.bo-seg` fused two chips into the splash's `?v=` version
+   switcher, and that switcher went on 2026-08-28 when Dan picked one opening — so it had been
+   styling nothing for three days. Neither class appears in any `.astro` in this app; both were
+   deleted rather than left as recipes for elements that no longer exist.
+
+   The `@media (max-width: 60rem)` block that made `.bo-chrome` static and right-aligned went with
+   them for a different reason: the chrome is `position: fixed` now at every width, and a rule that
+   put it back into flow on a phone would have undone the float exactly where floating helps most.
+
+*/
+
+/* ── THE ASYMMETRIC SPLIT ─ the splash's spine. Not a centred stack: the headline takes the left
+   and the instrument takes the right, and below 62rem the instrument moves under the headline
+   rather than shrinking into illegibility. ────────────────────────────────────────────────────── */
+.bo-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--bo-space-6);
+  align-items: end;
+}
+
+@media (max-width: 62rem) {
+  /* See `--bo-splash-slide` above: composition on a desktop, dead scrolling on a phone. Same step
+     `--rep-slide` takes on the finish page, and to the same value. */
+  :root {
+    --bo-splash-slide: var(--bo-space-5);
+  }
+
+  .bo-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--bo-space-5);
+    align-items: start;
+  }
+}
+
+/* ── THE RAIL ─ four statements divided by hairlines, numbered. This replaces the four identical
+   cards the first build shipped, which is a named anti-pattern: same-size boxes with a heading and
+   two lines, repeated. A rule between two statements groups them just as well and promises less. */
+.bo-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bo-base-300);
+}
+
+.bo-rail__item {
+  /* THE ART BAND'S OWN SPACE. Not a wash under the paragraph: the band is added to the item's
+     bottom padding, so the drawing and the body copy never share a row. Six rhythms at desktop
+     (144px), five below 48rem — the same measure the rest of the page is set on. */
+  --rail-art-h: calc(var(--bo-rhythm) * 6);
+
+  position: relative;
+  /* The art is a z-index:-1 child. Without a stacking context here it would escape and sit behind
+     the PAGE, not behind the card; `isolate` pins it between this item's background and its text. */
+  isolation: isolate;
+  /* THE SAME INSET ON ALL FOUR. This read `… var(--rail-art-h) 0` until 2026-08-26, so the FIRST
+     card had no left padding: its number, badge, title and body sat flush against the rail's left
+     edge while the other three were inset by a rhythm, which made card one look narrower than its
+     neighbours even though every column measures the same. The rail's outer edges still line up
+     with the eyebrow, the headline and the meta row above it — only the CONTENT moves in, and now
+     it moves in by the same amount in all four columns. Measured, not eyeballed: the four titles
+     sit one column width apart to the pixel. */
+  padding: var(--bo-space-3) var(--bo-space-3) var(--rail-art-h);
+  border-right: 1px solid var(--bo-base-300);
+  /* THE REST STATE OF THE ACCENT RULE, DECLARED. `none` is not a shadow, so a transition out of it
+     is free to snap in a way `transparent` cannot; declaring the shadow at rest and changing only
+     its colour means both directions are one interpolation. Costs nothing and paints nothing. */
+  box-shadow: inset 0 1px 0 0 transparent;
+  transition: box-shadow 140ms ease;
+  /* THE CARD GRADIENT, AND IT IS A DARK-THEME EFFECT NOW. Weight gathers at the bottom, under the
+     art, so the band reads as the foot of a card rather than as an image someone dropped in.
+
+     It was built from `--bo-base-200` on the reasoning that one token moved the right way in both
+     themes. That held while the light page floor was itself a pale grey. It stopped holding on
+     2026-08-31 when the floor went white: the same fill that LIFTS a near-black floor SMUDGES a
+     white one, and a smudge with a hard bottom edge is what Oleh was looking at when he said the
+     cards had a dirty colour. On white the rail does not need it — the hairline between columns
+     already groups each drawing with its own text, which is what this component was built as
+     before the art arrived.
+
+     So the amount is a token, `--bo-rail-foot`: `transparent` on light, base-200 on dark. The rule
+     does not branch and there is still one gradient. */
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in oklch, var(--bo-rail-foot) 45%, transparent) 62%,
+    color-mix(in oklch, var(--bo-rail-foot) 85%, transparent) 100%
+  );
+}
+
+.bo-rail__item:last-child {
+  border-right: 0;
+}
+
+/* ── THE WASH ─ THE ONLY STATE THE RAIL HAS ─────────────────────────────────────────────────────
+   2026-08-26, Oleh, in two steps on the same day. First: the fill under the maturity-band card was
+   a tint of the accent, and an accent fill is the vocabulary of SELECTION. Nothing here is
+   selectable — the rail is four statements, a card is not a button, and a blue slab under one of
+   them invites a click that has nowhere to go. Then, the further step: the permanent highlight came
+   off ENTIRELY. Not just its hue, the whole treatment. THE ACCENT block below records why.
+
+   What is left is one state and one only. All four cards are identical at rest, and pointing at any
+   of them lifts it — quiet enough to read as "the cursor is here" rather than "this is chosen",
+   which is the honest thing for a fill that answers to the mouse and to nothing else. The accent
+   the band card used to wear permanently now lives HERE, in that same state, on all four: see
+   `.bo-rail__item:hover` further down.
+
+   WHY `--bo-base-content` AND NOT `--bo-base-200`. The foot gradient below is built from base-200
+   because a foot must ADD WEIGHT in both themes, and base-200 does that (it darkens light, lifts
+   dark). A hover is the other question: it wants to lift a dark page toward light and shade a
+   light page toward dark, which is precisely what a base-content mix does. It is also the only
+   fully achromatic option in the palette — the two literals `--bo-base-content` resolves to, one
+   per theme, carry no chroma at all, where base-200 and base-300 both hold a trace of blue. Oleh
+   asked for no blue in the wash; this has none by construction rather than by eye, and the
+   computed value proves it: the gradient serialises with a chroma of 5e-5 and a hue of `none`.
+
+   IT IS A SEPARATE LAYER, NOT A SECOND STOP IN THE FOOT GRADIENT, because `background-image` does
+   not interpolate between two gradients — a transition on it snaps. An overlay's `opacity` does
+   interpolate, so the fade in and out is real and one `prefers-reduced-motion` block turns it off.
+   `z-index: -1` puts it under the text and, being the item's FIRST child, under the art too. */
+.bo-rail__item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--bo-base-content) 1.5%, transparent) 0%,
+    color-mix(in oklch, var(--bo-base-content) 5%, transparent) 100%
+  );
+  transition: opacity 140ms ease;
+}
+
+/* `:focus-within` is not decoration by symmetry: it is the same affordance for somebody tabbing
+   through the page, and it costs one selector. Every hover rule below is paired with it. */
+.bo-rail__item:hover::before,
+.bo-rail__item:focus-within::before {
+  opacity: 1;
+}
+
+/* One block covers the wash, the rule, the numeral and the badge: the state still changes, it just
+   arrives at once. Nothing here is a position or a scale, so there is nothing to disable beyond
+   the fades themselves. */
+@media (prefers-reduced-motion: reduce) {
+  .bo-rail__item,
+  .bo-rail__item::before,
+  .bo-rail__n,
+  .bo-badge {
+    transition: none;
+  }
+}
+
+/* ── THE ART ─ 2026-08-26, Oleh: `apps/survey` is an independent marketing surface, closer to a
+   website than to the product, so DESIGN.md's ban on decorative gradients and illustration is
+   lifted HERE and nowhere else in the repo. Everything else still holds: tokens only, no hex
+   outside the token block, both themes first-class.
+
+   ONE ASSET, TWO THEMES, AND THAT IS THE WHOLE ARGUMENT FOR A RASTER.
+   The four PNGs are white hairlines on solid black and are never painted to the page. Each is a
+   LUMINANCE MASK over a flat `background-color`: white becomes whatever the token resolves to,
+   black becomes nothing. Light theme gets dark ink and dark theme gets light ink out of the same
+   file, so there is no second asset to keep in sync and no theme that gets the leftovers. Painting
+   the image itself would have needed two files and would still have been the wrong grey in one of
+   them.
+
+   THE DISSOLVE IS A SECOND MASK LAYER, NOT AN OPACITY.
+   `linear-gradient(to top, black, transparent)` composited with `intersect`. The default is `add`,
+   which unions the two alphas and paints a solid slab — so the composite keyword is load-bearing
+   and its absence is not a subtle bug, it is a filled rectangle. The gradient reaches zero exactly
+   at the top of the band, which is where the bottom padding ends, so the art is already gone
+   before the body copy starts.
+
+   WHY THE ELEMENT IS TALLER THAN THE BAND. `mask-size: cover` scales the source to the element,
+   and these drawings sit in the lower half of a 3:2 frame with generous empty black above. At 1.8x
+   the band the subject lands inside the band at every card width instead of being cropped through
+   the middle at narrow ones. The overhang is masked to nothing, so it costs nothing. */
+.bo-rail__art {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: -1;
+  height: calc(var(--rail-art-h) * 1.8);
+  pointer-events: none;
+
+  /* The ink. The mask decides WHERE, this decides WHAT COLOUR, and `--rail-art-ink` decides HOW
+     MUCH — see the per-asset block below for why the four need different amounts. */
+  background-color: var(--bo-muted);
+  opacity: var(--rail-art-ink, 1);
+
+  -webkit-mask-image: var(--rail-art), linear-gradient(to top, black 0%, black 28%, transparent 56%);
+  mask-image: var(--rail-art), linear-gradient(to top, black 0%, black 28%, transparent 56%);
+  -webkit-mask-source-type: luminance, alpha;
+  mask-mode: luminance, alpha;
+  -webkit-mask-repeat: no-repeat, no-repeat;
+  mask-repeat: no-repeat, no-repeat;
+  /* PER-ASSET BOTTOM ANCHOR. The four drawings do not carry the same empty margin under their
+     subject — the ruler leaves a quarter of its frame blank below the scale, the other three leave
+     under a tenth — so `bottom` alone parks one of them halfway up its own band with a slab of
+     tinted nothing beneath it. `--rail-art-y` pushes the source down by that difference, and the
+     surplus falls off the bottom edge where there was never anything to lose. */
+  -webkit-mask-position: center calc(100% + var(--rail-art-y, 0px)), center bottom;
+  mask-position: center calc(100% + var(--rail-art-y, 0px)), center bottom;
+  -webkit-mask-size: cover, 100% 100%;
+  mask-size: cover, 100% 100%;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+/* PER-ASSET INK STRENGTH. The four drawings were generated one at a time and do not carry equal
+   weight on screen, which is a thing you can only see once they are side by side in a row: the
+   stopwatch is a dense disc of concentric ticks and lands as a dark blot, the ruler spans the full
+   width of its card in one continuous bright line, the node diagram is mostly faint hairlines
+   around one solid white dot that pulls the eye on its own, and the report stack is the palest of
+   the four. Same measured mean luminance, very different perceived weight — ink CONCENTRATION is
+   what the eye reads, not ink total, so no amount of re-exporting fixes it.
+
+   Corrected here rather than in the files. One number per asset, visible in the diff, reversible,
+   and it costs no bytes; regenerating an image to change how loud it is would have thrown away a
+   drawing that is otherwise right. The numbers were not guessed: each was set, the page rendered,
+   and the ink measured off the screenshot as mean excess luminance over the card's own background
+   inside the art band, then adjusted until the four sat within a few percent of each other with
+   the two DENSE ones (the stopwatch, the report stack) deliberately a little under the arithmetic,
+   because a compact mass reads heavier than the same ink spread across a card. */
+.bo-rail__art[data-art='report'] {
+  --rail-art: url('/art/report.png');
+  --rail-art-ink: 0.8;
+}
+
+.bo-rail__art[data-art='band'] {
+  --rail-art: url('/art/band.png');
+  --rail-art-ink: 0.92;
+  --rail-art-y: 50px;
+}
+
+.bo-rail__art[data-art='early'] {
+  --rail-art: url('/art/early.png');
+  --rail-art-ink: 0.76;
+}
+
+.bo-rail__art[data-art='partner'] {
+  --rail-art: url('/art/partner.png');
+  --rail-art-ink: 0.86;
+}
+
+.bo-rail__n {
+  display: block;
+  transition: color 140ms ease;
+  margin-bottom: var(--bo-space-1);
+  font-size: var(--bo-t-11);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  color: var(--bo-muted);
+}
+
+/* ── THE BADGE ─ DESIGN.md §5: a pill at label size, a SOFT tint of its hue with that hue as the
+   label. Never an outline, never a solid fill: solid is the emphasis treatment reserved for counts,
+   and a row of solid pills reads as a row of alarms. Neutral is deliberately absent from the soft
+   set (grey on grey), so a neutral state wears the ghost pair instead. */
+.bo-badge {
+  display: inline-block;
+  transition: background-color 140ms ease, color 140ms ease;
+  margin-bottom: var(--bo-space-1);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--bo-t-11);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.bo-badge--later {
+  background: var(--bo-base-200);
+  color: var(--bo-muted-strong);
+}
+
+/* ── THE ACCENT ─ THE SAME THREE MARKS, ON WHICHEVER CARD YOU POINT AT ──────────────────────────
+   There used to be a `.bo-rail__item--now` modifier here, and it painted the maturity-band card
+   permanently: accent segment in the top hairline, accent numeral, soft-accent badge, accent title,
+   accent ink in the drawing, accent wash. It came off whole on 2026-08-26, and the accent came back
+   in the same afternoon somewhere better — under the cursor.
+
+   WHY IT COULD NOT STAY PERMANENT. A standing highlight is a claim that one of four things is
+   CURRENT: the row you are on, the plan you are on, the tab you opened. None of that is true here.
+   All four are statements about what a respondent gets, so an accent on one of them was ranking
+   them, and a rank drawn in the exact colour this page uses for its links and its primary button
+   reads as an affordance that does not exist. The real difference between the four is WHEN each
+   one lands, and that is stated in words, in every badge, where a difference of fact belongs.
+
+   WHY IT WORKS AS A HOVER. Blue on a card the pointer is on is not a claim about the card, it is a
+   claim about the pointer, and it is self-evidently temporary. It also makes the state legible on
+   a screen where the neutral wash alone is nearly invisible — three or four percent of ink over a
+   near-black page is subtle by design and a bright screen in daylight can swallow it.
+
+   THREE MARKS, NOT FIVE — Oleh named the rule, the badge and the numeral, and the list is the
+   point. The title, the body and the drawing stay neutral throughout. Turning a whole card blue at
+   once is a shout; three small marks at the card's top-left corner, all within one glance of each
+   other, indicate. It is also the reason the wash stays as faint as it is: the accent does the
+   telling, the wash only supplies the surface. */
+.bo-rail__item:hover,
+.bo-rail__item:focus-within {
+  box-shadow: inset 0 1px 0 0 var(--bo-primary);
+}
+
+.bo-rail__item:hover .bo-rail__n,
+.bo-rail__item:focus-within .bo-rail__n {
+  color: var(--bo-primary);
+}
+
+/* The soft pair, both halves of it. A tint with the default muted label on it is the failure this
+   pair exists to prevent: `--bo-soft-primary-fg` is the accent walked toward the page ink until it
+   clears 4.5 ON that tint, and it is not interchangeable with plain `--bo-primary`. */
+.bo-rail__item:hover .bo-badge,
+.bo-rail__item:focus-within .bo-badge {
+  background: var(--bo-soft-primary-bg);
+  color: var(--bo-soft-primary-fg);
+}
+
+.bo-rail__title {
+  margin: 0 0 0.25rem;
+  font-size: var(--bo-t-16);
+  font-weight: 600;
+}
+
+.bo-rail__body {
+  margin: 0;
+  font-size: var(--bo-t-14);
+  color: var(--bo-muted-strong);
+}
+
+@media (max-width: 48rem) {
+  .bo-rail__item {
+    /* Shorter band on a narrow screen: four full-width rows stacked, so every pixel of art height
+       is paid for four times in scroll. Five rhythms still clears the subject at 390px. */
+    --rail-art-h: calc(var(--bo-rhythm) * 5);
+
+    border-right: 0;
+    border-bottom: 1px solid var(--bo-base-300);
+    /* Full bleed when the columns stack: with nothing beside a card, an inset would only push its
+       text off the line the eyebrow, the headline and the meta row all sit on. Still equal across
+       the four, which is the property that matters. */
+    padding: var(--bo-space-3) 0 var(--rail-art-h);
+  }
+  .bo-rail__item:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   THE LADDER — the signature object, one drawing in two states
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   Rendered by `components/ScoreLadder.astro`, which BOTH the splash and /thanks call. The splash
+   shows the empty track (the instrument you are about to be measured on); /thanks shows it filled,
+   with the needle resting on the respondent's band (where you landed). Showing the reward on
+   screen one is what makes the ending feel earned rather than announced.
+
+   It replaced a tick ruler (`.bo-meter`), which read as a calibrated instrument up close and as
+   noise from across a desk. The track says where the bands change hands and the needle says the
+   number, and both survive at a glance. The ruler came off /thanks first; the splash kept it until
+   2026-08-28, by which point the two pages were visibly drawing different objects and Oleh said so.
+
+   THIS BLOCK IS GLOBAL ON PURPOSE AND MUST STAY GLOBAL. The finish page animates this component's
+   internals off `--rep-arrive`, and a scoped rule written in `thanks.astro` cannot reach inside a
+   child component: it would carry that page's `data-astro-cid-*` while these elements carry the
+   component's own, so it would match nothing and fail silently. That is why the two arrival rules
+   at the foot of this block live here, `.rep` prefix and all, rather than beside the rest of the
+   finish page's motion. Fourth time this app has met that trap. */
+.bo-ladder {
+  margin: 0;
+}
+
+.bo-ladder__cap {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--bo-space-2);
+  padding-bottom: var(--bo-space-1);
+}
+
+.bo-ladder__track {
+  position: relative;
+  height: 2.75rem;
+  border-top: 1px solid var(--bo-base-300);
+  border-bottom: 1px solid var(--bo-base-300);
+}
+
+.bo-ladder__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--meter-pos, 0%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--bo-primary) 5%, transparent),
+    color-mix(in oklch, var(--bo-primary) 26%, transparent)
+  );
+}
+
+.bo-ladder__div {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bo-base-300);
+}
+
+.bo-ladder__needle {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  left: var(--meter-pos, 0%);
+  width: 2px;
+  background: var(--bo-primary);
+}
+
+.bo-ladder__scale {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: var(--bo-space-1) 0 0;
+  list-style: none;
+}
+
+.bo-ladder__band {
+  font-size: var(--bo-t-13);
+  color: var(--bo-muted);
+}
+
+.bo-ladder__band:last-child {
+  text-align: right;
+}
+
+.bo-ladder__band[aria-current='step'] {
+  font-weight: 600;
+  color: var(--bo-primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* THE FILL AND THE NEEDLE RIDE THE COUNT-UP'S OWN CLOCK. Two animations of the same duration do
+     not stay together: they drift by whatever frame each happened to start on, and the needle
+     lands a beat off the number it is pointing at. The loop that prints the digit publishes its
+     eased progress as `--rep-arrive` on the article, and both instruments are driven from it. One
+     clock, one easing, no synchronisation. The fill is scaled rather than widened so it is
+     revealed from behind a mask and `width` stays exactly where the resting layout put it; the
+     needle travels the same distance as a `translateX`, in pixels the script measured off the
+     track once it was on screen. */
+  .rep[data-anim='on'] .bo-ladder__fill {
+    transform-origin: 0 50%;
+    transform: scaleX(var(--rep-arrive, 0));
+  }
+
+  .rep[data-anim='on'] .bo-ladder__needle {
+    transform: translateX(
+      calc((var(--rep-arrive, 0) - 1) * var(--rep-travel, 0px))
+    );
+  }
+}
+
+/* ═══ THE DEMO LADDER — the splash instrument demonstrating itself ═════════════════════════════
+   `ScoreLadder demo` (the splash only). Oleh, 2026-08-28: the empty track *"reads as just a
+   rectangle and a little square"*, and Dan asked for two things — *"an animation when it appears,
+   let it travel left to right"*, and *"when the user hovers over the component, the line starts
+   following the cursor"*.
+
+   IT STEPS RATHER THAN FOLLOWS, and that is Dan's own decision on the second pass: *"the scale
+   shouldn't show any specific percentage and shouldn't come to rest on one. It does make sense to
+   have it just show a gradation."* The scale is four rungs, not a continuum. The stepping is in
+   `ScoreLadder.astro`'s script; what is here is where the four rungs are and what rest looks like.
+
+   ── WHERE IT COMES TO REST, WHICH IS THE ONE JUDGEMENT IN THIS BLOCK ──────────────────────────
+   AT ZERO, WITH NO FILL. Nobody on this page has been measured, so every band is a claim: parked
+   on Engineered the instrument flatters, parked on Ad hoc it insults, parked at 50% it prints a
+   number. The one position on this track that asserts nothing is the origin — where a gauge sits
+   when it is not reading anything — and it is also the only one that makes the gradient's
+   disappearance mechanical rather than a second effect: a fill whose width is zero has nothing
+   left to show. So the run walks all four bands, dwells on each, lets the gradient go, and hands
+   the needle back to zero. It settles and then releases, which is what the tick ruler this
+   replaced did too; the difference is that this one leaves the line on screen, which is what Dan
+   asked for, instead of taking it away.
+
+   ── THE RESTING STATE IS THE COMPLETE STATE ───────────────────────────────────────────────────
+   Everything below the two rules that follow is inside `prefers-reduced-motion: no-preference`, so
+   with motion reduced NO animation is created at all and the ladder renders finished: needle at
+   zero, no fill, four bands in their resting ink. Nothing here is legible only while it moves, and
+   nothing has to be hovered to appear — which is also what a coarse pointer gets, since the script
+   binds no listeners without a fine one. */
+.bo-ladder--demo .bo-ladder__needle {
+  left: 0;
+  /* The step. It is a response to input rather than decoration, so it survives reduced motion —
+     except that the global `prefers-reduced-motion` reset collapses every transition duration, so
+     under it the needle answers instantly instead of gliding. That is the right answer for both. */
+  transition: left 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bo-ladder--demo .bo-ladder__fill {
+  width: 0;
+  /* THE FILL STEPS WITH THE NEEDLE. Dan, 2026-08-28, on this panel: *"when we hover, I want the
+     scale to fill with the gradient the same way. That'll be more logical. The user releases, it
+     goes back to the zero point."* He is overruling the previous pass, which withheld the fill on
+     the grounds that it would read as "you scored this much" — and the two cases are not the same
+     risk: this fill exists only while the pointer is on the track, it is the pointer's own band
+     and nobody else's, and it collapses to nothing the moment the pointer leaves. Nothing about it
+     persists, so it demonstrates the instrument rather than reporting a result. What is NOT
+     reinstated is a fill at rest: the rule above this comment is still `width: 0`, and rest is
+     still an empty track with the needle at the origin.
+
+     Same duration and same easing as the needle's `left`, and the script sets both to the SAME
+     band percentage, so the two interpolate identically: the fill's right edge is on the needle at
+     every frame of the step, not merely at the two ends. It steps because the needle steps — four
+     rungs, not a continuum. Under `prefers-reduced-motion: reduce` the global reset at the top of
+     this sheet collapses this duration along with the needle's, so the fill answers instantly
+     rather than not at all; responding to a pointer is a reaction to input, not decoration. */
+  transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Neither is a target. The track is, and events from a child bubble to it, but a needle sliding
+   under the cursor has no business being hit-tested. */
+.bo-ladder--demo .bo-ladder__needle,
+.bo-ladder--demo .bo-ladder__fill {
+  pointer-events: none;
+}
+
+/* The band under the needle reads as the live one. `aria-current` is NOT used: nothing is current,
+   the pointer is merely resting somewhere, and `[aria-current='step']` above is the finish page's
+   statement about a band that was actually measured. Colour only, no weight change — four labels
+   in a fixed grid re-setting their own glyph widths in sequence is a jiggle, and the arrival lights
+   them the same way, so the two states look like one statement said twice. */
+.bo-ladder--demo .bo-ladder__band[data-probed='true'] {
+  color: var(--bo-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bo-ladder--demo .bo-ladder__track {
+    cursor: crosshair;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* ONE CLOCK, THREE ANIMATIONS, SAME DURATION AND SAME KEYFRAME PERCENTAGES. The needle's `left`,
+     the fill's `width` and each band's colour are written against the same 6s grid, so the fill
+     ends exactly where the needle is and the label under it lights for exactly its dwell. This is
+     the opposite arrangement from the finish page above, and for the opposite reason: there, two
+     instruments had to agree with a NUMBER being counted up, so both are driven from that loop's
+     own progress. Here there is no number, so keyframes are enough.
+
+     The walk: cross to band 1, dwell, cross, dwell, four times, then home. Every crossing eases in
+     and out of its own segment, which is what makes it read as an instrument stepping between
+     detents rather than a bar filling.
+
+     ── 7s, WITH THE LAST SECOND EMPTY ──────────────────────────────────────────────────────────
+     The walk itself is unchanged and still takes 6s; the frame around it is 7 and the extra second
+     is a hold at the end with everything at rest. On a mouse that tail is invisible — the animation
+     runs once and the reader never sees it end. On a finger it is the PAUSE BETWEEN CYCLES, which
+     is the only reason it exists: see the coarse-pointer block below.
+
+     THE NEEDLE NOW STARTS VISIBLE, and that is a fix rather than a side effect. It used to fade in
+     over the first 2%, which contradicted `ScoreLadder.astro`'s own account of it — *"this one is
+     part of the resting drawing, so it is on from the first paint and stays on if every animation
+     is switched off"*. It also made the loop impossible: an animation whose first frame is
+     transparent and whose last is opaque blinks at every wrap. Both ends now rest at the origin,
+     fully drawn, so the cycle closes on itself. */
+  .bo-ladder--demo .bo-ladder__needle {
+    animation: boLadderArrive 7s cubic-bezier(0.65, 0, 0.35, 1) both;
+  }
+
+  .bo-ladder--demo .bo-ladder__fill {
+    animation: boLadderArriveFill 7s cubic-bezier(0.65, 0, 0.35, 1) both;
+  }
+
+  /* `forwards`, NOT `both`. A backwards fill applies the FIRST keyframe during the delay, so with
+     `both` all four labels would sit lit from the start and go out one by one — the animation
+     played in reverse. With `forwards` each keeps its resting ink until its own window opens.
+     (Learned the hard way by the tick ruler this replaces; the note is worth keeping.) */
+  .bo-ladder--demo .bo-ladder__band {
+    animation: boLadderBandLight 7s linear forwards;
+  }
+
+  /* One keyframe, four delays. The lit window is the first 14.6% of the 7s run (1.02s, unchanged),
+     and the delays are the times the needle arrives on each band: 6%, 28%, 50% and 71% of 7s. */
+  .bo-ladder--demo .bo-ladder__band:nth-child(1) { animation-delay: 0.42s; }
+  .bo-ladder--demo .bo-ladder__band:nth-child(2) { animation-delay: 1.96s; }
+  .bo-ladder--demo .bo-ladder__band:nth-child(3) { animation-delay: 3.5s; }
+  .bo-ladder--demo .bo-ladder__band:nth-child(4) { animation-delay: 4.97s; }
+
+  /* ── ON A FINGER IT REPEATS ──────────────────────────────────────────────────────────────────
+     Oleh, 2026-08-31: *"on mobile let's make this animation cyclic too, with about a second of
+     delay between cycles, because on mobile it looks bad — nothing changes."*
+
+     He is describing a hole this file put there itself. The demo ladder has two behaviours: it
+     walks the bands once on arrival, and after that it answers the pointer. The second one is
+     `(hover: hover) and (pointer: fine)` by design — a tap would park the needle on a band and
+     leave it there, which is the exact claim the whole component is arranged to avoid making. So on
+     a phone the instrument plays once and is then dead for the rest of the visit, and the splash's
+     one moving thing stops moving.
+
+     Repeating restores it without reintroducing the claim: the needle keeps stepping, and it still
+     comes home to an empty track every cycle, so it never rests on a number. The 1s tail is what
+     keeps it from reading as a busy loop — the eye gets a beat of stillness before it starts again,
+     which is the difference between an instrument demonstrating itself and a spinner.
+
+     AND IT FIRES ON WIDTH TOO, not only on the pointer. `(pointer: coarse)` alone was right about
+     the reason and wrong about the reach: a desktop browser dragged to a phone width still reports
+     a FINE pointer, so it got the mobile composition with the desktop's assumption — play once,
+     then wait for a hover that the layout no longer invites. That is where Oleh was looking when he
+     said it again, and he was right both times. Below 62rem the splash IS the stacked
+     presentation whatever is driving it, so the loop belongs to that width as much as to the
+     finger. Above it, with the columns back, the pointer answer is still the better one. */
+  @media (pointer: coarse), (max-width: 62rem) {
+    .bo-ladder--demo .bo-ladder__needle,
+    .bo-ladder--demo .bo-ladder__fill,
+    .bo-ladder--demo .bo-ladder__band {
+      animation-iteration-count: infinite;
+    }
+  }
+}
+
+/* The needle. It appears at the origin, walks the four band centres, and goes home — and the trip
+   home is not a right-to-left sweep back across the track, because Dan asked for travel in one
+   direction. It fades out on the last band, is moved to zero while invisible, and fades back in
+   there. What you see is one crossing, left to right, and then a line at rest. */
+@keyframes boLadderArrive {
+  0% { left: 0%; opacity: 1; }
+  6% { left: 12.5%; }
+  21% { left: 12.5%; }
+  28% { left: 37.5%; }
+  43% { left: 37.5%; }
+  50% { left: 62.5%; }
+  64% { left: 62.5%; }
+  71% { left: 87.5%; }
+  81% { left: 87.5%; opacity: 1; }
+  83% { left: 87.5%; opacity: 0; }
+  84% { left: 0%; opacity: 0; }
+  86% { left: 0%; opacity: 1; }
+  100% { left: 0%; opacity: 1; }
+}
+
+/* The gradient trails the needle to each band and then GOES OUT WHERE IT STANDS, which is Dan's
+   *"the gradient disappears"*. It is faded rather than drained back to the left, because draining
+   is a second right-to-left move and because a fill retreating past the bands reads as a score
+   being taken away. Its width is reset to zero only once it is already invisible, so the resting
+   state is a fill of no width — nothing to read a number off, at any opacity. */
+@keyframes boLadderArriveFill {
+  0% { width: 0%; opacity: 1; }
+  6% { width: 12.5%; }
+  21% { width: 12.5%; }
+  28% { width: 37.5%; }
+  43% { width: 37.5%; }
+  50% { width: 62.5%; }
+  64% { width: 62.5%; }
+  71% { width: 87.5%; }
+  75% { width: 87.5%; opacity: 1; }
+  81% { width: 87.5%; opacity: 0; }
+  82% { width: 0%; opacity: 0; }
+  100% { width: 0%; opacity: 0; }
+}
+
+@keyframes boLadderBandLight {
+  0%, 14.6% { color: var(--bo-primary); }
+  15.6%, 100% { color: var(--bo-muted); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   THE STEP — the question surface
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* Honest progress. The old bar divided by a denominator that GREW when a branch opened, so
+   answering could shrink it, and it started at 0% on question one, which reads as "you have done
+   nothing". Segments plus a counted line fix both: the count is a fact, and a segment either is or
+   is not filled. */
+.bo-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bo-space-3);
+  margin-bottom: var(--bo-space-5);
+}
+
+.bo-steps__count {
+  font-size: var(--bo-t-12);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bo-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bo-steps__track {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.bo-steps__seg {
+  flex: 1;
+  height: 3px;
+  background: var(--bo-base-300);
+  border-radius: 999px;
+  transition: background-color 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bo-steps__seg[data-done='true'] {
+  background: var(--bo-primary);
+}
+
+.bo-steps__seg[data-current='true'] {
+  background: var(--bo-soft-primary-fg);
+}
+
+/* The question itself. Generous leading above the prompt and real air under the options: the first
+   build put every step in the same block and the screens read as a stack of rows. */
+.bo-q__prompt {
+  margin: 0 0 var(--bo-space-2);
+  font-size: var(--bo-t-24);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.bo-q__help {
+  margin: 0 0 var(--bo-space-3);
+  font-size: var(--bo-t-14);
+  color: var(--bo-muted-strong);
+}
+
+.bo-q__options {
+  display: grid;
+  gap: var(--bo-space-1);
+  margin-top: var(--bo-space-3);
+}
+
+.bo-q__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bo-space-2);
+  margin-top: var(--bo-space-5);
+  padding-top: var(--bo-space-3);
+  border-top: 1px solid var(--bo-base-300);
+}
+
+.bo-q__controls .bo-btn:only-child {
+  margin-left: auto;
+}
+
+/* The autosave line stops being a promise and becomes a report: it changes when a save lands. */
+.bo-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--bo-t-12);
+  color: var(--bo-muted);
+}
+
+.bo-save__dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--bo-muted);
+  transition: background-color 0.3s ease-out;
+}
+
+.bo-save[data-state='saved'] .bo-save__dot {
+  background: var(--bo-success);
+}
+
+.bo-save[data-state='saving'] .bo-save__dot {
+  background: var(--bo-warning);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   THE VERDICT — /thanks
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   A measurement, not a thank-you card. The band name takes the display tier, which is the only
+   other place in the app that tier is allowed. */
+.bo-verdict {
+  display: grid;
+  gap: var(--bo-space-3);
+  padding: var(--bo-space-5) 0;
+  border-top: 1px solid var(--bo-base-300);
+  border-bottom: 1px solid var(--bo-base-300);
+}
+
+.bo-verdict__name {
+  margin: 0;
+}
+
+.bo-verdict__blurb {
+  margin: 0;
+  max-width: 34rem;
+  font-size: var(--bo-t-18);
+  line-height: 1.5;
+  color: var(--bo-muted-strong);
+}
+
+/* ── FOOTER ─ quieter than the content it sits under. The first build's footer carried more weight
+   than the page above it. ─────────────────────────────────────────────────────────────────────── */
+/* CENTRED, AND THE PADDING IS SYMMETRIC AGAIN BECAUSE OF IT. It used to carry 9rem of end padding
+   to clear the floating jump control fixed over that corner, which is fine for a left-aligned block
+   and visibly wrong for a centred one: the text would sit left of the page's true centre by half of
+   that. Two short lines cannot reach the control at any width where it is not already stacked. */
+.bo-foot {
+  border-top: 1px solid var(--bo-base-300);
+  padding: var(--bo-space-3) var(--bo-space-4);
+  font-size: var(--bo-t-12);
+  color: var(--bo-muted);
+  text-align: center;
+}
+
+@media (max-width: 48rem) {
+  .bo-foot {
+    padding-right: var(--bo-space-4);
+    padding-bottom: 4.5rem;
+  }
+}
+
+.bo-foot__inner {
+  max-width: 78rem;
+  margin: 0 auto;
+  display: grid;
+  gap: var(--bo-space-1);
+}
+
+.bo-foot__lead {
+  color: var(--bo-muted-strong);
+}
+
+.bo-foot__note {
+  margin-top: var(--bo-space-1);
+}
+
+.bo-foot p {
+  margin: 0;
+}
+
+.bo-foot a {
+  color: var(--bo-muted-strong);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   TOUCH — the shared recipes, raised to a finger
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   Audited on 2026-08-31 across 375, 390, 430, 768 and 1024, on all three pages and every question
+   kind, by measuring every interactive box rather than by looking at screenshots. Most of the app
+   passed on its own: options came out 303x52, buttons 84x45, the rank control's native selects
+   235x48 at 16px. What follows is what did not.
+
+   `(pointer: coarse)` and not a width, throughout. The constraint is the finger, not the viewport:
+   a desktop window dragged to 380px is still driven by a mouse and needs none of this. The query
+   reads the PRIMARY pointer, so phones and tablets match and a laptop with a touchscreen does not —
+   its trackpad is primary and reports `fine`. The splash ladder picks its behaviour the same way.
+
+   THE FLOOR IS 44px — Apple's, and the lower of the two common ones (Material asks 48). Every rule
+   here reaches it with a PSEUDO-ELEMENT rather than with padding, so nothing on screen moves: the
+   mark keeps its size, the line keeps its position, and only the box that catches the tap grows.
+
+   NOT IN HERE, on purpose: `.bo-jump__fab` at 35x40, which is the review panel's own handle and
+   comes out before the survey is sent; and links inside running prose, whose hit boxes would
+   overlap each other and the lines around them — see the note on `.bo-foot a` below. The links
+   that are here are the ones that END a block and are read as actions. */
+@media (pointer: coarse) {
+  /* THE THEME BUTTON IS 32x32 AND FLOATS, so it is the one control on the page a thumb reaches for
+     without aiming. `-0.375rem` brings it to 44 square. It used to be `.bo-chip` here; the control
+     was rebuilt on the support portal's on 2026-08-31 and the selector had to follow it — a floor
+     that silently stops applying because a class was renamed is worse than never having had one. */
+  .bo-theme {
+    position: relative;
+  }
+
+  .bo-theme::after {
+    content: '';
+    position: absolute;
+    inset: -0.375rem;
+  }
+
+  /* The partner name that CLOSES a card, on its own line with nothing under it: 21px tall, and
+     -0.75rem either side brings it to 45.
+
+     `.bo-foot a` is deliberately NOT here, and that is a correction to this block's first version.
+     The footer's three names sit inside one sentence — "Run by Baseout and BuiltOnAir, from the
+     team behind On2Air" — and at 15px tall each would need 14.5px of expansion per side to reach
+     the floor. Three boxes that tall inside one line overlap each other and the lines above and
+     below, so a tap near any of them becomes a coin toss between two destinations. That is worse
+     than a small target, and it is the exempt case this block's header already named: a link in
+     running prose. The same three names are reachable as card links right above. */
+  .cred__link {
+    position: relative;
+  }
+
+  .cred__link::after {
+    content: '';
+    position: absolute;
+    inset: -0.75rem -0.5rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   THE JUMP PANEL — a review instrument, not a respondent control
+   ═══════════════════════════════════════════════════════════════════════════════════════════════
+   It exists so the whole surface can be walked by clicking rather than by filling the survey in
+   seven times. It is labelled review-only in the panel itself and comes out before send.
+
+   BOTTOM RIGHT, not top: the top corner already holds the theme control, and a second cluster
+   there would compete with it and with the eyebrow beneath. The bottom corner is the one
+   place on a form that never carries content. */
+.bo-jump {
+  position: fixed;
+  right: var(--bo-space-3);
+  bottom: var(--bo-space-3);
+  z-index: 40;
+}
+
+/* ICON FIRST, LABEL ON DEMAND.
+   A fixed control floats over whatever the scroll position puts beneath it; padding at the end of
+   the page only clears the last screen. Shrinking it to a square is the actual fix, because it
+   halves the area that can ever cover anything, and the label is one hover or one Tab away. */
+.bo-jump__fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.5rem;
+  background: var(--bo-base-100);
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-8);
+  font: inherit;
+  font-size: var(--bo-t-12);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bo-muted-strong);
+  cursor: pointer;
+  /* The one shadow in this app. DESIGN.md allows it for things that FLOAT ABOVE the page rather
+     than sit in it, which is exactly what this is; everything else here is flat by hairline. */
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+  transition:
+    background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bo-jump__fab:hover,
+.bo-jump__fab:focus-visible,
+.bo-jump__fab[aria-expanded='true'] {
+  padding-inline: 0.875rem;
+  border-color: var(--bo-muted);
+}
+
+/* The label is not `display: none`: it stays in the accessible name at every size, and only its
+   BOX collapses. A control whose name disappears on layout is a control a screen reader loses. */
+.bo-jump__label {
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bo-jump__fab:hover .bo-jump__label,
+.bo-jump__fab:focus-visible .bo-jump__label,
+.bo-jump__fab[aria-expanded='true'] .bo-jump__label {
+  max-width: 5rem;
+}
+
+.bo-jump__fab[aria-expanded='true'] {
+  background: var(--bo-soft-primary-bg);
+  border-color: var(--bo-primary);
+  color: var(--bo-soft-primary-fg);
+}
+
+.bo-jump__panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--bo-space-1));
+  width: 17rem;
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
+  padding: var(--bo-space-2);
+  background: var(--bo-base-100);
+  border: 1px solid var(--bo-base-300);
+  border-radius: var(--bo-r-12);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.24);
+}
+
+.bo-jump__panel[hidden] {
+  display: none;
+}
+
+.bo-jump__note {
+  margin: 0 0 var(--bo-space-2);
+  padding: 0.5rem 0.625rem;
+  background: var(--bo-soft-warning-bg);
+  color: var(--bo-soft-warning-fg);
+  border-radius: var(--bo-r-4);
+  font-size: var(--bo-t-11);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.bo-jump__group {
+  margin: 0 0 var(--bo-space-2);
+}
+
+.bo-jump__group:last-child {
+  margin-bottom: 0;
+}
+
+.bo-jump__legend {
+  display: block;
+  margin: 0 0 0.25rem;
+  padding: 0 0.25rem;
+  font-size: var(--bo-t-11);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bo-muted);
+}
+
+.bo-jump__list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bo-jump__link {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4375rem 0.5rem;
+  background: none;
+  border: 0;
+  border-radius: var(--bo-r-4);
+  font: inherit;
+  font-size: var(--bo-t-13);
+  text-align: left;
+  text-decoration: none;
+  color: var(--bo-base-content);
+  cursor: pointer;
+}
+
+.bo-jump__link:hover {
+  background: var(--bo-base-200);
+}
+
+.bo-jump__link[aria-current='true'] {
+  background: var(--bo-soft-primary-bg);
+  color: var(--bo-soft-primary-fg);
+  font-weight: 600;
+}
+
+.bo-jump__n {
+  flex: none;
+  min-width: 1.25rem;
+  font-size: var(--bo-t-11);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--bo-muted);
+}
+
+.bo-jump__link[aria-current='true'] .bo-jump__n {
+  color: inherit;
+}
+
+/* The reset is the one destructive action in the panel, so it is the one that is not quiet. */
+.bo-jump__link--strong {
+  font-weight: 600;
+  color: var(--bo-primary);
+}
+
+.bo-jump__link--strong:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+@media (max-width: 30rem) {
+  .bo-jump__panel {
+    width: calc(100vw - var(--bo-space-4));
+  }
+}

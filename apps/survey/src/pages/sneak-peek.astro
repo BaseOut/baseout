@@ -1,0 +1,21 @@
+---
+/**
+ * THE SNEAK PEEK IS NOT A PAGE ANY MORE, IT IS A SECTION OF THE FINISH PAGE.
+ *
+ * Dan asked for one ending rather than two: *"I think this should be the finish page when they're
+ * done. Say thank you. Give them their score... get your sneak peek, and then below, it's kind of
+ * like their audit."* A respondent who closed the tab on the thank-you never reached the one thing
+ * that was actually ready.
+ *
+ * The route survives as a redirect rather than a 404 because the token link has already been sent
+ * to people, and it carries its parameters across so the agency sidebar still opens for the people
+ * it belongs to.
+ */
+const params = new URLSearchParams();
+for (const key of ['t', 'a']) {
+  const value = Astro.url.searchParams.get(key);
+  if (value) params.set(key, value);
+}
+if (!params.has('t')) params.set('t', 'preview');
+return Astro.redirect(`/thanks?${params.toString()}`, 301);
+---

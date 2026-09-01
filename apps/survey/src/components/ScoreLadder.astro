@@ -1,0 +1,185 @@
+---
+import { BANDS, bandFloor } from "../lib/maturity";
+
+/**
+ * THE SCORE LADDER, ONE DRAWING, TWO STATES.
+ *
+ * The splash and the finish page were drawing the same instrument twice, and by 2026-08-28 they
+ * had drifted far enough apart to be visibly different objects: the splash kept the old tick ruler
+ * (`.bo-meter`) while the finish page had already moved to this filled track. `HomeOpening` even
+ * carried a comment claiming it rendered "the same component as the one on /thanks", which had
+ * stopped being true. Oleh spotted the difference on screen and asked for one scale.
+ *
+ * So there is one now. `scored` is the whole difference between the two call sites:
+ *
+ *   - OFF (the splash) — an empty track with the three band divisions and the four names. This is
+ *     the instrument before it has measured anything, which is exactly what the splash is selling.
+ *   - ON (the finish page) — the same track plus the fill and the needle, carrying the ids the
+ *     finish script drives (`rep-fill`, `rep-needle`, `rep-scale`). Those ids stay spelled the way
+ *     that script already spells them; renaming them would have bought nothing and cost a silent
+ *     null lookup, which this file has produced before.
+ *
+ *   DEMO (the splash, since 2026-08-28) — the empty track, plus a fill and a needle that
+ *     demonstrate the instrument on arrival and then answer the pointer. It carries NO `rep-*` id
+ *     and nothing on the finish page can see it. See the `demo` prop below.
+ *
+ * ALL OF ITS CSS LIVES IN `survey.css`, GLOBAL, AND MUST STAY THERE. The finish page animates this
+ * component's internals (`.bo-ladder__fill`, `.bo-ladder__needle`) off `--rep-arrive`. A parent's
+ * scoped `<style>` cannot reach into a child component — it carries the parent's `data-astro-cid-*`
+ * and these elements carry this file's — so a rule written in `thanks.astro` would match nothing
+ * and fail silently. That is the same Astro trap this app has now hit four times.
+ */
+interface Props {
+  /** The right-hand half of the caption. The left half comes from the `eyebrow` slot. */
+  note?: string;
+  /** Render the fill and needle, and the ids the finish script drives. */
+  scored?: boolean;
+  /**
+   * SPLASH ONLY. Renders a fill and a needle that belong to nobody: they walk the four bands once
+   * on arrival and then answer the pointer, and they come to rest at the instrument's zero.
+   *
+   * IT IS A THIRD STATE, NOT A CONDITION ON `scored`, and that is deliberate. On the finish page
+   * the needle states a measured number, its arrival is driven frame by frame off `--rep-arrive`
+   * so it lands exactly on the last digit of the count-up, and it must not move under a pointer
+   * ever. Making `scored` conditional would have put those two behaviours in one code path with
+   * one flag between them. They share a drawing; they share nothing else.
+   *
+   * `demo` and `scored` are mutually exclusive in practice — the splash asks for one, /thanks for
+   * the other — and nothing here forces that, because nothing here has any reason to.
+   */
+  demo?: boolean;
+}
+
+const { note = "0 to 100", scored = false, demo = false } = Astro.props;
+---
+
+<figure class={demo ? "bo-ladder bo-ladder--demo" : "bo-ladder"}>
+  <figcaption class="bo-ladder__cap">
+    <span class="bo-eyebrow bo-eyebrow--muted"><slot name="eyebrow" /></span>
+    <span class="bo-eyebrow bo-eyebrow--muted">{note}</span>
+  </figcaption>
+  <div class="bo-ladder__track">
+    {scored && <div class="bo-ladder__fill" id="rep-fill"></div>}
+    {demo && <div class="bo-ladder__fill" aria-hidden="true"></div>}
+    {
+      BANDS.slice(1).map((band) => (
+        <span class="bo-ladder__div" style={`left: ${bandFloor(band)}%`} />
+      ))
+    }
+    {scored && <div class="bo-ladder__needle" id="rep-needle" hidden></div>}
+    {
+      /* NO `hidden` AND NO ID. The scored needle starts hidden because the finish script reveals it
+         once it has measured the track; this one is part of the resting drawing, so it is on from
+         the first paint and stays on if every animation is switched off. Both are `aria-hidden`
+         in effect — the fill and the needle draw the caption's numbers, they do not add any. */
+    }
+    {demo && <div class="bo-ladder__needle" aria-hidden="true"></div>}
+  </div>
+  <ul class="bo-ladder__scale" id={scored ? "rep-scale" : undefined}>
+    {BANDS.map((band) => <li class="bo-ladder__band" data-band={band}>{band}</li>)}
+  </ul>
+</figure>
+
+<script>
+  import { BANDS } from "../lib/maturity";
+
+  /**
+   * THE DEMO LADDER ANSWERS THE POINTER.
+   *
+   * This runs on every page that renders a ladder and finds nothing on /thanks: the selector below
+   * is `.bo-ladder--demo`, which only the splash asks for. The finish page's needle is driven by
+   * its own count-up loop and is not touched from here.
+   *
+   * Dan, 2026-08-28: *"when the user hovers over the component, the line starts following the
+   * cursor."* It STEPS rather than follows, and that is his decision too, taken after reading the
+   * argument the previous build left in this repo: *"the scale shouldn't show any specific
+   * percentage and shouldn't come to rest on one. It does make sense to have it just show a
+   * gradation."* So the needle chooses one of four bands. The scale is four rungs, not a
+   * continuum, and an indicator sliding smoothly between them would describe a measurement this
+   * survey does not take.
+   *
+   * THE FILL ANSWERS THE POINTER TOO, since 2026-08-28. Dan, on this panel: *"when we hover, I
+   * want the scale to fill with the gradient the same way. That'll be more logical. The user
+   * releases, it goes back to the zero point."* The previous pass deliberately withheld it, on the
+   * grounds that a fill would read as "you scored this much". He is overruling that, and the two
+   * cases are not the same risk: this fill only exists while the pointer is on the track, it is
+   * the pointer's own band and nobody else's, and it collapses to nothing on `pointerleave`.
+   * Nothing about it persists, so it demonstrates the instrument instead of claiming a result.
+   * There is still NO fill at rest — see `release()` and the `width: 0` rule in `survey.css`.
+   *
+   * IT NEVER SAYS "YOU", AND THERE IS NO FLOATING TAG. The old probe printed the band name in a
+   * pill that rode the indicator. The four names are already set under the track, so the one being
+   * pointed at simply lights instead: same information, one fewer object, and it teaches the reader
+   * to read the scale rather than the label.
+   *
+   * THE FIRST POINTER ENTRY CANCELS THE ARRIVAL. Two indicators moving on one axis is two answers
+   * to one question, and the visitor's own is the one that should win. Carried over from the probe
+   * this replaces, unchanged in intent.
+   *
+   * FINE POINTERS ONLY. On a touch screen there is no hover and no `pointerleave`, so a tap would
+   * park the needle on a band and leave it there — which is exactly the claim this whole file is
+   * arranged to avoid making. Coarse pointers get the arrival and the resting state, both of which
+   * are complete on their own. The old probe did bind `pointerdown`; that is the one decision from
+   * it that is deliberately not carried forward.
+   *
+   * Reduced motion needs nothing here. The arrival is declared inside a `no-preference` block in
+   * `survey.css` so it is never created, and the global reduced-motion reset collapses the step
+   * transition, so the needle answers the pointer instantly instead of gliding. Answering a pointer
+   * is a response to input, not decoration, so it stays.
+   */
+  const ladder = document.querySelector<HTMLElement>(".bo-ladder--demo");
+  const track = ladder?.querySelector<HTMLElement>(".bo-ladder__track");
+  const needle = ladder?.querySelector<HTMLElement>(".bo-ladder__needle");
+  const fill = ladder?.querySelector<HTMLElement>(".bo-ladder__fill");
+  const bands = [
+    ...(ladder?.querySelectorAll<HTMLElement>(".bo-ladder__band") ?? []),
+  ];
+  const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+  if (fine && ladder && track && needle && fill && bands.length === BANDS.length) {
+    /** The centre of each of the four equal regions on the track. */
+    const POS = ["12.5%", "37.5%", "62.5%", "87.5%"];
+    let arrivalStopped = false;
+
+    function stopArrival() {
+      if (arrivalStopped) return;
+      arrivalStopped = true;
+      // `animation: none` leaves every animated property at its rule value, which is the resting
+      // state: needle at 0, fill at zero width. Nothing is frozen mid-walk.
+      needle!.style.animation = "none";
+      fill!.style.animation = "none";
+      for (const b of bands) b.style.animation = "none";
+    }
+
+    function probeAt(clientX: number) {
+      const box = track!.getBoundingClientRect();
+      const ratio = (clientX - box.left) / box.width;
+      const i = Math.min(
+        BANDS.length - 1,
+        Math.max(0, Math.floor(ratio * BANDS.length)),
+      );
+      // ONE POSITION, TWO INSTRUMENTS. The needle's `left` and the fill's `width` are set from the
+      // same string, so the fill's right edge is exactly where the needle stands. Setting them
+      // apart — a lookup each, or a width computed off the needle — is how the two would come to
+      // disagree by a rounding step; there is nothing to round when it is the same value twice.
+      needle!.style.left = POS[i]!;
+      fill!.style.width = POS[i]!;
+      bands.forEach((b, n) => {
+        b.dataset.probed = String(n === i);
+      });
+    }
+
+    function release() {
+      // Back to the instrument's zero — needle at the origin, empty track. The empty strings hand
+      // `left` and `width` back to the stylesheet rather than pinning either at "0%", so there is
+      // one place that decides where rest is, and it is the same place for both.
+      needle!.style.left = "";
+      fill!.style.width = "";
+      for (const b of bands) b.dataset.probed = "false";
+    }
+
+    track.addEventListener("pointerenter", stopArrival);
+    track.addEventListener("pointermove", (e) => probeAt(e.clientX));
+    track.addEventListener("pointerleave", release);
+  }
+</script>

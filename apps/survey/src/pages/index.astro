@@ -1,0 +1,50 @@
+---
+import Layout from '../layouts/Layout.astro';
+import HomeOpening from '../components/HomeOpening.astro';
+import Credibility from '../components/Credibility.astro';
+import { EDITION } from '../lib/brand';
+
+/**
+ * THE SPLASH. ONE OPENING.
+ *
+ * This page shipped with two, behind `?v=a` (the split composition: headline and instrument side by
+ * side, benefits as a numbered rail) and `?v=b` (the register: a table of what you get and when,
+ * beside four ruled columns naming the rungs of the scale). Dan chose the split on 2026-08-28, so
+ * the register and its switcher are gone, `HomeOpening` renders unconditionally, and
+ * `components/HomeRegister.astro` is deleted rather than left in the tree unreferenced. The same
+ * decision was taken on the finish page the same day, where three endings came down to one.
+ *
+ * A STALE `/?v=b` STILL RENDERS THIS PAGE. Nothing reads `v` any more, so an unknown parameter is
+ * simply ignored — which is what an old link in somebody's history needs. There is no redirect and
+ * nothing to 404 on.
+ *
+ * ── THE ONE SWITCH THAT IS STILL OPEN ─────────────────────────────────────────────────────────
+ * ONE OPENING, ONE LOCKUP. Both questions this file used to hold are settled.
+ *
+ * The Register opening went on 2026-08-28; `HomeOpening` renders unconditionally. So did the logo
+ * switch: Dan asked for the Airtable mark on the splash (*"just for visibility, reference,
+ * credibility"*) and named two placements without choosing, so both were built behind `?logo=`.
+ * Oleh chose the standing lockup. `EditionMark` has one placement now and `HomeOpening` renders it
+ * itself, which is also how it stopped being in the page CORNER — it used to be a flex child of
+ * `main` asking for the page's right edge, under the review chips, which is what Dan objected to
+ * (*"I don't like the logo in the corner, it's too small and too much in the corner"*). It is a
+ * column-mate of the score ladder instead.
+ *
+ * A stale `/?v=b` or `/?logo=a` in somebody's history renders the splash normally: nothing reads
+ * either parameter any more.
+ */
+---
+
+{/*
+  THE SPLASH TURNS THE COMPACT FOOTER OFF AND RENDERS THE CREDIBILITY SECTION INSTEAD.
+  Dan, 09:05: "this footer can stay there like this for the form, just not on the splash page."
+  It is not a deletion: the same three names are on this page in more detail, with logos and links,
+  which is what he asked for at 02:02 and what the one-line version was failing to do.
+*/}
+<Layout title={`${EDITION}: the survey`} footer={false}>
+  <main>
+    <HomeOpening />
+    <Credibility />
+  </main>
+</Layout>
+

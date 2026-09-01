@@ -1,0 +1,1018 @@
+---
+/**
+ * CategoryExplainer — "What is DevOps for App Platforms?"
+ *
+ * The splash section that defines the coined term before the survey asks anyone to answer for it.
+ * It sits between the hero and the "What you get" rail: full page width, on the page's own left
+ * margin, in the same flow as every other splash section.
+ *
+ * ── WHAT IS TAKEN VERBATIM, AND FROM WHERE ────────────────────────────────────────────────────
+ * The heading, the paragraph, the link label and all five diagram labels are copied character for
+ * character from `research/survey-app/doap-explainer/ConfluenceSVG.dc.html` (direction 2, "the
+ * diamond"). That prose was argued over with the client; nothing here rewrites a word of it, and
+ * no new copy is introduced — not an eyebrow, not a caption, not a legend.
+ *
+ * ── WHAT IS RESTYLED, AND WHY ─────────────────────────────────────────────────────────────────
+ * Dan: *"What if we did a diagram in the style we have on this page — the same diamond, but add
+ * some icons on the nodes. And I like the idea of that blue animation that travels down through
+ * the whole flow. Combine the two versions."* The page he means is the product's backup setup
+ * screen, `apps/web/src/components/integrations/SpacePipelineHero.astro`. This component follows
+ * that one's structure and naming logic rather than inventing a parallel system:
+ *
+ *   · a `.dia__base` dashed skeleton at `stroke-dasharray: 3 5`, under
+ *   · a `.dia__on` lit accent overlay that animates, over
+ *   · an ambient radial glow behind the whole figure, and
+ *   · HTML tiles positioned as PERCENTAGES of the same viewBox the SVG uses, so curves and tiles
+ *     scale together (SpacePipelineHero's `xp()`/`yp()` trick, spelled out in the tables below).
+ *
+ * Its tokens are the customer app's (`--color-base-content`, `--color-primary`); the survey's own
+ * equivalents are `--bo-base-content` and `--bo-primary`, and that is the whole translation.
+ *
+ * EVERY NODE IS SERVER-RENDERED MARKUP. Nothing in this figure is built by script. Astro's scoped
+ * styles are compiled against the server-rendered tree and never reach anything a
+ * `createElement`/`innerHTML` call adds later — this app has been bitten by that four times, so
+ * the rule here is absolute: no client JS, no DOM construction, no exceptions.
+ *
+ * ── THE TWO LAYOUTS ───────────────────────────────────────────────────────────────────────────
+ * A diamond needs horizontal room for two labelled branches. The switch used to be at 34rem, on an
+ * estimate that it wanted "roughly a 420px figure". Oleh, 2026-08-31: *"can you hold the full
+ * diagram at full width longer? I want it as visible as possible — you can work out the container,
+ * it still fits on quite narrow devices. Switch to the other one only when it is actually
+ * critical."*
+ *
+ * SO IT WAS MEASURED INSTEAD OF ESTIMATED, at 430, 375, 360 and 320, with the branch labels' own
+ * boxes read off the DOM rather than judged by eye. The diamond survives far lower than 34rem:
+ *
+ *     viewport   stage   tile   icon   labels        verdict
+ *      430       358     30     13     3 and 4 lines  comfortable
+ *      375       303     25     11     4 lines        readable, the shape is still the point
+ *      360       288     23     11     4 and 5 lines  the floor
+ *      320       248     20      9     5 lines        the icons stop being icons
+ *
+ * Nothing collides at any of them — the labels keep 14 units of clearance from their tiles all the
+ * way down, because both are percentages of the same stage. What fails is legibility of the GLYPH,
+ * and it fails between 360 and 320.
+ *
+ * So the switch is at 22rem (352px), which keeps the diamond for every common phone — 360, 375,
+ * 390, 414, 430 — and hands the spine only the 320-class devices where it genuinely earns its keep.
+ *
+ * The two figures share ONE set of labels (real text in one DOM order: root, App DevOps, Database
+ * DevOps, App platforms, the coined term) and swap only the connector SVG and the coordinates:
+ *
+ *   >= 22rem   THE DIAMOND, viewBox 544x470. Two columns at >= 62rem; stacked and centred below.
+ *    < 22rem   THE SPINE, viewBox 320x434 shifted to -42. The fork opens into two PARALLEL RAILS
+ *              instead of two diagonals; the branch tiles stack along them and every label sits to
+ *              the right. The fork, the two parallel branches and the merge all survive — only the
+ *              silhouette changes.
+ *
+ * ── THE COORDINATE TABLES. Percentages below are these numbers over the viewBox. ──────────────
+ *   THE DIAMOND (544 x 470)              THE SPINE (320 x 434)
+ *   root tile      (272,  42)  44px      root tile      ( 46,  26)  36px
+ *   split ring     (272, 124)  r7        split ring     ( 46,  80)  r6
+ *   branch tiles   (184, 220)            branch tiles   ( 26, 134)
+ *                  (360, 220)                           ( 66, 224)
+ *   merge tile     (272, 316)            merge tile     ( 46, 310)
+ *   term plate     (272, 442)            term plate     (  8, 404) left-anchored
+ *
+ * ── HOW LEVELS 3 AND 4 ARE KEPT APART ─────────────────────────────────────────────────────────
+ * The merge dot and the terminal label are the two things this figure wants to collapse into one
+ * node with a caption. They are different claims: App platforms are the PRODUCTS that merged the
+ * two branches; DevOps for App Platforms is the DISCIPLINE that merger now requires. Four separate
+ * moves hold them apart, and they are cumulative on purpose — any one alone is defeatable:
+ *
+ *   1. THE MERGE IS ALREADY CAPTIONED. It carries its own label, "App platforms / Airtable,
+ *      Notion", set beside it off the spine. A node that is already named cannot be read as being
+ *      named by the thing below it. This is the move that actually does the work.
+ *   2. DIFFERENT OBJECTS. Levels 1-3 are TILES: square, neutral, icon-bearing, things in the
+ *      world. Level 4 is a PLATE: a wide soft-primary lozenge with no icon and no dot. Different
+ *      shape vocabulary reads as a different category before anything is read as words.
+ *   3. THE COLOUR BREAK LANDS BETWEEN THEM. Everything above the merge is neutral ink; the tail
+ *      and the plate are the accent, and the merge tile is the last neutral object in the figure.
+ *      The source direction already did this (its tail is the only stroked-primary path).
+ *   4. THE TAIL IS THE LONGEST RUN ON THE SPINE. 84px clear between the merge tile and the plate,
+ *      against 52px between the branch tiles and the merge and 53px between the root and the
+ *      split, and it terminates in a chevron. It reads as a "therefore", not as a stem holding a
+ *      caption. In the source these two sat ~63px apart with nothing between them, which is
+ *      exactly where the collapse happened.
+ *
+ * ── THE PULSE ─────────────────────────────────────────────────────────────────────────────────
+ * Four animated paths on one 6s clock: stem, branch A, branch B, tail. Every one gets the SAME
+ * `animation-duration` and `infinite` count, and encodes its own window inside its keyframes
+ * rather than taking an `animation-delay` — same period plus different delays drifts on some
+ * engines, whereas one shared period cannot.
+ *
+ *   0 -  8%   the stem draws, root to split
+ *   8 - 44%   BOTH branches draw, simultaneously, from the same keyframe name
+ *  44 - 54%   the tail draws, merge to the coined term
+ *  54 - 84%   the whole path holds lit
+ *  84 - 94%   it fades out together
+ *
+ * THE TWO BRANCHES ARRIVE TOGETHER BY CONSTRUCTION, NOT BY TUNING. Each branch is ONE path from
+ * the split to the merge (it runs under its own tile, which is opaque and hides the middle), the
+ * two are exact mirror images about the figure's axis in both layouts, they carry `pathLength=100`
+ * so the draw is normalised to a fraction of each path, and they share a single `@keyframes
+ * diaBranch`. There is no per-branch number anywhere that could be got wrong. The merge tile
+ * flashes a ring at 46%, a beat after they land, so the convergence is the moment the figure
+ * spends its one bright accent on.
+ *
+ * REDUCED MOTION IS THE FINAL STATE, NOT A BLANK ONE. survey.css already collapses every animation
+ * to 0.01ms globally, which would leave the lit path wherever the last frame put it. The block at
+ * the foot of this file instead pins `stroke-dashoffset: 0` and full opacity: the accent path is
+ * drawn end to end, the landing ring rests at a faint constant, and the diagram is complete and
+ * legible at rest.
+ *
+ * ── THE ICONS ─────────────────────────────────────────────────────────────────────────────────
+ * THREE CONCEPT GLYPHS AND ONE STACK OF LOGOS, and the split is the argument the figure is making.
+ * Levels 1 and 2 are disciplines, so they get concepts. Level 3 is a shelf of PRODUCTS — the only
+ * node in the figure that names companies in its own caption — so it gets the companies.
+ *
+ *   DevOps            lucide `infinity`  — the lemniscate IS that discipline's symbol; it says
+ *                                          "DevOps" faster than any generic gear can.
+ *   App DevOps        lucide `code-xml`  — "Code" is the first word of its own caption, and `</>`
+ *                                          survives being 22px in a way `container` does not.
+ *   Database DevOps   lucide `database`  — the same glyph SpacePipelineHero uses to stand for the
+ *                                          whole DB category rather than fake one vendor's mark.
+ *   App platforms     a chip stack       — Airtable, Notion and a `+`, overlapping. See
+ *                                          `MARK_NOTION` for why it is a stack, and for the two
+ *                                          earlier answers this one replaces.
+ *
+ * The three Lucide bodies are inlined verbatim from `@iconify-json/lucide@1.2.114` and painted with
+ * `currentColor`, so one file serves both themes; so is the `+`, and so is the Notion mark, whose
+ * own artwork is monochrome. Airtable is the one full-colour thing in the figure, deliberately: it
+ * is this edition's platform and the reader is meant to find it first.
+ */
+
+/**
+ * PLACEHOLDER, AND IT IS THE ONLY EDIT THAT WILL BE NEEDED.
+ *
+ * `doap.baseout.com` is PLANNED, NOT BUILT. The link is kept because the section's argument ends
+ * in an offer to read more, and a section that raises the question and then stops is worse than a
+ * link that will resolve next week. When the brief ships, change this one string and nothing else.
+ */
+const BRIEF_HREF = 'https://doap.baseout.com/';
+
+/** Lucide 24x24 bodies, verbatim from @iconify-json/lucide@1.2.114. */
+const ICON_INFINITY =
+  '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8"/>';
+const ICON_CODE =
+  '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m18 16l4-4l-4-4M6 8l-4 4l4 4m8.5-12l-5 16"/>';
+const ICON_DATABASE =
+  '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></g>';
+
+/**
+ * THE MERGE NODE IS A STACK OF PLATFORMS, NOT ONE OBJECT.
+ *
+ * Oleh, 2026-08-31, on the single drawn glyph that stood here for a few hours: *"it looks very
+ * primitive. I would do an overlay — Airtable, with Notion laid over it, and another app over that,
+ * and a plus. You know how avatars are shown on cards, user icons. Like several apps and a plus. A
+ * short horizontal row of overlapping logos."*
+ *
+ * The avatar-stack idiom is exactly right for what this node is, and it is the one shape on the
+ * page that says CATEGORY without a word: overlapping marks read as "these, and others like them"
+ * because that is the only thing a stack of faces has ever meant. A single glyph — brand or drawn —
+ * can only ever say "one thing", which is what was wrong with the Airtable mark and what was still
+ * wrong with the invented one that replaced it.
+ *
+ * IT ANSWERS DAN'S OBJECTION RATHER THAN REVERSING IT, and that is worth being precise about since
+ * it puts the Airtable logo back three days after he asked for it to come out. What he objected to
+ * was one company standing for a category: *"instead of using Airtable there, since these are kind
+ * of more generic ones."* A stack of Airtable + Notion + more is not one company standing for a
+ * category; it is the category, listed. The caption under it already names those two, so the stack
+ * shows what the caption says instead of illustrating it with something else.
+ *
+ * THREE CHIPS, AND THE THIRD IS THE POINT. Two logos and a `+` is the avatar-stack's own grammar
+ * for "and others" — the same move as a row of faces ending in "+3". A third real logo was the
+ * alternative and it was rejected: the caption names two platforms, so a third mark would be a
+ * company the figure never mentions, and picking WHICH company is a claim nobody has made.
+ *
+ * WHERE THE MARKS COME FROM. Airtable is `/logos/airtable.svg`, already in this app, full colour,
+ * unchanged, and it is legible on both grounds so it needs no variant. Notion is the ink layer of
+ * the mark in the header of `notion.com`, taken at its own coordinates — the white page layer and
+ * the sticker outline under it are dropped, and what is left is painted `currentColor`. That is not
+ * a liberty: Notion's own mark is monochrome and inverts, so the chip gives a dark page on the light
+ * theme and a light one on the dark theme, which is the pair Notion themselves ship.
+ *
+ * `ICON_PLATFORM`, the drawn cylinder-with-chevrons that lived here between Dan's note and this
+ * one, is gone rather than kept behind a flag. It answered the same question worse.
+ */
+const MARK_NOTION =
+  '<path fill="currentColor" d="M20.5301 2.04318C22.5838 1.86808 23.1124 1.98541 24.4031 2.91757L29.7421 6.64778C30.623 7.28918 30.9167 7.46383 30.9167 8.16301V28.6217C30.9167 29.9039 30.4468 30.6622 28.804 30.7782L9.38127 31.944C8.14822 32.0025 7.56137 31.8279 6.9156 31.0114L2.98396 25.9405C2.27951 25.0072 1.98647 24.3088 1.98645 23.492V5.30687C1.98645 4.25835 2.45646 3.38365 3.80508 3.26754L20.5301 2.04318ZM28.9214 9.91165C28.9214 9.15462 28.6285 8.74625 27.9818 8.80449L8.91064 9.91165C8.20688 9.97045 7.9722 10.3204 7.9722 11.0779V28.4466C7.97222 29.3801 8.44147 29.7293 9.49759 29.6715L27.7471 28.6217C28.8037 28.5641 28.9214 27.922 28.9214 27.1636V9.91165ZM25.988 12.0096C26.1051 12.5347 25.988 13.0592 25.4588 13.1182L24.5795 13.2926V26.1151C23.816 26.5231 23.1122 26.7563 22.5256 26.7563C21.5863 26.7563 21.351 26.4646 20.6475 25.5908L14.8959 16.6149V25.2992L16.7158 25.7076C16.7158 25.7076 16.7159 26.7563 15.2475 26.7563L11.1994 26.9897C11.0818 26.7563 11.1995 26.1739 11.6101 26.0571L12.6664 25.7662V14.2837L11.1997 14.1668C11.0822 13.6417 11.3751 12.8847 12.1972 12.8259L16.5398 12.5349L22.5256 21.6277V13.5839L20.9993 13.4098C20.8821 12.7679 21.351 12.3018 21.9379 12.244L25.988 12.0096ZM23.816 4.43331C23.2877 4.02552 22.5835 3.55846 21.2343 3.67528L5.15507 4.84121C4.56875 4.89903 4.45158 5.19046 4.68509 5.42409L6.97519 7.23083C7.91323 7.98837 8.26511 7.93069 10.0265 7.81388L26.632 6.82259C26.9842 6.82259 26.6915 6.47348 26.5739 6.41536L23.816 4.43331Z"/>';
+
+/**
+ * THE "AND MORE" CHIP, AND WHY IT IS NOT A PLUS.
+ *
+ * Oleh, 2026-08-31: *"this plus looks to me like a call to action. I don't know what to replace it
+ * with. Maybe just three dots."* He is right about the plus, and for a reason worth writing down: a
+ * `+` in a circle is the single most common ADD control in software. Nothing about the glyph says
+ * "there are more of these"; it says "press to add one".
+ *
+ * Three dots have the same disease on their own — a `···` in a circle is the overflow menu in every
+ * toolbar ever shipped. What cures it is his OTHER instruction in the same message: put the chip
+ * BEHIND the logos and make it smaller. Controls are never tucked behind their neighbours and never
+ * the smallest thing in a row, so the position does the work the glyph cannot. Dots plus depth read
+ * as "the stack continues"; either one alone reads as a button.
+ *
+ * FILLED CIRCLES, NOT LUCIDE'S STROKED ONES. Lucide's `ellipsis` draws r=1 rings at 2 units of
+ * stroke, which at the ~19px this actually renders collapses into three smudges. Filled r=1.75 is
+ * the same mark and survives the size.
+ */
+const ICON_MORE =
+  '<g fill="currentColor"><circle cx="5" cy="12" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="19" cy="12" r="1.75"/></g>';
+
+
+/**
+ * THE CONNECTOR GEOMETRY, both layouts. Each branch is one path so the pulse crosses its tile
+ * without a seam; the tiles are opaque and hide the segment that runs under them.
+ */
+const WIDE = {
+  stem: 'M 272 68 V 113',
+  branchA: 'M 272 135 C 272 156, 184 173, 184 194 V 246 C 184 262, 272 274, 272 290',
+  branchB: 'M 272 135 C 272 156, 360 173, 360 194 V 246 C 360 262, 272 274, 272 290',
+  tail: 'M 272 342 V 412',
+  cap: 'M 265 408 L 272 415 L 279 408',
+};
+const NARROW = {
+  stem: 'M 46 48 V 70',
+  branchA: 'M 46 90 C 46 102, 26 100, 26 114 V 264 C 26 278, 46 276, 46 290',
+  branchB: 'M 46 90 C 46 102, 66 100, 66 114 V 264 C 66 278, 46 276, 46 290',
+  tail: 'M 46 330 V 372',
+  cap: 'M 39 368 L 46 375 L 53 368',
+};
+---
+
+<section class="dxp" aria-labelledby="dxp-h">
+  <div class="dxp__grid">
+    <div class="dxp__copy">
+      <h2 id="dxp-h" class="dxp__h">What is DevOps for App Platforms?</h2>
+      <p class="dxp__body">
+        DevOps split a long time ago. One branch grew up around code: deploys, containers,
+        rollback. The other grew up around databases: Postgres, Oracle, MySQL. App platforms like
+        Airtable and Notion merged the two, so one person clicking in a browser now changes the
+        schema and the application at once. What that needs is neither branch&rsquo;s tooling. That
+        gap is what this survey measures.
+      </p>
+      <a class="dxp__link" href={BRIEF_HREF}>
+        Read the full brief <span aria-hidden="true">&#8594;</span>
+      </a>
+    </div>
+
+    <div class="dxp__fig">
+      <div class="dia">
+        {/* THE DIAMOND. Base skeleton first, lit overlay second — painting order is the z-order. */}
+        <svg class="dia__net dia__net--wide" viewBox="0 0 544 470" preserveAspectRatio="none" aria-hidden="true">
+          <g class="dia__base">
+            <path d={WIDE.stem} />
+            <path d={WIDE.branchA} />
+            <path d={WIDE.branchB} />
+            <path d={WIDE.tail} />
+          </g>
+          <circle class="dia__ring" cx="272" cy="124" r="7" />
+          <path class="dia__cap" d={WIDE.cap} />
+          <path class="dia__on dia__on--stem" d={WIDE.stem} pathLength="100" />
+          <path class="dia__on dia__on--branch" d={WIDE.branchA} pathLength="100" />
+          <path class="dia__on dia__on--branch" d={WIDE.branchB} pathLength="100" />
+          <path class="dia__on dia__on--tail" d={WIDE.tail} pathLength="100" />
+        </svg>
+
+        {/* THE SPINE. Same four segments, same classes, same keyframes — only the coordinates move. */}
+        <svg class="dia__net dia__net--narrow" viewBox="-42 0 320 434" preserveAspectRatio="none" aria-hidden="true">
+          <g class="dia__base">
+            <path d={NARROW.stem} />
+            <path d={NARROW.branchA} />
+            <path d={NARROW.branchB} />
+            <path d={NARROW.tail} />
+          </g>
+          <circle class="dia__ring" cx="46" cy="80" r="6" />
+          <path class="dia__cap" d={NARROW.cap} />
+          <path class="dia__on dia__on--stem" d={NARROW.stem} pathLength="100" />
+          <path class="dia__on dia__on--branch" d={NARROW.branchA} pathLength="100" />
+          <path class="dia__on dia__on--branch" d={NARROW.branchB} pathLength="100" />
+          <path class="dia__on dia__on--tail" d={NARROW.tail} pathLength="100" />
+        </svg>
+
+        {/* ONE set of tiles and labels, in reading order, shared by both layouts. */}
+        <span class="dia__tile dia__tile--root" aria-hidden="true">
+          <svg class="dia__icon" viewBox="0 0 24 24" set:html={ICON_INFINITY} />
+        </span>
+        <p class="dia__lab dia__lab--root">DevOps</p>
+
+        <span class="dia__tile dia__tile--a" aria-hidden="true">
+          <svg class="dia__icon" viewBox="0 0 24 24" set:html={ICON_CODE} />
+        </span>
+        <p class="dia__lab dia__lab--a">
+          App DevOps<span class="dia__sub">Code, containers, deploys</span>
+        </p>
+
+        <span class="dia__tile dia__tile--b" aria-hidden="true">
+          <svg class="dia__icon" viewBox="0 0 24 24" set:html={ICON_DATABASE} />
+        </span>
+        <p class="dia__lab dia__lab--b">
+          Database DevOps<span class="dia__sub">Postgres, Oracle, MySQL</span>
+        </p>
+
+        {/* THE MERGE, AND THE ONLY NODE THAT IS NOT ONE OBJECT. A short row of overlapping chips:
+            two platforms and a `+` for the rest. See `MARK_NOTION` for why it is a stack and why
+            the Airtable logo is back in it. `--i` is the chip's place in the row and the only thing
+            that positions it; the geometry is one `calc` in the stylesheet. */}
+        <span class="dia__tile dia__tile--merge" aria-hidden="true">
+          <span class="dia__chip" style="--i: 0">
+            <img class="dia__chipmark" src="/logos/airtable.svg" alt="" width="64" height="64" />
+          </span>
+          <span class="dia__chip" style="--i: 1">
+            <svg class="dia__chipmark" viewBox="0 0 33 34" set:html={MARK_NOTION} />
+          </span>
+          <span class="dia__chip dia__chip--more" style="--i: 2">
+            <svg class="dia__chipmark" viewBox="0 0 24 24" set:html={ICON_MORE} />
+          </span>
+        </span>
+        <p class="dia__lab dia__lab--merge">
+          App platforms<span class="dia__sub">Airtable, Notion</span>
+        </p>
+
+        {/* Level 4. A PLATE, not a node: no tile, no dot, no icon, and the accent it inherits from
+            the tail is the colour break that separates the discipline from the products above. */}
+        <p class="dia__term">DevOps for App Platforms</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ── THE SECTION ────────────────────────────────────────────────────────────────────────────
+     Between the hero and the "What you get" rail, full page width, on `main`'s own left margin.
+     Three rhythm units of air above it, which is the gap the splash uses between sections; it
+     carries no rule of its own because the sections either side already close themselves. */
+  .dxp {
+    /* The seam below the hero. One number for every splash section, in `survey.css`. */
+    margin-top: var(--bo-splash-slide);
+  }
+
+  .dxp__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--bo-space-5);
+    align-items: center;
+  }
+
+  /* Two columns only once the figure column can still hold a legible diamond. At 62rem the column
+     is ~424px and the tiles land at 34px; any narrower and they stop being icons, so the section
+     stacks and gives the figure the page's full width instead. */
+  @media (min-width: 62rem) {
+    .dxp__grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--bo-space-6);
+    }
+  }
+
+  /* The heading takes the same rung and weight as "What you get" and "Who is behind it": one full
+     rung below the h1, because it opens a section rather than competing for the page. */
+  .dxp__h {
+    margin: 0 0 var(--bo-space-2);
+    max-width: 34rem;
+    font-size: var(--bo-t-24);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+  }
+
+  .dxp__body {
+    margin: 0 0 var(--bo-space-3);
+    max-width: 34rem;
+    font-size: var(--bo-t-16);
+    line-height: 1.55;
+    color: var(--bo-muted-strong);
+  }
+
+  .dxp__link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    color: var(--bo-primary);
+    text-decoration: none;
+  }
+
+  /* 129x21 on a phone. It closes the section and is read as an action rather than as a word inside
+     a sentence, so it takes the 44px floor — through a pseudo-element, so the line it sits on does
+     not move. Keyed to the finger and not the width; see the touch block in `survey.css`. */
+  @media (pointer: coarse) {
+    .dxp__link::after {
+      content: '';
+      position: absolute;
+      inset: -0.75rem -0.5rem;
+    }
+  }
+
+  .dxp__link:hover {
+    text-decoration: underline;
+  }
+
+  .dxp__fig {
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ── THE STAGE ──────────────────────────────────────────────────────────────────────────────
+     Width-capped and aspect-locked, so the SVG (`preserveAspectRatio: none`) scales uniformly and
+     the percentage-positioned tiles scale with it. Only the TEXT keeps its own rem size, which is
+     the same compromise SpacePipelineHero makes and the reason the layout switches rather than
+     shrinking past the point where a label stops fitting beside a tile.
+
+     THE GLOW IS PER-THEME, NOT ONE VALUE. A 14% cyan wash reads on #0a0a0a and disappears on a
+     near-white floor; in light the accent is a dark teal, so the same shape has to be paid for at
+     a lower alpha and a tighter falloff to register as a glow rather than as a smudge. Declared
+     here and re-declared in each theme block below, per the trap in survey.css's own header. */
+  .dia {
+    --dia-glow: color-mix(in oklch, var(--bo-primary) 9%, transparent);
+    --dia-glow-stop: 62%;
+    position: relative;
+    width: min(100%, 34rem);
+    aspect-ratio: 544 / 470;
+  }
+
+  .dia::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 48%;
+    width: 76%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: radial-gradient(circle, var(--dia-glow), transparent var(--dia-glow-stop));
+    pointer-events: none;
+  }
+
+  .dia__net {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .dia__net--narrow {
+    display: none;
+  }
+
+  /* ── THE SKELETON ───────────────────────────────────────────────────────────────────────────
+     Dashed at `3 5`, the reference's pattern, at the ORNAMENT alpha rather than the reference's
+     .16: this figure spends ~40% of its cycle with the accent fully faded out, so the dashed layer
+     has to carry the whole diagram alone for about two and a half seconds and cannot be a hint. */
+  .dia__base path {
+    fill: none;
+    stroke: var(--bo-ornament);
+    stroke-width: 1.75;
+    stroke-dasharray: 3 5;
+    stroke-linecap: round;
+  }
+
+  /* The split. A ring, not a tile: it is a junction, not a thing in the world, and the four things
+     in the world are the four tiles. */
+  .dia__ring {
+    fill: none;
+    stroke: var(--bo-ornament);
+    stroke-width: 1.75;
+  }
+
+  /* The chevron closing the tail. Static accent, never animated: it is the arrowhead the tail
+     points with, so it has to be there in every frame including the resting one. */
+  .dia__cap {
+    fill: none;
+    stroke: var(--bo-primary);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.6;
+  }
+
+  /* ── THE LIT OVERLAY ────────────────────────────────────────────────────────────────────────
+     `pathLength=100` normalises every path, so `stroke-dasharray: 100 100` is exactly one path
+     length of dash followed by one of gap: offset 100 draws nothing, offset 0 draws all of it, and
+     the same two numbers work on a 45px stem and a 240px branch. */
+  .dia__on {
+    fill: none;
+    stroke: var(--bo-primary);
+    stroke-width: 2.25;
+    stroke-linecap: round;
+    stroke-dasharray: 100 100;
+    stroke-dashoffset: 100;
+    filter: drop-shadow(0 0 3px color-mix(in oklch, var(--bo-primary) 45%, transparent));
+  }
+
+  .dia__on--stem {
+    animation: diaStem 6s linear infinite;
+  }
+
+  /* ONE name for BOTH branches. Mirror-image paths on one shared keyframe cannot arrive apart. */
+  .dia__on--branch {
+    animation: diaBranch 6s linear infinite;
+  }
+
+  .dia__on--tail {
+    animation: diaTail 6s linear infinite;
+  }
+
+  @keyframes diaStem {
+    0% {
+      stroke-dashoffset: 100;
+      opacity: 1;
+    }
+    8%,
+    84% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes diaBranch {
+    0%,
+    8% {
+      stroke-dashoffset: 100;
+      opacity: 1;
+    }
+    44%,
+    84% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes diaTail {
+    0%,
+    44% {
+      stroke-dashoffset: 100;
+      opacity: 1;
+    }
+    54%,
+    84% {
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  /* ── THE TILES ──────────────────────────────────────────────────────────────────────────────
+     The reference's rounded square, translated to this app's tokens: base-100 on the page floor,
+     a base-300 hairline, a 22% radius. Width is a PERCENTAGE of the stage, so a tile and the curve
+     that meets it are always the same size relative to each other. */
+  .dia__tile {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    width: 8.0882%; /* 44 / 544 */
+    aspect-ratio: 1;
+    background: var(--bo-base-100);
+    border: 1px solid var(--bo-base-300);
+    border-radius: 22%;
+    box-shadow: 0 2px 10px oklch(from var(--bo-base-content) l c h / 0.06);
+  }
+
+  .dia__icon {
+    width: 52%;
+    height: auto;
+    color: var(--bo-muted-strong);
+  }
+
+  .dia__tile--root {
+    left: 50%;
+    top: 8.9362%; /* 42 / 470 */
+  }
+
+  .dia__tile--a {
+    left: 33.8235%; /* 184 / 544 */
+    top: 46.8085%; /* 220 / 470 */
+  }
+
+  .dia__tile--b {
+    left: 66.1765%; /* 360 / 544 */
+    top: 46.8085%;
+  }
+
+  /* ── THE MERGE NODE: A PILL, NOT A TILE ─────────────────────────────────────────────────────
+     THE LAST NEUTRAL OBJECT IN THE FIGURE. It is deliberately not accented: the colour break has
+     to fall BELOW it, between the products and the discipline, or the two levels merge again.
+
+     It is the one node that holds a ROW, so it is the one node that is not square. 76 x 40 stage
+     units against the 44 x 44 of the other three: two 30-unit logo chips and a 24-unit remainder
+     chip, each 21 along from the last, span 66, plus 5 units of air either side. Centred on the
+     spine at x=272 it runs 234 to 310,
+     which clears the branch tiles at 206 and 338 — the two numbers that decide whether the row can
+     be this wide at all.
+
+     THE TWO NUMBERS WERE SET BY LOOKING, TWICE. 26-unit chips at 35% overlap read as three circles
+     standing in a row, not as a stack. 26 at 38% read as a stack and ate the logos: a chip that
+     size has 16 units of mark in it and a third of that went under its neighbour, which is fine for
+     a face and not for a cube. So the chips grew to 30 and the overlap came back to 30% — enough
+     depth to be a stack, enough of each mark left showing to be a logo.
+
+     WIDTH IS STILL A PERCENTAGE OF THE STAGE, like every other tile here, so the whole node scales
+     with the figure and the chips inside it follow without a second measurement: their height is a
+     percentage of THIS box, which is a percentage of the stage. That chain is the reason there is
+     no container query and no fixed px anywhere in the stack.
+
+     `aspect-ratio` and `border-radius` both override `.dia__tile` at equal specificity, so this
+     rule has to stay below it in the file. */
+  .dia__tile--merge {
+    left: 50%;
+    top: 67.234%; /* 316 / 470 */
+    width: 13.9706%; /* 76 / 544 */
+    aspect-ratio: 76 / 40;
+    border-radius: 999px;
+  }
+
+  /* ── THE CHIPS ──────────────────────────────────────────────────────────────────────────────
+     Placed, not flowed. A flex row with a negative margin is the usual way to build an avatar
+     stack and it cannot be built that way here: the overlap would have to be a percentage of the
+     row's own width, which is what the chips are deciding, and the percentage resolves against
+     nothing. Absolute placement inside a box whose size is already known breaks the circle —
+     `left` resolves against the pill's width and `height` against its height, both of which are
+     settled before a chip is laid out.
+
+     So `--i` is the chip's index and the only per-chip value in the markup: 5/76 for the first
+     chip's left edge, then 21/76 per step. It carries the depth too, below. Three today; a fourth needs a wider pill and nothing
+     else, and the arithmetic for that is in the comment above.
+
+     EARLIER CHIPS SIT ON TOP, and that is a reversal. Source order alone put the LAST chip in
+     front, so the row read back to front: the "and more" chip covered Notion, which covered
+     Airtable. Oleh, 2026-08-31: *"I'd want Airtable and Notion higher in the index, and the plus
+     button smaller and tucked behind."* He is describing the right reading order — the two named
+     platforms are what the caption promises, so they are what should be whole, and the remainder is
+     what should be partly hidden.
+
+     `z-index: calc(3 - var(--i))` does it off the index the chips already carry, so depth and
+     position stay one number. It works without `position: relative` being added anywhere because
+     the chips are already absolutely positioned.
+
+     THE `box-shadow` IS THE CUT-OUT, not a shadow. It is a 2-unit ring in the SAME colour as the
+     ground behind the chips, so the chip on top punches a clean gap out of the one below instead of
+     resting its hairline directly against it. Without it the two borders meet and the overlap reads
+     as a shape rather than as depth — this is the part of the avatar-stack idiom that actually does
+     the work, and it is why the ring has to track `--bo-base-100` and not a fixed colour. */
+  .dia__chip {
+    position: absolute;
+    top: 50%;
+    left: calc(6.5789% + var(--i) * 27.6316%); /* 5/76, step 21/76 */
+    z-index: calc(3 - var(--i));
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    height: 75%; /* 30 / 40 */
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--bo-base-100);
+    border: 1px solid var(--bo-base-300);
+    box-shadow: 0 0 0 2px var(--bo-base-100);
+    color: var(--bo-base-content);
+  }
+
+  /* THE REMAINDER CHIP IS SMALLER AND FURTHEST BACK, and both are load-bearing rather than
+     decorative. A control is never the smallest thing in a row and never tucked behind its
+     neighbours, so being 24 against 30 and last in the stacking order is what stops three dots
+     reading as an overflow menu — see `ICON_MORE`. It also means the two chips the caption actually
+     names stay whole and this one does not.
+
+     Base-200 rather than base-100 so it reads as the row's remainder and not as a logo that failed
+     to load, and muted ink so the dots sit behind the logos in weight as well as in depth. */
+  .dia__chip--more {
+    height: 60%; /* 24 / 40 */
+    background: var(--bo-base-200);
+    color: var(--bo-muted);
+  }
+
+  /* NO `color` HERE, DELIBERATELY, AND IT WAS A BUG BEFORE. The Airtable cube is a full-colour
+     `<img>` and ignores it; the Notion page and the `+` are inline `<svg>` on `currentColor`, so
+     whatever this rule set would have won over the ink each CHIP hands down — and `--more`'s muted
+     `+` came out at full strength because of exactly that. Colour belongs to the chip, size to the
+     mark. (Notion's own artwork is monochrome and inverts, so taking the theme's ink is not a
+     liberty: it is the pair Notion ships.) */
+  .dia__chipmark {
+    width: 62%;
+    height: auto;
+  }
+
+  /* CENTRED IN WHAT YOU CAN SEE, NOT IN THE CHIP. This chip is deliberately half-covered, so its
+     geometric centre sits under the Notion chip: with the mark centred there, the first of the
+     three dots disappeared behind the neighbour's ring and the node showed two. The chip runs 47 to
+     71 and Notion's ring ends at 58, so the visible crescent is centred at ~64.5, five units right
+     of the chip's own middle — hence the nudge. Any change to the chip diameters or the step has to
+     come back to this number.
+
+     Narrower too. Even sized down, a mark at the logos' width would be the widest thing in the
+     smallest chip, and the point of this chip is that it recedes. */
+  .dia__chip--more .dia__chipmark {
+    width: 40%;
+    transform: translateX(20%);
+  }
+
+  /* The same optical correction on the Notion chip, for the same reason: its mark is a solid page
+     silhouette where Airtable's is three separated planes with air between them, so at one box
+     width the solid one carries visibly more ink and pulls the eye off the chip the caption names
+     first. Its artwork also sits tighter to its viewBox than Airtable's does, so the two were never
+     the same drawn size at the same percentage to begin with. */
+  .dia__chip:nth-child(2) .dia__chipmark {
+    width: 54%;
+  }
+
+  /* The landing. A ring that opens out of the merge tile a beat after both branches reach it —
+     the one bright accent moment the figure spends, on the one claim it is making.
+
+     THE OFFSET IS TWO NUMBERS NOW, because the node is 70 x 34 and `inset` percentages resolve
+     against the containing block's WIDTH for left/right and its HEIGHT for top/bottom. One value
+     across a box that is twice as wide as it is tall puts the ring twice as far out at the sides as
+     at the top, which reads as a halo drawn by mistake. 3/70 and 3/34 hold it three units clear the
+     whole way round. `999px` matches the pill it is tracing; `24%` was a square's radius. */
+  .dia__tile--merge::after {
+    content: '';
+    position: absolute;
+    inset: -7.5% -3.9474%; /* 3 / 40, 3 / 76 */
+    border-radius: 999px;
+    border: 1.5px solid var(--bo-primary);
+    opacity: 0;
+    animation: diaLand 6s linear infinite;
+    pointer-events: none;
+  }
+
+  @keyframes diaLand {
+    0%,
+    40% {
+      opacity: 0;
+      transform: scale(1);
+    }
+    46% {
+      opacity: 0.85;
+      transform: scale(1.06);
+    }
+    62%,
+    100% {
+      opacity: 0;
+      transform: scale(1.2);
+    }
+  }
+
+  /* ── THE LABELS ─────────────────────────────────────────────────────────────────────────────
+     Live type in Urbanist, never baked into the drawing. They WRAP rather than `nowrap`: the slot
+     beside a branch tile is 148px at full size and shrinks with the column, and a label that
+     wraps to two lines is legible where a label that overruns its slot is not. */
+  .dia__lab {
+    position: absolute;
+    margin: 0;
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.005em;
+    color: var(--bo-base-content);
+  }
+
+  .dia__sub {
+    display: block;
+    margin-top: 3px;
+    font-size: var(--bo-t-11);
+    font-weight: 500;
+    line-height: 1.3;
+    letter-spacing: 0.02em;
+    color: var(--bo-muted);
+  }
+
+  /* The generic root term wears the page's micro-label voice, the one `.bo-eyebrow` and `.bo-meta`
+     use, because it is the only label on the figure that names a category rather than a thing. */
+  .dia__lab--root {
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+    white-space: nowrap;
+  }
+
+  .dia__lab--a {
+    right: 72.7941%; /* 544 - 148 */
+    top: 46.8085%;
+    transform: translateY(-50%);
+    max-width: 26%;
+    text-align: right;
+  }
+
+  .dia__lab--b {
+    left: 72.7941%; /* 396 / 544 */
+    top: 46.8085%;
+    transform: translateY(-50%);
+    max-width: 26%;
+  }
+
+  /* OFF THE SPINE, ON PURPOSE. Levels 1-3 are captioned to the side; only level 4 sits on the
+     axis. One is a node with a name, the other is where the figure ends. */
+  /* MOVED LEFT WITH THE NODE. The merge tile used to be 44 wide and started at x=250; the pill is
+     76 and starts at 234, which would have left this caption 9 units of clearance where it had 16.
+     Its right edge goes to x=218 to give the same air back. */
+  .dia__lab--merge {
+    right: 59.9265%; /* 544 - 218 */
+    top: 67.234%;
+    transform: translateY(-50%);
+    max-width: 40%;
+    text-align: right;
+  }
+
+  /* ── LEVEL 4 ────────────────────────────────────────────────────────────────────────────────
+     THE COINED PART IS THE MARKED PART, and here the whole term is coined, so the whole plate is.
+     Precedent is on this page already: `.meter-mark` paints only the acronym in the accent because
+     the rest of that label is ordinary English. */
+  .dia__term {
+    position: absolute;
+    left: 50%;
+    top: 94.043%; /* 442 / 470 */
+    transform: translate(-50%, -50%);
+    margin: 0;
+    max-width: 100%;
+    padding: 0.6875rem 1rem;
+    border: 1px solid color-mix(in oklch, var(--bo-primary) 45%, transparent);
+    border-radius: var(--bo-r-8);
+    background: var(--bo-soft-primary-bg);
+    font-size: var(--bo-t-14);
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--bo-soft-primary-fg);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* ── THE SPINE, below 34rem ─────────────────────────────────────────────────────────────────
+     Same DOM, same labels, same keyframes. The diamond's two diagonals become two parallel rails,
+     the branch tiles stack along them, and every label moves to a single left edge with ~172px to
+     itself at a 320px viewport. Nothing is dropped: the fork, the two parallel branches, the merge
+     and the tail are all still drawn, and both branches are still exact mirrors about x=46, so
+     they still arrive together. */
+  /* ── THE SPINE, CENTRED ──────────────────────────────────────────────────────────────────────
+     Every x below carries +42 units over the coordinate table at the top of this file, and the
+     narrow SVG's viewBox starts at -42 instead of 0 so its paths move with them without a single
+     `d` attribute being touched.
+
+     WHY 42. Measured on a 390px phone rather than judged: the drawn ink ran from x=8 to x=228 of a
+     320 stage, so its centre sat at 118 against the stage's 160 — 42 units left, with 92 units of
+     dead space down the right-hand side and 8 down the left. Oleh, 2026-08-31: *"the diagram should
+     be clearly in the middle on mobile."* It was not off by a feeling; it was off by a number, and
+     the number is what is applied. After: 50 to 270, and 50 either side.
+
+     THE LABEL COLUMN NARROWS WITH IT. `max-width` goes 68% to 54%, because a label starting 42
+     units further right and still allowed 68% of the stage would run off the end — the two values
+     sum to 111%. 54% keeps the longest label ("Code, containers, deploys") on the two lines it
+     already used.
+
+     THE SVG MOVES BY ITS VIEWBOX, NOT ITS PATHS. `viewBox="-42 0 320 434"` shifts the whole
+     coordinate system right by 42 and leaves the path data alone, so the mirror symmetry the two
+     branches depend on — the thing that makes them arrive together without a per-branch number —
+     cannot be broken by this edit. Editing eight `d` strings by hand could have broken it silently. */
+  @media (max-width: 21.999rem) {
+    .dia {
+      width: min(100%, 20rem);
+      aspect-ratio: 320 / 434;
+      --dia-glow-stop: 70%;
+    }
+
+    .dia::before {
+      left: 28.125%;
+      top: 44%;
+      width: 116%;
+    }
+
+    .dia__net--wide {
+      display: none;
+    }
+
+    .dia__net--narrow {
+      display: block;
+    }
+
+    .dia__tile {
+      width: 11.25%; /* 36 / 320 */
+    }
+
+    .dia__tile--root {
+      left: 27.5%; /* (46 + 42) / 320 */
+      top: 5.9908%; /* 26 / 434 */
+    }
+
+    .dia__tile--a {
+      left: 21.25%; /* (26 + 42) / 320 */
+      top: 30.8756%; /* 134 / 434 */
+    }
+
+    .dia__tile--b {
+      left: 33.75%; /* (66 + 42) / 320 */
+      top: 51.6129%; /* 224 / 434 */
+    }
+
+    /* THE PILL IS THE SAME 76 UNITS, on a stage that is 320 rather than 544, so the percentage has
+       to be restated — this is the one place in the figure where a shared percentage would mean two
+       different sizes. Centred at x=46 it runs 8 to 84, which stays on the stage at the left and
+       clears the labels' single left edge at x=98. The chips inside need nothing: their geometry is
+       a percentage of this box. */
+    .dia__tile--merge {
+      left: 27.5%;
+      top: 71.4286%; /* 310 / 434 */
+      width: 23.75%; /* 76 / 320 */
+    }
+
+    /* Every label to one left edge, clear of the widest tile, left-aligned and free to wrap. */
+    .dia__lab {
+      left: 43.75%; /* (98 + 42) / 320 */
+      right: auto;
+      max-width: 54%;
+      text-align: left;
+      transform: translateY(-50%);
+    }
+
+    .dia__lab--root {
+      top: 5.9908%;
+      white-space: normal;
+    }
+
+    .dia__lab--a {
+      top: 30.8756%;
+    }
+
+    .dia__lab--b {
+      top: 51.6129%;
+    }
+
+    .dia__lab--merge {
+      top: 71.4286%;
+    }
+
+    /* The plate anchors to the left edge rather than centring: the tail comes down at x=46, which
+       is inside it, so it still reads as the end of the spine and not as a caption floating free. */
+    .dia__term {
+      left: 15.625%; /* (8 + 42) / 320 */
+      top: 93.088%; /* 404 / 434 */
+      transform: translateY(-50%);
+      white-space: normal;
+    }
+  }
+
+  /* ── THE THEMES ─────────────────────────────────────────────────────────────────────────────
+     Both directions, explicitly. The stored choice stamps `data-theme` on the root and the default
+     "system" setting stamps nothing, so the media query has to answer for system and the attribute
+     has to be able to overrule it; declaring either alone leaves one of the four combinations
+     wearing the wrong glow. Only the GLOW and the two soft alphas move — every other colour is a
+     token that already re-solves itself per theme. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .dia {
+      --dia-glow: color-mix(in oklch, var(--bo-primary) 15%, transparent);
+      --dia-glow-stop: 66%;
+    }
+  }
+
+  :root[data-theme='dark'] .dia {
+    --dia-glow: color-mix(in oklch, var(--bo-primary) 15%, transparent);
+    --dia-glow-stop: 66%;
+  }
+
+  :root[data-theme='light'] .dia {
+    --dia-glow: color-mix(in oklch, var(--bo-primary) 9%, transparent);
+    --dia-glow-stop: 62%;
+  }
+
+  /* ── REDUCED MOTION ─────────────────────────────────────────────────────────────────────────
+     THE FINAL STATE, NOT A BLANK ONE. survey.css collapses every animation on the page to 0.01ms
+     globally, which without this block would leave the lit path frozen at whatever the last frame
+     computed. Here the accent path is pinned drawn end to end and the landing ring rests at a
+     constant faint value, so the diagram is complete and legible at rest and the figure still says
+     what it says: one flow, two branches, one merge, one term. */
+  @media (prefers-reduced-motion: reduce) {
+    .dia__on {
+      animation: none !important;
+      stroke-dashoffset: 0;
+      opacity: 1;
+    }
+
+    .dia__tile--merge::after {
+      animation: none !important;
+      opacity: 0.45;
+      transform: scale(1.06);
+    }
+
+    .dia__cap {
+      opacity: 1;
+    }
+  }
+</style>

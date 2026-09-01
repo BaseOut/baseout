@@ -1,0 +1,528 @@
+---
+import "../styles/survey.css";
+import { BANDS } from "../lib/maturity";
+import { EDITION } from "../lib/brand";
+import { demoAnswers, screenedOutAnswers } from "../lib/demo";
+
+interface Props {
+  title: string;
+  description?: string;
+  noindex?: boolean;
+  /**
+   * The attribution footer is a REQUIREMENT on the pages that sell the survey: the splash spec asks
+   * for Baseout and On2Air named with one-line descriptions and links. It is only noise on the page
+   * where somebody is answering a question, so that page turns it off. It is not deleted, because
+   * removing it from `/` would fail the requirement.
+   */
+  footer?: boolean;
+}
+const {
+  title,
+  description = `The first ${EDITION} survey.`,
+  noindex = false,
+  footer = true,
+} = Astro.props;
+
+/**
+ * One answer set per band, so a reviewer can open each result without walking eighty questions.
+ *
+ * REWRITTEN FOR THE REAL RUBRIC. The DOAP Score reads six questions, not two, and a seed that
+ * only sets a backup method now scores 3 out of 18 no matter which band it is labelled. Each seed
+ * below therefore answers all six, and the comment on each says the raw total it produces so the
+ * next person to change a ladder can see immediately whether these still land where they claim.
+ */
+const BAND_SEEDS: Record<string, Record<string, string | string[]>> = {
+  // raw 0 of 18 -> 0
+  "Ad hoc": {
+    backup_method: ["We don’t back up Airtable"],
+    restore_speed: "No idea",
+    restore_tested: "No, we have no backups to test",
+    schema_tracking: "It’s all in my head, or the builder’s head",
+    change_attribution: "Basically impossible",
+    change_testing: "We just make the change and watch",
+  },
+  // raw 6 of 18 -> 33
+  Aware: {
+    backup_method: ["Airtable’s built-in snapshots / revision history only"],
+    restore_speed: "A few days",
+    restore_tested: "No, but we have backups",
+    schema_tracking: "Docs we maintain by hand (Notion, Google Docs, etc.)",
+    change_attribution: "Never needed to",
+    change_testing:
+      "We test in the live base carefully (off-hours, small batches)",
+  },
+  // raw 13 of 18 -> 72
+  Managed: {
+    backup_method: ["A third-party backup tool (On2Air, etc.)"],
+    restore_speed: "Same day",
+    restore_tested: "Yes, once or twice",
+    schema_tracking:
+      "A diagramming tool (Whimsical, Lucidchart, etc.) updated manually",
+    change_attribution: "Possible, but slow and painful",
+    change_testing: "We duplicate the base and test in the copy",
+  },
+  // raw 18 of 18 -> 100
+  Engineered: {
+    backup_method: ["Custom scripts / API export we built ourselves"],
+    restore_speed: "Under an hour",
+    restore_tested: "Yes, regularly",
+    schema_tracking: "A tool that auto-generates schema documentation",
+    change_attribution: "Easy, we have change history we trust",
+    change_testing: "We have a formal dev / staging / prod-style process",
+  },
+};
+
+/**
+ * A FINISH LINK CARRIES ITS OWN ANSWERS.
+ *
+ * These were plain hrefs, so what they showed depended on whatever the tab happened to be holding:
+ * a half-filled report from an abandoned walkthrough, or an empty one. A review screen that shows
+ * something different every time is not a review screen. `seed` is a complete answer set, generated
+ * from the bank in `lib/demo.ts`, written to localStorage on the way out; the finish page then
+ * scores it exactly as it scores a real respondent, which is the point — nothing here fakes the
+ * result, it only supplies the answers.
+ */
+const DEMO = JSON.stringify(demoAnswers());
+const SCREENED = JSON.stringify(screenedOutAnswers());
+
+const SCREENS = [
+  { label: "Splash", href: "/" },
+  // ONE ENTRY, BECAUSE THERE IS ONE RAIL. The second link here was "Start gate, marks rail" at
+  // `?fresh=1&v=b`, from the round where the section rail was reviewed as two drawings. Dan chose
+  // the marks and the labelled one came out of `survey.astro`, so `?v=` is no longer read and the
+  // two links went to the same screen. Offering a choice that no longer exists is worse than
+  // offering none.
+  { label: "Start gate", href: "/survey?fresh=1" },
+  { label: "Resume gate", href: "/survey?resume=1" },
+  // `/sneak-peek` is a redirect into the finish page now, so the reviewer goes straight there.
+  // ONE FINISH PAGE NOW. The three entries here were the three endings behind `?v=a|b|c`; Oleh
+  // chose the ruled report on 2026-08-28 and the other two came out of the page, so three links to
+  // the same screen came out of this panel with them.
+  { label: "Finish, agency", href: "/thanks?t=preview&a=1", seed: DEMO },
+  { label: "Finish, no agency", href: "/thanks?t=preview", seed: DEMO },
+  {
+    label: "Finish, screened out",
+    href: "/thanks?t=preview&s=1",
+    seed: SCREENED,
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+    {
+      /*
+      URBANIST IS THE BRAND'S FACE (DESIGN.md), and until now this app was the only Baseout surface
+      not wearing it: the product ships Urbanist and the survey shipped `system-ui`, so the first
+      door a stranger opens was in a different typeface from the room behind it.
+
+      Loaded with `display=swap` and paired with a metric-adjusted local fallback in survey.css, so
+      the swap changes the letterforms without moving the line under the reader. Only the two body
+      weights and the two display weights are requested; preloading the whole family costs more
+      bandwidth than it saves.
+    */
+    }
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;600;700&display=swap"
+    />
+
+    {
+      /*
+      THE PRE-PAINT STAMP, for both axes.
+
+      Inline and synchronous rather than a module, because a module is deferred: the page would
+      paint in light and repaint a frame later. The flash is worst for
+      exactly the visitor this exists for.
+
+      THEME writes nothing when there is no stored choice, so `prefers-color-scheme` in survey.css
+      answers instead and the default is the visitor's system rather than ours.
+    */
+    }
+    <script is:inline>
+      (function () {
+        var root = document.documentElement;
+        try {
+          var t = localStorage.getItem("sado-theme");
+          if (t === "dark" || t === "light") root.setAttribute("data-theme", t);
+        } catch (e) {
+          /* private mode: the system preference still resolves the theme */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="bo-chrome">
+      {
+        /* A page may add one control of its own here. The opening screen uses it for its version
+          switcher; every other page leaves it empty and the chrome collapses to the theme toggle. */
+      }
+      <slot name="chrome" />
+      {
+        /*
+          ── THE THEME CONTROL, REBUILT ON THE SUPPORT PORTAL'S ─────────────────────────────────
+          Oleh, 2026-08-31: *"I like how the light/dark switch works on the support portal. I want
+          the user to have roughly the same experience switching. It steals space at the top and
+          looks a bit ugly. Maybe make it a float button. And I don't like its style — use the one
+          from the app or the support portal."*
+
+          Three separate complaints, three separate answers.
+
+          THE GLYPH. It was `☾` and `☀` — TEXT, swapped by `textContent` after hydration, so every
+          load painted the wrong one for a frame and both rendered in whatever the reader's emoji
+          font decided. They are Lucide `moon` and `sun` now, the same two `apps/support` draws,
+          inline, on `currentColor`, and WHICH ONE SHOWS IS DECIDED IN CSS from `data-theme` — so
+          the right glyph is in the first paint and the script never touches it. That is the support
+          portal's construction copied whole, and its own comment says why: a script that swapped
+          the icon showed the wrong one for one frame on every load, which is the same class of
+          flash the pre-paint theme script exists to prevent.
+
+          THE ICON SHOWN IS THE THEME YOU WOULD GET, not the one you are in, because a button labels
+          its action. Also the support portal's rule; `aria-label` says it in words.
+
+          IT FLOATS NOW. `absolute` never reserved space — it is out of flow — but it sat in the
+          top-right corner where `/thanks` puts its masthead and `/survey` its meta row, so it read
+          as a thing pushed in among them. `fixed`, bottom LEFT: out of the reading path, out of the
+          way of the review panel's handle bottom-right, and reachable without scrolling back to the
+          top of a page that is five sections long. That last part is a fix, not a side effect — on
+          the finish page the control used to be unreachable once you had started reading.
+
+          THE STORAGE KEY STAYS `sado-theme`. The support portal writes `starlight-theme` because
+          Starlight's own pre-paint script reads it; this app has its own, in the head of this file.
+          Sharing an experience is not sharing a key, and changing it would drop the stored
+          preference of everyone who has one.
+        */
+      }
+      <button
+        class="bo-theme"
+        id="theme-toggle"
+        type="button"
+        aria-pressed="false"
+        aria-label="Switch to dark theme"
+      >
+        <span class="bo-theme__i" data-when="light" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            ><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg
+          >
+        </span>
+        <span class="bo-theme__i" data-when="dark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            ><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg
+          >
+        </span>
+      </button>
+    </div>
+
+    <slot />
+
+    <!--
+      THE JUMP PANEL. A review instrument: it exists so every state can be reached by clicking
+      instead of by filling the survey in seven times. It comes out before the survey is sent, and
+      it says so in its own first line rather than relying on anyone to remember.
+    -->
+    <div class="bo-jump">
+      <div class="bo-jump__panel" id="jump-panel" hidden>
+        <p class="bo-jump__note">
+          Review only. This panel comes out before the survey is sent.
+        </p>
+
+        <div class="bo-jump__group">
+          <span class="bo-jump__legend">Session</span>
+          <ul class="bo-jump__list">
+            <li>
+              <button
+                class="bo-jump__link bo-jump__link--strong"
+                type="button"
+                id="jump-reset"
+              >
+                <span class="bo-jump__n" aria-hidden="true">↺</span>
+                Start over, clean
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="bo-jump__group">
+          <span class="bo-jump__legend">Screens</span>
+          <ul class="bo-jump__list">
+            {
+              SCREENS.map((s) => (
+                <li>
+                  <a
+                    class="bo-jump__link"
+                    href={s.href}
+                    data-jump-screen={s.href}
+                    data-seed={s.seed}
+                  >
+                    {s.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+
+        <div class="bo-jump__group">
+          <span class="bo-jump__legend">Result</span>
+          <ul class="bo-jump__list">
+            {
+              BANDS.map((band, i) => (
+                <li>
+                  <button
+                    class="bo-jump__link"
+                    type="button"
+                    data-jump-band={band}
+                    data-seed={JSON.stringify(BAND_SEEDS[band])}
+                  >
+                    <span class="bo-jump__n">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    {band}
+                  </button>
+                </li>
+              ))
+            }
+            <li>
+              <button
+                class="bo-jump__link"
+                type="button"
+                data-jump-band=""
+                data-seed=""
+              >
+                <span class="bo-jump__n">--</span>
+                Result, empty state
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <button
+        class="bo-jump__fab"
+        id="jump-fab"
+        type="button"
+        aria-expanded="false"
+        aria-controls="jump-panel"
+      >
+        <span aria-hidden="true">◇</span>
+        <span class="bo-jump__label">Jump</span>
+      </button>
+    </div>
+
+    {
+      /*
+      THE ATTRIBUTION IS A SPEC REQUIREMENT, AND IT MOVED RATHER THAN SHRANK.
+
+      `survey-app/specs/survey-app/spec.md` requires THE SPLASH to "attribute the survey to Baseout
+      and On2Air with ONE-LINE DESCRIPTIONS and links to both". This footer used to carry those
+      three descriptions on every page, because the splash had nothing else that did.
+
+      It does now: `components/Credibility.astro` gives all three a logo, a role, a line and a link,
+      and the splash renders it with `footer={false}`. So the requirement is met in full, in the one
+      place it was written for, and repeating the same three sentences at the foot of every other
+      page was pure duplication. Oleh's note on 2026-08-27 was that it read as a jumble, which is
+      what three sentences set as a wrapping row of small print will do.
+
+      What is left is the sponsor line task 2.2c mandates and the confidentiality note, centred:
+      Baseout and BuiltOnAir SPONSOR, On2Air is the credibility anchor and is never named as one.
+      The em dash in the task's wording is a comma here, because DESIGN.md bans em dashes in copy.
+    */
+    }
+    {
+      footer && (
+        <footer class="bo-foot">
+          <div class="bo-foot__inner">
+            <p class="bo-foot__lead">
+              Run by <a href="https://baseout.com">Baseout</a> and
+              <a href="https://builtonair.com">BuiltOnAir</a>, from the team
+              behind
+              <a href="https://on2air.com">On2Air</a>.
+            </p>
+            <p class="bo-foot__note">
+              Answers are confidential and only appear in aggregate.
+            </p>
+          </div>
+        </footer>
+      )
+    }
+
+    <script>
+      import { ANSWERS_KEY, RESULT_KEY } from '../lib/storage';
+
+      const root = document.documentElement;
+
+      // ── THEME ────────────────────────────────────────────────────────────────────────────────
+      // Reads the EFFECTIVE theme, not the stored one: with nothing stored the effective theme is
+      // the system's, and a control offering "dark" to somebody already in dark is a control that
+      // lies about what it does.
+      const themeBtn = document.getElementById(
+        "theme-toggle",
+      ) as HTMLButtonElement | null;
+
+      function effectiveTheme(): "dark" | "light" {
+        const attr = root.getAttribute("data-theme");
+        if (attr === "dark" || attr === "light") return attr;
+        return window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+      }
+
+      // NO ICON WORK HERE ANY MORE. Which glyph is drawn is a CSS question answered off
+      // `data-theme`, so it is correct in the first paint; this only keeps the two ACCESSIBLE
+      // strings in step, and those have no first-frame problem because nothing renders them.
+      function paintTheme() {
+        const now = effectiveTheme();
+        const target = now === "dark" ? "light" : "dark";
+        themeBtn?.setAttribute("aria-pressed", String(now === "dark"));
+        themeBtn?.setAttribute("aria-label", `Switch to ${target} theme`);
+      }
+
+      themeBtn?.addEventListener("click", () => {
+        const target = effectiveTheme() === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", target);
+        try {
+          localStorage.setItem("sado-theme", target);
+        } catch (e) {
+          /* the choice holds for this page view only */
+        }
+        paintTheme();
+      });
+
+      window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", () => {
+          if (!root.hasAttribute("data-theme")) paintTheme();
+        });
+
+      // ── THE JUMP PANEL ───────────────────────────────────────────────────────────────────────
+      const fab = document.getElementById(
+        "jump-fab",
+      ) as HTMLButtonElement | null;
+      const panel = document.getElementById("jump-panel") as HTMLElement | null;
+
+      function setPanel(open: boolean) {
+        if (!fab || !panel) return;
+        panel.hidden = !open;
+        fab.setAttribute("aria-expanded", String(open));
+      }
+
+      fab?.addEventListener("click", () => setPanel(panel?.hidden ?? true));
+
+      // Escape closes and returns focus to the control that opened it: a panel that traps the
+      // keyboard is worse than no panel.
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && panel && !panel.hidden) {
+          setPanel(false);
+          fab?.focus();
+        }
+      });
+
+      // A click outside closes. Anything inside the panel is a jump and will navigate anyway.
+      document.addEventListener("click", (e) => {
+        if (!panel || panel.hidden) return;
+        const t = e.target as Node;
+        if (!panel.contains(t) && t !== fab && !fab?.contains(t))
+          setPanel(false);
+      });
+
+      // Mark where we already are, so the panel reads as a map rather than a menu.
+      //
+      // Matched on the path plus the parameters the ENTRY declares, not on the whole query string:
+      // the live URL often carries extras (a cache-buster, a review parameter) that say nothing
+      // about which screen this is, and comparing the full string meant nothing was ever current.
+      for (const a of document.querySelectorAll<HTMLAnchorElement>(
+        "[data-jump-screen]",
+      )) {
+        const target = new URL(a.dataset.jumpScreen!, location.origin);
+        if (target.pathname !== location.pathname) continue;
+        const live = new URLSearchParams(location.search);
+        let matches = true;
+        for (const [k, v] of target.searchParams) {
+          if (live.get(k) !== v) matches = false;
+        }
+        if (matches) a.setAttribute("aria-current", "true");
+      }
+
+      // A SCREEN JUMP THAT CARRIES ANSWERS PLANTS THEM FIRST. Same rule as the band jumps below:
+      // the panel supplies answers and the page does its own scoring, so nothing here can show a
+      // result the rubric would not have produced.
+      for (const link of document.querySelectorAll<HTMLElement>(
+        "[data-jump-screen][data-seed]",
+      )) {
+        link.addEventListener("click", () => {
+          try {
+            localStorage.removeItem(RESULT_KEY);
+            localStorage.setItem(
+              ANSWERS_KEY,
+              link.dataset.seed ?? "",
+            );
+          } catch (e) {
+            /* storage blocked: the page takes its empty state, which is also worth seeing */
+          }
+        });
+      }
+
+      // A band jump writes the answers that PRODUCE that band and lets /thanks score them, rather
+      // than writing the band directly. One scoring path stays in the app, so the panel can never
+      // show a result the rubric would not have produced.
+      for (const b of document.querySelectorAll<HTMLButtonElement>(
+        "[data-jump-band]",
+      )) {
+        b.addEventListener("click", () => {
+          try {
+            localStorage.removeItem(RESULT_KEY);
+            const seed = b.dataset.seed;
+            if (seed) localStorage.setItem(ANSWERS_KEY, seed);
+            else localStorage.removeItem(ANSWERS_KEY);
+          } catch (e) {
+            /* storage blocked: the page will take its empty state, which is also a state worth seeing */
+          }
+          location.href = "/thanks?t=preview";
+        });
+      }
+
+      // START OVER, AND IT HAS TO CLEAR BOTH SIDES OR IT CLEARS NEITHER.
+      //
+      // The survey remembers deliberately: a 30-day session cookie plus a progress row in D1, which
+      // is the whole point of `survey-resume`. For a respondent that is correct. For anyone walking
+      // the flow repeatedly it means `/survey` keeps resuming into the middle and the first screens
+      // become unreachable. Dropping only the local cache is not enough, because the server row
+      // rehydrates it on the next load; dropping only the session leaves stale answers behind. So
+      // this signs out AND clears both keys, then asks for the start gate explicitly.
+      document
+        .getElementById("jump-reset")
+        ?.addEventListener("click", async (e) => {
+          const btn = e.currentTarget as HTMLButtonElement;
+          btn.disabled = true;
+          btn.textContent = "Clearing";
+          try {
+            await fetch("/api/auth/sign-out", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: "{}",
+            });
+          } catch {
+            /* offline: the local clear below still puts the flow back to its first screen */
+          }
+          try {
+            localStorage.removeItem(ANSWERS_KEY);
+            localStorage.removeItem(RESULT_KEY);
+          } catch {
+            /* storage blocked: there was nothing cached to clear */
+          }
+          location.href = "/survey?fresh=1";
+        });
+
+      paintTheme();
+    </script>
+  </body>
+</html>

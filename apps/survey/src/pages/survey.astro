@@ -1,0 +1,2441 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { MARK, EDITION, SCORE_SHORT } from '../lib/brand';
+
+/**
+ * ONE LAYOUT, AND THAT IS A DECISION DAN MADE ON THE VIDEO.
+ *
+ * This page used to ship two: `?v=a` asked one question per screen, `?v=b` asked a section per
+ * screen, and a switcher let a reviewer compare them. He compared them and chose: *"I like this
+ * format better, because it's a lot of questions to do one at a time. It actually takes longer. So
+ * I would do it by section."* The one-per-screen layout and the switcher went out rather than
+ * being hidden behind a flag, because a flag would keep a dead branch alive in every function
+ * below.
+ *
+ * WHAT REPLACED THE FLAT PROGRESS BAR. A section is no longer one screen: the real bank runs to
+ * fourteen sections and eighty-odd questions, so a section is several pages, and Dan asked for both
+ * levels to be visible. *"Maybe this shows like a slice, so maybe this has like three slices in
+ * there and it highlights the one that you're on so that you can move to each one. And then you
+ * move to the next section."* The rail below is those two levels: sections across the top, pages of
+ * the current section beneath it. `steps()` in `lib/questions.ts` computes both.
+ *
+ * ── ONE RAIL, AND IT IS THE MARKS RAIL ─────────────────────────────────────────────────────────
+ * The rail was itself reviewed as two drawings, behind a second `?v=` switch. One named all
+ * fourteen sections under a segmented line; this one names ONE, at a size that can be read, with
+ * the other thirteen as marks. The arithmetic is what settled it: fourteen sections across ~1296px
+ * of content is about 92px a cell, and at 11px uppercase with 0.12em tracking that is roughly eight
+ * characters a line — so every long title clamped to two lines and ended in an ellipsis.
+ *
+ * Dan chose the marks on 2026-08-28 and asked for three things, all of them below: the DIVIDED line
+ * the other drawing had (every page its own tick, so the row reads as fourteen things and not as
+ * one long bar), a tooltip naming a section on hover, and a visible difference between the sections
+ * he can go back to and the ones he cannot reach yet. He has now asked for the labelled drawing to
+ * go, and it has: there is one rail, one `paintProgress`, and no `?v=`. A stale `/survey?v=a` in
+ * somebody's history is simply a survey URL with an unread parameter on it.
+ */
+
+/**
+ * THE LOCK ON AN OUT-OF-REACH SECTION'S TOOLTIP.
+ *
+ * Dan, on the built rail: "maybe let's not write 'not yet available', and just put a padlock icon
+ * instead." Lucide `lock`, inlined verbatim from `@iconify-json/lucide@1.2.114` and painted with
+ * `currentColor` so one string serves both themes — the same treatment and the same package
+ * version `CategoryExplainer.astro` uses for its three concept glyphs.
+ *
+ * IT IS DECORATIVE AND THE WORDS DID NOT GO ANYWHERE. A screen reader gets no icon, so
+ * "not yet available" stays in the mark's own accessible name, exactly as it was
+ * ("Change management, page 2 of 3, not yet available"). The whole tooltip is `aria-hidden`, so
+ * the glyph is already outside the accessibility tree and there is nothing to announce twice.
+ */
+const ICON_LOCK =
+  '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></g>';
+---
+
+{/*
+  THE FOOTER IS ON HERE NOW. It used to be suppressed on the grounds that attribution is noise on a
+  screen where somebody is answering a question. Dan overruled that at 09:05: "I think this footer
+  can stay there like this for the form, just not on the splash page." It sits under the flow, so a
+  respondent reaches it only when they have stopped reading questions.
+*/}
+<Layout title={`Survey: ${EDITION}`} noindex>
+  <main>
+    <!-- Email-first start gate (survey-resume): email in, straight to question 1, no verification. -->
+    <section id="gate" hidden>
+      <h1>Before we start</h1>
+      <p class="bo-lede">
+        Where should we send your copy of the report? We'll also save your progress as you go, so
+        you can leave and finish later.
+      </p>
+      <form id="gate-form" novalidate>
+        <input
+          type="email"
+          id="gate-email"
+          name="email"
+          class="bo-field"
+          placeholder="you@company.com"
+          autocomplete="email"
+        />
+        <p class="bo-error-text" id="gate-error" hidden></p>
+        <button type="submit" class="bo-btn bo-btn--primary">Get your {SCORE_SHORT}</button>
+      </form>
+      <p class="bo-fine">
+        Already started on another device? <a href="/survey?resume=1">Get a resume link</a>
+      </p>
+    </section>
+
+    <!-- Cold-resume gate: magic-link request for expired sessions / new devices. -->
+    <section id="resume-gate" hidden>
+      <h1>Pick up where you left off</h1>
+      <p class="bo-lede">
+        Enter the email you started the survey with and we'll send you a sign-in link that opens
+        your survey at your last question.
+      </p>
+      <form id="resume-form" novalidate>
+        <input
+          type="email"
+          id="resume-email"
+          name="email"
+          class="bo-field"
+          placeholder="you@company.com"
+          autocomplete="email"
+        />
+        <p class="bo-error-text" id="resume-error" hidden></p>
+        <button type="submit" class="bo-btn bo-btn--primary">Email me a resume link</button>
+      </form>
+      <p class="bo-fine">Starting fresh instead? <a href="/survey">Begin the survey</a></p>
+    </section>
+
+    <section id="resume-sent" hidden>
+      <h1>Check your inbox</h1>
+      <p class="bo-lede">
+        We sent a resume link to <strong id="resume-sent-email"></strong>. Open it on this device
+        to continue your survey. The link expires shortly, so use it soon.
+      </p>
+    </section>
+
+    <!-- The question flow -->
+    <section id="quiz" hidden>
+      <!-- THE MARK. Dan, 09:19: "all throughout, I think we should have like a state of DevOps dash
+           Airtable, for kind of branding, that shows throughout." It is the middle of the meta row
+           on every screen of the flow, and the same string appears on the splash and the finish
+           page, from `lib/brand.ts`.
+
+           THIS ROW WAS DELETED ON 2026-08-31 AND PUT BACK THE SAME DAY. Oleh took it out — *"it
+           only distracts the user, let them focus purely on the survey and the progress bar"* —
+           then reversed himself once the conflict was on the table: the strip is not ours to drop.
+           Dan asked for it by name on the 09:19 review and asked to ADD the word "Survey" to it
+           three days ago, so removing it would have undone a change he had just requested. Restored
+           by reverting the commit, so what stands here is exactly what he asked for and not a
+           reconstruction of it. Do not remove it again without him. -->
+      <!-- `[Aggregate only]` USED TO CLOSE THIS ROW. Dan, 2026-08-28, clicking it: *"I don't know
+           that we need that either."* It is not information lost, and it is worth being exact about
+           where it survives, because an earlier version of this comment was not: the splash says
+           "Aggregate only" in the fact row under the buttons, the credibility block ends on "Answers
+           are confidential and only appear in aggregate", and the SITE FOOTER (`Layout.astro`)
+           repeats that sentence on every page — this one included, while you answer. It is not said
+           again at the gate; that claim was wrong and Oleh caught it.
+
+           So the promise is made twice before question one and stays on screen throughout. Saying
+           it a fourth time in the meta row made it decoration rather than a term. The row is a
+           two-part meta line now: which question you are on, and what you are filling in. -->
+      <div class="q-topbar q-topbar--pair">
+        <span id="q-tag">[S1]</span>
+        <span class="q-topbar__mid">{MARK}</span>
+      </div>
+
+      <!--
+        ONE RAIL, AND THE SECTION'S OWN RULE CARRIES THE PAGES.
+        The first build drew a second rail of short bars under the sections, which is what Dan
+        sketched. Oleh's reading on 2026-08-27 is better and it is the one built: the line above a
+        section IS the section, so it divides into one part per page rather than a separate row
+        appearing underneath it. A section with one page keeps one unbroken rule and nothing about
+        the row moves; a section with three is visibly in thirds while you are inside it.
+      -->
+      <div class="q-progress">
+        <!-- ONE THING ON THIS LINE. "Some answers add a step. The count grows when they do."
+             stood at the right end until 2026-08-28, when Dan selected it and said *"I think we
+             could remove this, I don't think that adds anything."* He is right about what it was
+             doing: it explained a mechanism nobody had asked about yet, in the smallest type on
+             the screen, above the question. The rail itself already tells the truth — a mark
+             divides into more parts when a branch adds a page, and it does that while you watch. -->
+        <div class="q-progress__head">
+          <span class="q-progress__count" id="step-count">Section 1</span>
+        </div>
+        <!--
+          `role="list"`, NOT `role="progressbar"`, AND THAT IS A BUG FIX RATHER THAN A PREFERENCE.
+          `progressbar` is one of the roles ARIA declares "children presentational", so every mark
+          inside this element was being pruned out of the accessibility tree — all fourteen
+          sections, invisible to a screen reader no matter what `aria-label` each one carried.
+          Nothing announced them and nothing could reach them.
+          `list-style: none` on this `<ol>` also drops list semantics in Safari, so the role is
+          written out rather than left implicit. The progress itself is not lost: `Section 5 of 14`
+          is real text in the row above, which is where a reader was getting it anyway.
+        -->
+        <ol class="q-progress__track" id="section-track" role="list" aria-label="Survey sections"
+        ></ol>
+
+        <!--
+          THE TOOLTIP, AND THERE IS EXACTLY ONE OF IT.
+          Dan on the review call: "you can go back, but you can't remember which one you're going
+          back to. Maybe it's a hover or something." One shared node rather than fourteen, because
+          the thing that has to be got right is the CLAMPING at the two ends of the row — the first
+          and the fourteenth section both want to hang off the edge of the viewport — and that is
+          one piece of arithmetic done once, against the rail's own box.
+
+          It lives in the TEMPLATE, not in `paintProgress`, so it carries Astro's scope attribute
+          and its styles can sit in the scoped block with the rest of the row's placement. Every
+          part of the rail that `paintProgress` builds still has to be styled globally.
+
+          `aria-hidden` because it is a second rendering of something already in the accessible
+          name of the mark that summons it: the mark says "Incidents, not yet available" whether it
+          is hovered, focused or read. Duplicating that into a live region would say it twice.
+        -->
+        <div class="q-tip" id="marks-tip" aria-hidden="true" data-show="false" data-reach="true">
+          <span class="q-tip__state" id="marks-tip-state" hidden>
+            <svg class="q-tip__lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false" set:html={ICON_LOCK} />
+          </span>
+          <span class="q-tip__name" id="marks-tip-name"></span>
+        </div>
+
+        <!--
+          THE SECOND LINE. The marks name nothing on their own, so the current section's title is
+          written once underneath them, at a size that can be read — which is the whole trade the
+          marks make, and the reason they beat fourteen clamped labels. `Page N of M` and `Next ·`
+          are the rest of it, handed back in words rather than in cells.
+        -->
+        <div class="q-marks__line" id="marks-line">
+          <!--
+            `tabindex="-1"` SO A PAGE CHANGE CAN LAND HERE. Dan: "every new page should start from
+            the top as the user goes through the survey." Scrolling alone only fixes it for a
+            mouse — a keyboard or screen-reader user pressing Next is left on the old page's Next
+            button — so `toPageTop()` moves focus here as well, and this is the element it moves it
+            to: it is the topmost thing on the screen that says where you now are, and after the
+            compact header went it is the ONLY place the section is named on pages two and up.
+            Not focusable by Tab, only by script; the ring is left to `survey.css`'s
+            `:focus-visible` rule, which paints it after Enter on Next and not after a click.
+          -->
+          <h2 class="q-marks__name" id="marks-name" tabindex="-1"></h2>
+          <span class="q-marks__page" id="marks-page" hidden></span>
+          <span class="q-marks__next" id="marks-next" hidden></span>
+        </div>
+      </div>
+
+      <!--
+        THE SECTION HEADER, AND IT CHANGES SIZE ON PURPOSE.
+        Dan: "I'd make this more prominent, the section that you're in. Maybe it's more of a header
+        here, you can see it there but this is just kind of small. So maybe the description is up
+        above." And then: "maybe the first page has more of a header about what section you're on,
+        and once you get to the next one it moves to this, to kind of give some real estate back."
+        So page one of a section gets the title, the blurb and any intro; pages two and up keep the
+        title on one compact line and drop the rest. `data-lead` on the element is the switch.
+      -->
+      <header class="q-section" id="q-section" data-lead="true">
+        <p class="q-section__eyebrow" id="q-section-eyebrow"></p>
+        <h1 class="q-section__title" id="q-section-title"></h1>
+        <p class="q-section__blurb" id="q-section-blurb"></p>
+        <aside class="q-note" id="q-section-intro" hidden>
+          <p class="q-note__label">Note</p>
+          <p class="q-note__body" id="q-section-intro-text"></p>
+        </aside>
+      </header>
+
+      <div class="q-body">
+        <form id="step" novalidate></form>
+      </div>
+
+      <div class="q-footbar">
+        <button type="button" class="bo-btn bo-btn--ghost" id="back" hidden>Back</button>
+        <div class="q-footbar__end">
+          <p class="bo-save" id="save-state" data-state="idle" aria-live="polite">
+            <span class="bo-save__dot" aria-hidden="true"></span>
+            <span id="save-label">Progress saves as you go</span>
+          </p>
+          <button type="button" class="bo-btn bo-btn--primary" id="next">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  /* PAGE PLACEMENT ONLY. Colour, radius and type come from `survey.css` tokens and recipes. */
+
+  h1 {
+    margin: 0 0 var(--bo-space-2);
+    font-size: var(--bo-t-32);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  #gate form,
+  #resume-form {
+    display: grid;
+    gap: var(--bo-space-2);
+    width: 100%;
+  }
+
+  #gate,
+  #resume-gate,
+  #resume-sent {
+    width: 100%;
+    max-width: 34rem;
+    margin-inline: auto;
+    margin-block: auto;
+    padding-block: var(--bo-space-5);
+  }
+
+  #gate > .bo-fine,
+  #resume-gate > .bo-fine {
+    display: block;
+    margin-top: var(--bo-space-3);
+  }
+
+  /* ── THE QUIZ SHELL ─ the rail at the top, the question breathing, the nav at the bottom ───── */
+  #quiz {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+
+    /* ONE NUMBER FOR THE QUESTION COLUMN, and it is here because THREE blocks have to agree on it:
+       the section header, the questions, and the nav bar under them. It was written out three times
+       and about to be a fourth, which is how a column and the rule under it come to disagree by a
+       rem and nobody can say when. */
+    --q-col: 42rem;
+  }
+
+  .q-topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--bo-space-2);
+    padding-bottom: var(--bo-space-2);
+    border-bottom: 1px solid var(--bo-base-300);
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  /* ── TWO ITEMS, AND THE MARK STILL SITS ON THE PAGE'S AXIS ─────────────────────────────────
+     `[Aggregate only]` closed this row until 2026-08-28 and was doing invisible layout work:
+     `space-between` across three items is what put the mark in the middle of the page. With two,
+     the same rule centres the mark inside whatever is left of the row after `[S1]`, which lands it
+     visibly right of centre — and the mark is the one thing on this line that has to look
+     deliberate, since it is the branding Dan asked to run throughout.
+
+     A three-track grid with equal outer columns centres it on the page axis instead, and does it
+     from the container rather than from the contents: the third track is empty and stays that way,
+     so the mark holds its position no matter how long `[S4.1]` gets. The two children auto-place
+     into tracks 1 and 2.
+
+     It overrides `display` and `justify-content` from `.q-topbar` at equal specificity, so it has
+     to stay BELOW that rule in this file. */
+  .q-topbar--pair {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+  }
+
+  .q-topbar__mid {
+    text-align: center;
+  }
+
+  /* `position: relative` is what the tooltip is measured and placed against. It has to be THIS
+     box and not the track: the track is the row of marks, and a tooltip clamped to the track's
+     width is clamped to exactly the width it needs to stay inside. */
+  .q-progress {
+    position: relative;
+    padding-top: var(--bo-space-2);
+  }
+
+  /* ── THE TOOLTIP ─────────────────────────────────────────────────────────────────────────────
+     Absolutely positioned, so it costs the page NO vertical space and cannot move the rhythm of
+     the row it hangs under. `top` and the horizontal `translate` are both written by the script
+     from real measurements; everything that does not depend on which mark is under the pointer is
+     here.
+
+     `max-width` is the whole overflow story. The rail is as wide as the content column, so a
+     tooltip that can never exceed 100% of `.q-progress` can never reach past the column, and the
+     script clamps its left edge into the same box. Fourteen sections means the first and the
+     fourteenth tooltip both want to hang off an edge; neither can. */
+  .q-tip {
+    position: absolute;
+    left: 0;
+    z-index: 3;
+    /* ONE ROW. The lock sat on its own line under the name and read as a second, unexplained
+       statement rather than as a property of the one above it — Oleh, 2026-08-28. Leading the
+       name, it is what a status glyph normally is: a mark ON the label. `flex-start` rather than
+       `center` because the name wraps at 22rem and centring a glyph against a two-line block
+       floats it between the lines; the name's line box is 18.9px against a 16px lock, so aligned
+       tops already read as one line. */
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375rem;
+    box-sizing: border-box;
+    max-width: min(22rem, 100%);
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-6);
+    background: var(--bo-base-200);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.14s cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .q-tip[data-show='true'] {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* BLUISH WHERE HE CAN GO, GREYISH WHERE HE CANNOT — Dan's sketch, in tokens. The border does
+     most of the work because the surface under both is the same raised grey; the name's colour
+     seconds it, and the second line says the reason in words for anyone who does not read the
+     difference as a difference. */
+  .q-tip[data-reach='true'] {
+    border-color: var(--bo-primary);
+  }
+
+  .q-tip__name {
+    font-size: var(--bo-t-14);
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--bo-muted-strong);
+  }
+
+  /* THE FULL NAME, FINALLY. "Documentation and schema discipline" clamped to two lines and an
+     ellipsis in an 82px labelled cell, which is what the marks were chosen over; in here it has
+     22rem and wraps. */
+  .q-tip[data-reach='true'] .q-tip__name {
+    color: var(--bo-primary);
+  }
+
+  /* ── THE LOCK ────────────────────────────────────────────────────────────────────────────────
+     A line of spaced caps became roughly one glyph's worth of ink, so the two things that keep it
+     legible are size and weight, not decoration: 18px on a 24 grid at Lucide's own 2px stroke, and
+     `--bo-muted-strong` rather than `--bo-muted`, which is the difference between a lock you read
+     and a lock you notice afterwards.
+
+     IT IS NOT CARRYING THE DISTINCTION ALONE and that is why one glyph is enough here. The
+     unreachable tooltip already differs in two other places at the same moment — a neutral border
+     where the reachable one is accent, and a muted name where the reachable one is accent — and
+     the mark under the pointer has lifted to grey rather than to accent. The lock is the third
+     signal and the one that says WHY; it was never the only one. */
+  .q-tip__state {
+    display: flex;
+    align-items: center;
+    /* Matches the name's line box, so the glyph centres on the first line rather than on its own
+       16px. */
+    height: 1.35em;
+    font-size: var(--bo-t-14);
+    color: var(--bo-muted-strong);
+  }
+
+  .q-tip__lock {
+    /* 18px was sized to replace a whole line of spaced caps and carry the meaning on its own.
+       Beside the name it no longer has to: the words are back, so the glyph steps down to sit
+       with 14px text rather than loom over it. `flex-shrink` because a long section name must
+       never squeeze it. */
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  /* The caret is a rotated square, and its horizontal position is the ONE thing that survives the
+     clamp: when the tooltip is pushed back inside the column its body no longer sits over the mark
+     that summoned it, so the caret is what still points at it. */
+  .q-tip::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: var(--tip-caret, 50%);
+    width: 7px;
+    height: 7px;
+    margin-left: -3.5px;
+    border-top: 1px solid var(--bo-base-300);
+    border-left: 1px solid var(--bo-base-300);
+    background: var(--bo-base-200);
+    transform: rotate(45deg);
+  }
+
+  .q-tip[data-reach='true']::before {
+    border-top-color: var(--bo-primary);
+    border-left-color: var(--bo-primary);
+  }
+
+  /* `survey.css` already collapses every transition to 0.01ms under this preference, which is the
+     blunt global reset. This is the same intent written where the transition is, so the next person
+     to read these rules does not have to know the reset exists to know the fade is optional. The
+     tooltip still appears and disappears — only the fading stops. */
+  @media (prefers-reduced-motion: reduce) {
+    .q-tip {
+      transition: none;
+    }
+  }
+
+  .q-progress__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--bo-space-3);
+    margin-bottom: 0.5rem;
+  }
+
+  .q-progress__count {
+    font-size: var(--bo-t-12);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-base-content);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* The row's own `gap` is not here: it is `--mark-gap`, set with the marks further down, because
+     the two values it takes are a measurement about the marks and belong beside them. */
+  .q-progress__track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* ── THE MARKS RAIL'S LINE ───────────────────────────────────────────────────────────────────
+     One row, baseline-aligned: the section's name, its page position, and what is coming, with the
+     space between the second and the third doing the separating so no rule is needed. */
+  .q-marks__line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--bo-space-2);
+    padding-top: 0.75rem;
+  }
+
+  .q-marks__name {
+    margin: 0;
+    font-size: var(--bo-t-20);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--bo-primary);
+  }
+
+  .q-marks__page,
+  .q-marks__next {
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+    white-space: nowrap;
+  }
+
+  /* `Next ·` is pushed to the far end and is the first thing to go when the row runs out of room:
+     it is the least load-bearing of the three, and a wrapped micro-label reads as a fault. */
+  .q-marks__next {
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── THE SECTION HEADER ─ the blurb and the note on page one, nothing on the pages after ───── */
+  .q-section {
+    /* `--bo-space-3` and not `--bo-space-5`: the rail's own line already names the section 40px
+       higher, so the header underneath it opens the blurb rather than announcing a new screen. */
+    padding-top: var(--bo-space-3);
+  }
+
+  .q-section__eyebrow {
+    margin: 0 0 var(--bo-space-1);
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-primary);
+  }
+
+  .q-section__title {
+    margin: 0;
+    font-size: var(--bo-t-32);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  .q-section__blurb {
+    margin: var(--bo-space-2) 0 0;
+    max-width: var(--q-col);
+    font-size: var(--bo-t-16);
+    line-height: 1.5;
+    color: var(--bo-muted-strong);
+  }
+
+  /* THE SECTION INTRO IS A NOTE, AND IT IS BUILT LIKE ONE.
+     It is not a caption: bank section 7 defines what "structural change" means for the ten
+     questions under it, and section P promises those answers are never published. Set as grey text
+     behind a hairline it read as small print, which is what Oleh reported, and small print is what
+     a reader skips. It takes the shape documentation gives the same job: a surface of its own, an
+     accent edge, and a word at the top saying what it is. */
+  .q-note {
+    display: grid;
+    gap: 0.375rem;
+    max-width: var(--q-col);
+    margin: var(--bo-space-4) 0 0;
+    padding: var(--bo-space-3) var(--bo-space-4);
+    background: var(--bo-base-200);
+    border-left: 3px solid var(--bo-primary);
+    border-radius: 0 var(--bo-r-8) var(--bo-r-8) 0;
+  }
+
+  .q-note__label {
+    margin: 0;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-primary);
+  }
+
+  .q-note__body {
+    margin: 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.6;
+    color: var(--bo-base-content);
+  }
+
+  /* PAGES TWO AND UP HAVE NO HEADER AT ALL, AND THE RAIL IS WHY. The line under the marks prints
+     the section's name at `--bo-t-20`, forty pixels higher, on every screen of the flow — so a
+     compact header repeating it that close together read as a fault rather than as a reminder. The
+     LEAD header stays, because it carries the blurb and the section's note, which the rail line
+     does not. Hiding the whole element is what makes every `[data-lead='false']` rule that used to
+     dress the compact title unnecessary; they went with it. */
+  .q-section[data-lead='false'] {
+    display: none;
+  }
+
+  /* AND ON PAGE ONE THE LEAD HEADER GIVES UP ITS NAME AND ITS NUMBER, for the same reason one step
+     further. The section is already named 40px higher and counted twice above that, so the first
+     page of a section was printing "Team practices and governance" at 20px and again at 32px,
+     under "Section 4 of 14" printed twice. The rail names the section; the header explains it.
+     What is left — the blurb and the section note — is the part the rail line cannot carry, and it
+     reads as belonging to the name above it because there is nothing between them.
+
+     BOTH ELEMENTS STAY IN THE MARKUP and `render()` keeps writing them. This is a visual decision
+     about a row that already says the same words; the eyebrow and the `<h1>` are still the
+     section's own heading in the document, and taking them out would leave the flow with none. */
+  .q-section__eyebrow,
+  .q-section__title {
+    display: none;
+  }
+
+  /* ── THE QUESTIONS ─────────────────────────────────────────────────────────────────────────── */
+  .q-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, var(--q-col)) minmax(0, 1fr);
+    align-content: start;
+    padding: var(--bo-space-5) 0 var(--bo-space-6);
+  }
+
+  .q-body > form {
+    grid-column: 2;
+  }
+
+  /* The header shares the question column's centre line rather than the page's, or the title would
+     hang left of every prompt it introduces. */
+  .q-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, var(--q-col)) minmax(0, 1fr);
+  }
+
+  .q-section > * {
+    grid-column: 2;
+  }
+
+  /* ── THE FOOTER BAR ─ Back on one side, the save report and the way forward on the other ──────
+     IT SITS IN THE QUESTION COLUMN NOW. Oleh, 2026-08-31: *"let's pull in this line above the Back
+     and Next buttons and put it inside a container at the form's width. It'll look better."*
+
+     He is pointing at a rule that ran the full page while the thing it was closing off ran 42rem in
+     the middle of it, so the line crossed two columns of empty margin on its way out. A divider that
+     is wider than what it divides reads as the page ending, not as the question ending.
+
+     `max-width` plus auto margins rather than the three-track grid the blocks above use: with no
+     children to place in a middle track it is the same box for two declarations instead of five,
+     and the centre line is identical because those tracks are `1fr` either side. The BUTTONS come
+     with it, which is the part that makes it work — a narrowed rule with the nav still spread to
+     the page edges would have left Back and Next hanging outside their own divider. */
+  .q-footbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--bo-space-2);
+    width: 100%;
+    max-width: var(--q-col);
+    margin-inline: auto;
+    padding-top: var(--bo-space-3);
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .q-footbar > .bo-btn[hidden] + .q-footbar__end,
+  .q-footbar__end {
+    margin-left: auto;
+  }
+
+  .q-footbar__end {
+    display: flex;
+    align-items: center;
+    gap: var(--bo-space-3);
+  }
+
+  @media (max-width: 62rem) {
+    .q-body,
+    .q-section {
+      grid-template-columns: minmax(0, 1fr);
+      padding-inline: 0;
+    }
+
+    .q-body > form,
+    .q-section > * {
+      grid-column: 1;
+    }
+
+    /* The column is gone below this width — the questions run the full container — so the nav has
+       to be released with them, or the rule would be narrower than the options it closes off and
+       reintroduce the mismatch this fixed at the other end. */
+    .q-footbar {
+      max-width: none;
+    }
+
+    .q-body {
+      padding: var(--bo-space-4) 0;
+    }
+
+    .q-topbar__mid {
+      display: none;
+    }
+
+    /* THE FIRST THING TO GO IS "NEXT ·". At 900px the two labels still fit; below that the section
+       name has to be allowed to wrap without a micro-label sitting beside it, and what is coming
+       next is the least load-bearing of the three things on this line. */
+    .q-marks__next {
+      display: none;
+    }
+  }
+  /* ══ TOUCH ═══════════════════════════════════════════════════════════════════════════════════
+     ONE BLOCK, KEYED TO THE FINGER RATHER THAN TO THE SCREEN. Everything here raises a target that
+     a mouse can already hit comfortably. `(pointer: coarse)` and not a width: a desktop window
+     dragged to 380px is still driven by a mouse and needs none of it. It matches on the PRIMARY
+     pointer, so phones and tablets get these and a laptop with a touchscreen does not.
+
+     Measured on a 390px phone before writing any of it — options came out 303x52, buttons 84x45 and
+     the rank control's native selects 235x48 at 16px, which is why none of them is in here. */
+  /* THE NAV ROW IS LEFT ALONE ON A PHONE, and that is a decision rather than an oversight. "Saved
+     on this device" wraps to two lines between Back and Next at 390px and the row looks cramped. It
+     was moved to its own line below the buttons, measured, and put back: the row went from 85px to
+     124px. Thirty-nine pixels of the scarcest space on the page, spent on tidiness, while the thing
+     that could actually have been wrong — the buttons — was already 84x45 and 83x45. A cramped row
+     is not a broken row. */
+
+  @media (pointer: coarse) {
+    /* 36 to 44. The row still fits: five cells across a 318px column leaves 57px each. */
+    .bo-matrix__cell {
+      min-height: 2.75rem;
+    }
+
+    /* `.bo-scale__cell` IS NOT HERE, and the first version of this block had it. Two reasons, both
+       found by measuring rather than by assuming they were the same control: its base rule is
+       already `min-height: 3.25rem` (52px), and a narrow-width block further down ALREADY drops it
+       to 2.75rem. Repeating 2.75rem here would have been redundant on a phone and, on a touch
+       device wider than 40rem, would have SHRUNK a 52px target to 44 — a rule that reads as a fix
+       and is a regression. */
+
+    /* A LINK IN A SENTENCE IS LEFT ALONE; A LINK THAT IS AN ACTION IS NOT. "Get a resume link"
+       closes the gate and is the only way back into a half-finished survey, so it gets the floor
+       via a pseudo-element — padding would move the line it sits on. */
+    #gate .bo-fine a::after {
+      content: '';
+      position: absolute;
+      inset: -0.75rem -0.5rem;
+    }
+
+    #gate .bo-fine a {
+      position: relative;
+    }
+  }
+
+</style>
+
+<style is:global>
+  /* Everything the script draws with `innerHTML` lives here: markup built that way never carries
+     Astro's scope attribute, so a scoped rule cannot reach it. */
+  .bo-q__prompt {
+    margin: 0 0 var(--bo-space-2);
+    font-size: var(--bo-t-24);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+  }
+
+  .bo-q__options {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .bo-q__error {
+    margin-top: var(--bo-space-2);
+  }
+
+  /* THE LINE THAT SAYS WHAT WAS UNTICKED. GLOBAL, like everything else `renderQuestion` builds
+     with `innerHTML`: no scope attribute, so a scoped rule would never reach it.
+
+     It is a live region, so it is always in the DOM and empty rather than `hidden` — `:empty` is
+     what removes it from the layout, and it costs nothing while there is nothing to say. Muted
+     rather than red: nothing has gone wrong, the form did what the respondent asked. */
+  .bo-q__cleared {
+    margin: var(--bo-space-2) 0 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted-strong);
+  }
+
+  .bo-q__cleared:empty {
+    display: none;
+  }
+
+  /* ── THE MARKS ───────────────────────────────────────────────────────────────────────────────
+     Fourteen equal marks and nothing else. `.q-progress__track` already lays its children out as
+     equal columns, so the marks reuse it and only the cell changes. GLOBAL, not scoped:
+     `paintProgress` builds every one of these with `createElement`, and markup built that way
+     never carries Astro's scope attribute, so a scoped rule would miss all fourteen. */
+  /* A MARK IS A GROUP OF ITS SECTION'S PAGES, always — even when there is only one of them and
+     the group is indistinguishable from a bar. Building every mark the same way is what lets the
+     division appear and disappear in CSS alone: the DOM never changes as you cross a section, so
+     the fill keeps its transition and the row cannot jump. */
+  .q-mark {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    /* THE INNER BREAK, ON EVERY MARK, ALWAYS. This is the change Dan asked for: "take the line,
+       with its breaks and its styles, from the first option — on the rail option you can't see the
+       internal parts, it's hard to see that there are internal parts at all." He was right and the
+       cause was here. The drawing he was pointing at divided EVERY cell's rule into one tick per
+       page, so its line was broken from end to end and read as a row of parts. This one was
+       building the same ticks and then closing the gap to zero on all but the one you were
+       standing on, so
+       thirteen sections fused into two long slabs — one accent, one grey — and there was nothing
+       to count. Opening the break on every mark is what carries that line over. */
+    gap: 1px;
+    padding: 0;
+  }
+
+  /* ── THE TWO GAPS, AND THE MEASUREMENT THAT SETTLED THEM ─────────────────────────────────────
+     The inner break has to be unmistakably tighter than the one between sections, or a two-page
+     section breaks exactly at its middle — precisely where the eye expects a section boundary — and
+     the rail reads as fifteen sections instead of fourteen with one in halves.
+
+     1px is the smallest break that renders, so the inner side is already as tight as it goes. The
+     row's own 2px was NOT enough against it, and a first pass made that worse in a way only
+     measuring caught: ringing the current mark to state the unit drew the accent 1px INTO the gap
+     on either side, leaving 1px of visible dark outside and 1px inside. Identical. The device meant
+     to hold the group together was the thing dissolving it.
+
+     So the hierarchy is bought from the other side, and now that the inner break is open on all
+     fourteen it has to be bought harder: 6px between sections against 1px within, a six-to-one
+     ratio, measured at 1440 as 6.00 outer / 1.00 inner. 4px was enough while only one mark showed
+     its division and is not enough now — with every mark broken, a four-to-one ratio starts letting
+     a three-page section read as three sections.
+
+     BELOW 40rem THE ARITHMETIC INVERTS and 6px stops being a hierarchy and starts being the row.
+     At 320px the column is 288px, so thirteen 6px gaps spend 78px — 27% of the rail — on nothing,
+     and each section is left 15px. 3px there keeps the same reading against a 1px inner break and
+     gives the sections 17.8px each. Measured, not assumed.
+
+     THE CURRENT MARK IS NOT FRAMED. It used to carry a 1px accent cap above and below, and Dan
+     rejected the result on sight: "I don't like how the half-finished selection looks. That frame,
+     the frame around it, looks strange." He was describing a real defect and not a preference. The
+     pages of the current section that were not yet answered stayed NEUTRAL grey, so the cap was an
+     accent hairline drawn around a grey box — an outline around emptiness, sitting next to
+     finished sections that are solid accent bars. The two read as different KINDS of object, which
+     is exactly what he said. Both halves of that are fixed below: the fill is lit from inside
+     (`--mark-ahead`) and the emphasis moved into the bar's own height. Hover still uses caps, and
+     that is now the ONLY place a cap appears — see the peek rules. */
+  .q-progress__track {
+    --mark-gap: 6px;
+    gap: var(--mark-gap);
+    /* The row is as tall as the tallest mark and there is ALWAYS exactly one current mark, so the
+       row is 5px from the first screen to the last and crossing a section moves nothing under it.
+       Centring is what lets the other thirteen stay 3px inside a 5px row. */
+    align-items: center;
+  }
+
+  /* ── AND AT 320 THE INNER BREAK GOES ─────────────────────────────────────────────────────────
+     Measured, because the whole point of opening it was legibility and at this width it stops
+     paying. The column is 248px, so fourteen sections at a 3px gap are 14.9px each, and the flow
+     runs to as many as three pages in one section — which is a 4.3px tick against a 1px break
+     against a 3px section gap. Three sizes inside five pixels: the eye cannot rank them, and a
+     row that was meant to read as fourteen groups reads as thirty specks.
+
+     So below 40rem the rail says only the thing it can still say clearly — fourteen sections, this
+     many done — and the page division survives on the CURRENT mark alone, where there is one
+     group to read rather than fourteen competing. Nothing is lost: `Page 3 of 3` is set in words
+     directly underneath, where fourteen clamped titles never managed to say it at all. */
+  @media (max-width: 40rem) {
+    .q-progress__track {
+      --mark-gap: 3px;
+    }
+
+    .q-mark {
+      gap: 0;
+    }
+
+    .q-mark[data-current='true'] {
+      gap: 1px;
+    }
+  }
+
+  /* ── "YOU ARE HERE", WITHOUT AN OUTLINE ──────────────────────────────────────────────────────
+     A tint alone could NOT carry this and it is worth being explicit about why, because the
+     obvious reading of the brief is that it can. The tint only exists where a page of the current
+     section is still unanswered — so on the last page of a section, or on any of the four
+     single-page sections, every hit is `data-done` and the current mark is painted exactly like
+     the four finished ones behind it. On the screen Dan is looking at, section 5 page 3 of 3, a
+     tint on its own would have said nothing at all.
+
+     So the emphasis moved into the bar's own HEIGHT: 5px against 3px, which is the same vertical
+     axis the cap used and the same reason — a height cannot paint sideways, and the 6px section
+     gap and the 1px page break are both untouched. It is not a border by another name: there is no
+     enclosure and no second colour, it is the strip itself drawn heavier, and its interior is lit
+     rather than grey. Measured at 1440: 5.00px against 3.00px, in a row that stays 5.00px tall. */
+  .q-mark[data-current='true'] .q-mark__hit {
+    height: 5px;
+  }
+
+  /* ── THE PART OF THIS SECTION STILL AHEAD ────────────────────────────────────────────────────
+     Dan: "I want the second part of the strip highlighted somehow", pointing at the tooltip's soft
+     wash rather than at an outline. So the unanswered pages of the CURRENT section stop being
+     neutral `--bo-base-300` and become the accent at reduced strength: the whole mark reads as one
+     lit object at two strengths instead of filled-plus-empty-in-a-frame.
+
+     TWO VALUES, BECAUSE ONE PERCENTAGE CANNOT SERVE BOTH THEMES, AND LIGHT NEEDS THE LARGER ONE.
+     That is the opposite of what it sounds like it should be, so it was swept rather than guessed:
+     eleven mixes from 20% to 70% were composited by the browser and sampled off the rendered bar
+     in both themes. What decides it is not the accent, it is the NEUTRAL the tint has to escape.
+     Dark's `#27272a` sits close to the `#0a0a0a` page and miles from `#5cceff`, so the tint pulls
+     away from it early. Light's `#d5d7de` is already pale and close to its near-white page, so a
+     weak mix of `#156e97` lands right on top of it: at 30% the tint was 1.15 against the grey,
+     which is no difference at all.
+
+     PICKED WHERE THE TINT SITS BETWEEN THE TWO THINGS IT HAS TO DIFFER FROM, with margin on both
+     sides, rather than at whichever value looked nice on one screen:
+
+       dark  50%  rgb(51,108,133)   2.57 against the grey ahead, 3.24 against a done page
+       light 55%  rgb(123,171,196)  1.73 against the grey ahead, 2.25 against a done page
+
+     Light's numbers are smaller on both sides because light's neutral and light's accent are
+     themselves closer together; 55% is where its two margins come nearest to balancing without
+     the tint starting to read as a second done page.
+
+     `data-done='false'` rather than "not done": `paintProgress` writes the attribute either way,
+     so the two selectors are mutually exclusive and this never has to out-specify the fill rule
+     below it. That was the alternative and it was a rule that only worked by cascade order. */
+  .q-mark {
+    --mark-ahead: color-mix(in oklch, var(--bo-primary) 55%, transparent);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .q-mark {
+      --mark-ahead: color-mix(in oklch, var(--bo-primary) 50%, transparent);
+    }
+  }
+
+  :root[data-theme='dark'] .q-mark {
+    --mark-ahead: color-mix(in oklch, var(--bo-primary) 50%, transparent);
+  }
+
+  .q-mark[data-current='true'] .q-mark__hit[data-done='false'] {
+    background: var(--mark-ahead);
+  }
+
+  .q-mark__hit {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 3px;
+    padding: 0;
+    border: 0;
+    background: var(--bo-base-300);
+    cursor: default;
+    transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* A 3px bar is not a target. The hit area grows with a pseudo-element rather than with height,
+     which would thicken the rail and move the line under it. `-10px` rather than `-8px`: 23px tall
+     is as close to the 24px floor as a 3px bar can get without the box reaching the row of text
+     above it. That is enough for a MOUSE. It is not enough for a finger, and the next block says
+     what happens instead. */
+  .q-mark__hit::after {
+    content: '';
+    position: absolute;
+    inset: -10px 0;
+  }
+
+  /* ── ON A FINGER, THE RAIL IS PROGRESS AND NOTHING ELSE ──────────────────────────────────────
+     Measured on a 390px phone, mid-survey: the 31 page marks come out between 4px and 18px WIDE,
+     with 3px of gap between them. The `::after` above fixes the height and can do nothing about
+     the width — a `1fr` track divided by 31 is 4px whatever the pseudo-element does, and even a
+     768px tablet only gets it to 22px. Apple's floor is 44 and Material's is 48.
+
+     A target that small does not fail by being hard to hit. It fails by being hit BY ACCIDENT: a
+     thumb resting on the rail during a scroll lands on a mark, and a jump mid-survey throws the
+     respondent to another section with no undo. The rail's own job — where am I, how much is left,
+     what is coming — is entirely visual and survives untouched.
+
+     `(pointer: coarse)` and not a width, because the constraint is the finger, not the screen: a
+     desktop window dragged to 380px is still driven by a mouse and keeps the rail. It reads the
+     PRIMARY pointer, so phones and tablets match and a laptop with a touchscreen does not — its
+     trackpad is primary and reports `fine`. That is the behaviour we want here: on that machine the
+     precise pointer is the one in use, and `any-pointer: coarse` would have taken the rail away
+     from it for a screen its owner rarely taps. Same reasoning as the splash ladder's
+     `(hover: hover) and (pointer: fine)`.
+
+     KEYBOARD IS UNAFFECTED. These stay `<button>`s in the tree and `pointer-events` does not touch
+     focus, so a keyboard or a switch on a touch device still reaches every reachable section. What
+     is removed is the accidental tap, not the route. The tooltip goes with it because the script
+     opens it from pointer events on these same elements, so it simply never fires.
+
+     ONE DECLARATION AND NOT TWO. A first pass also reset `cursor` here and it is not in the file:
+     the rule lost to `[data-jump='true']` further down at equal specificity, and a coarse pointer
+     draws no cursor for it to have changed anyway. Checked under real touch emulation rather than a
+     narrow window, which is the only way this media query can be read at all. */
+  @media (pointer: coarse) {
+    .q-mark__hit {
+      pointer-events: none;
+    }
+  }
+
+  .q-mark__hit[data-done='true'],
+  .q-mark__hit[data-current='true'] {
+    background: var(--bo-primary);
+  }
+
+  .q-mark__hit[data-jump='true'] {
+    cursor: pointer;
+  }
+
+  /* THE ONES HE CANNOT REACH SAY SO BEFORE HE CLICKS. Dan: "you need to understand that the
+     sections ahead will be inactive — he can't navigate there." The cursor is the only part of
+     that which costs nothing and arrives before the tooltip does. */
+  .q-mark__hit[data-jump='false'] {
+    cursor: not-allowed;
+  }
+
+  /* ── HOVER AND FOCUS, AND THEY LIGHT THE WHOLE SECTION ───────────────────────────────────────
+     `data-peek` is written onto the MARK by the script, not matched on the hit with `:hover`,
+     because the unit being named is the section and a section is several hits. Lighting only the
+     hit under the pointer would say "this page", which is not what the tooltip then names.
+
+     `near` = reachable, and it fills the section the way an answered one is filled, which is the
+     honest preview: this is what the rail will look like if you go there. `far` = ahead, and it
+     lifts only to `--bo-muted` — brighter than the resting grey so the hover registers, nowhere
+     near the accent, so it never once looks like an invitation. Both draw the vertical caps,
+     because "these four ticks are one thing" is the other half of what a hover has to say. */
+  .q-mark[data-peek='near'] .q-mark__hit[data-jump='true'] {
+    background: var(--bo-primary);
+  }
+
+  .q-mark[data-peek='far'] .q-mark__hit {
+    background: var(--bo-muted);
+  }
+
+  /* 2px, where the current mark's own cap is 1px. A section you have already finished is already
+     painted accent, so on a REACHABLE one the fill has nothing left to say and the cap is the
+     entire hover response — it has to be worth seeing. Measured: 3px bar becomes a 7px block, and
+     because a `box-shadow` offset only vertically paints nothing sideways, the 6px section gap and
+     the 1px page break are both untouched. That is the trap this rail already fell into once, when
+     a ring drawn to state the unit painted 1px into the gap on either side and made the outer and
+     inner breaks measure the same. */
+  .q-mark[data-peek='near'] {
+    box-shadow:
+      0 -2px 0 var(--bo-primary),
+      0 2px 0 var(--bo-primary);
+  }
+
+  .q-mark[data-peek='far'] {
+    box-shadow:
+      0 -2px 0 var(--bo-muted),
+      0 2px 0 var(--bo-muted);
+  }
+
+  /* A 3px bar cannot hold a focus ring inside itself, so the ring is pushed out to where the hit
+     area already is. Offset 4px puts it around an 11px box — the smallest ring on this row that a
+     person can actually find. */
+  .q-mark__hit:focus-visible {
+    outline: 2px solid var(--bo-primary);
+    outline-offset: 4px;
+  }
+
+  .q-mark__hit[data-jump='false']:focus-visible {
+    outline-color: var(--bo-muted);
+  }
+
+  /* The hover lift is a colour change and nothing else — no position, no scale — so there is
+     nothing to disable beyond the fade itself. It still lifts, it just arrives at once. */
+  @media (prefers-reduced-motion: reduce) {
+    .q-mark__hit {
+      transition: none;
+    }
+  }
+
+  /* ── A QUESTION ON A SECTION PAGE ────────────────────────────────────────────────────────────
+     Several questions on one screen need separating without turning each into a card: a rule and
+     real air do it, and they keep the page reading as one document rather than a stack of boxes. */
+  .bo-q + .bo-q {
+    margin-top: var(--bo-space-5);
+    padding-top: var(--bo-space-5);
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .bo-q__kind {
+    margin: 0 0 0.375rem;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .bo-q__help {
+    margin: 0 0 var(--bo-space-3);
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted-strong);
+  }
+
+  /* ── THE LETTERED OPTION ─────────────────────────────────────────────────────────────────────
+     The key is a position marker in its own cell, divided from the label by a hairline, the way a
+     printed answer sheet sets them. The native control stays in the DOM and keeps doing the work;
+     it is only made invisible, so keyboard, screen reader and form semantics are untouched. */
+  .bo-opt {
+    position: relative;
+    display: grid;
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+    min-height: 3.25rem;
+  }
+
+  .bo-opt__key {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--bo-base-300);
+    font-size: var(--bo-t-12);
+    font-weight: 700;
+    color: var(--bo-muted);
+  }
+
+  .bo-opt__label {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    font-size: var(--bo-t-16);
+  }
+
+  .bo-opt input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .bo-opt:has(:checked) .bo-opt__key {
+    border-right-color: var(--bo-primary);
+    color: var(--bo-primary);
+  }
+
+  /* ONE LEFT EDGE. The write-in used to be indented by the width of the lettered key column, on
+     the theory that it reads as belonging to the option above it. What that actually produced was
+     three different left edges on one question: the options at the question's edge, the field
+     2.75rem in, and the error line back at the edge again, describing a field that did not start
+     there. The label carries the belonging; the edge is shared. */
+  .bo-other {
+    display: grid;
+    gap: 0.375rem;
+  }
+
+  .bo-other__label {
+    font-size: var(--bo-t-12);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  .bo-other[hidden] {
+    display: none;
+  }
+
+  /* ── THE 1 TO 5 SCALE ────────────────────────────────────────────────────────────────────────
+     Bank 6.4 and 9.3 are "1–5: not at all -> completely". Five equal cells with the two ends named
+     underneath: naming only the ends is what makes the middle mean "in between" rather than mean
+     nothing. */
+  .bo-scale {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  /* `.bo-opt` gives the cell its surface, its border and its hover, and is worth reusing here.
+     What is NOT wanted from it is the lettered-option grid: a scale cell has one child and would
+     otherwise sit it in the 2.75rem key column, left of centre in a cell four times that wide. */
+  .bo-scale__cell {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    place-items: center;
+    min-height: 3.25rem;
+    font-size: var(--bo-t-16);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--bo-muted-strong);
+  }
+
+  .bo-scale__cell input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .bo-scale__cell:has(:checked) {
+    border-color: var(--bo-primary);
+    color: var(--bo-primary);
+  }
+
+  .bo-scale__ends {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--bo-space-3);
+    margin-top: 0.5rem;
+    font-size: var(--bo-t-12);
+    color: var(--bo-muted);
+  }
+
+  /* ── THE MATRIX ──────────────────────────────────────────────────────────────────────────────
+     Bank 10.4: four things to rate on the same 1 to 5. One row per thing, the scale repeated. The
+     column head is drawn once at the top and the rows carry only numbers, so the eye reads down a
+     column rather than re-reading a legend on every line. */
+  .bo-matrix {
+    display: grid;
+    gap: 0;
+  }
+
+  .bo-matrix__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
+    align-items: center;
+    gap: var(--bo-space-3);
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--bo-base-300);
+  }
+
+  .bo-matrix__row:last-child {
+    border-bottom: 1px solid var(--bo-base-300);
+  }
+
+  .bo-matrix__label {
+    font-size: var(--bo-t-14);
+    line-height: 1.45;
+  }
+
+  .bo-matrix__cells {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.25rem;
+  }
+
+  /* A CELL HAS TO LOOK LIKE A TARGET BEFORE IT IS PICKED. The first pass drew bare numerals and
+     painted a background only on the chosen one, so a row nobody had answered yet was five digits
+     floating in space with nothing to say they were clickable. Every cell now rests on the same
+     surface and hairline the lettered options use, and the accent still marks the answer. */
+  /* 2.25rem is 36px, which is a fine MOUSE target and eight short of Apple's finger floor. The
+     coarse-pointer block at the foot of this file raises it; it is not raised here because on a
+     desktop these five cells sit in a row per statement and a 44px row of them, ten statements
+     deep, is a wall. Same control, two input devices, two right answers. */
+  .bo-matrix__cell {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 2.25rem;
+    background: var(--bo-base-100);
+    border: 1px solid var(--bo-base-300);
+    border-radius: var(--bo-r-8);
+    font-size: var(--bo-t-13);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--bo-muted-strong);
+    cursor: pointer;
+    transition:
+      background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .bo-matrix__cell:hover {
+    border-color: var(--bo-muted);
+  }
+
+  .bo-matrix__cell input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .bo-matrix__cell:has(:checked) {
+    background: var(--bo-soft-primary-bg);
+    border-color: var(--bo-primary);
+    color: var(--bo-primary);
+  }
+
+  .bo-matrix__legend {
+    margin: 0 0 0.5rem;
+    font-size: var(--bo-t-11);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  /* ── THE RANKING ─────────────────────────────────────────────────────────────────────────────
+     Bank 11.1 wants three of eight, in order. Three ordered selects rather than a drag list: a
+     drag list is a mouse-only control with no keyboard story, and this one has to work on a phone.
+     Duplicate picks are refused by the validator with the reason said out loud. */
+  .bo-rank {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .bo-rank__row {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    align-items: center;
+    gap: var(--bo-space-2);
+  }
+
+  /* THE CHEVRON IS OURS NOW. A native select paints its arrow hard against the right edge of the
+     control, inside the border and outside the padding, which is why it looked stuck to the frame.
+     `appearance: none` takes it off and the mark is redrawn as a background image with real room
+     on either side. The data URI is a two-line chevron and carries `currentColor` as a literal so
+     it tracks the field's own ink in both themes. */
+  .bo-rank select.bo-field {
+    appearance: none;
+    padding-right: 2.5rem;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position:
+      calc(100% - 1.35rem) calc(50% + 1px),
+      calc(100% - 1rem) calc(50% + 1px);
+    background-size:
+      6px 6px,
+      6px 6px;
+    background-repeat: no-repeat;
+  }
+
+  .bo-rank__n {
+    font-size: var(--bo-t-12);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bo-muted);
+  }
+
+  @media (max-width: 40rem) {
+    .bo-matrix__row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.5rem;
+    }
+
+    .bo-scale__cell {
+      min-height: 2.75rem;
+    }
+  }
+</style>
+
+<script>
+  import { ANSWERS_KEY } from '../lib/storage';
+  import { createAuthClient } from 'better-auth/client';
+  import { anonymousClient, magicLinkClient } from 'better-auth/client/plugins';
+  import {
+    steps as buildSteps,
+    SURVEY_VERSION,
+    isAgency,
+    isScreenedOut,
+    type Answers,
+    type Question,
+    type Step,
+  } from '../lib/questions';
+
+  const authClient = createAuthClient({ plugins: [anonymousClient(), magicLinkClient()] });
+
+  const KEY = ANSWERS_KEY;
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  /* LOCAL, NOT SESSION. The start gate promises "save your progress as you go, so you can leave and
+     finish later", and the server autosave below is the mechanism that was supposed to keep it: it
+     exits immediately when `hasSession` is false, which happens whenever the anonymous sign-in did
+     not land (offline, D1 unreachable, cookies blocked). In that path the label still changed to
+     "Saved on this device" while the only copy lived in sessionStorage, which dies with the tab —
+     so the page said "come back later" and then threw the answers away. This is the same key and
+     the same shape, in the store that survives a closed tab. Oleh approved the move 2026-08-28.
+
+     The RESULT key moved with it, in `thanks.astro` and the review panel in `Layout.astro`. It has
+     to: `/thanks` reads THIS key to score, then deletes it, so leaving the answers behind while the
+     result expired with the session would lose the score permanently the first time somebody closed
+     the tab after finishing. `RESULT_SHAPE` already guards a result whose shape has since changed. */
+  let answers: Answers = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+  let idx = 0;
+  /** The furthest screen reached. A screen can only be left by passing validation, so anything at
+   *  or below this has valid answers behind it and is safe to jump back to. */
+  let furthest = 0;
+  let hasSession = false;
+
+  const show = (id: string) => {
+    for (const s of document.querySelectorAll('main > section')) (s as HTMLElement).hidden = s.id !== id;
+  };
+  const gateForm = document.getElementById('gate-form') as HTMLFormElement;
+  const resumeForm = document.getElementById('resume-form') as HTMLFormElement;
+  const stepEl = document.getElementById('step') as HTMLFormElement;
+  const nextBtn = document.getElementById('next') as HTMLButtonElement;
+  const backBtn = document.getElementById('back') as HTMLButtonElement;
+  const stepCount = document.getElementById('step-count') as HTMLElement;
+  const sectionTrack = document.getElementById('section-track') as HTMLElement;
+  const marksName = document.getElementById('marks-name') as HTMLElement;
+  const marksPage = document.getElementById('marks-page') as HTMLElement;
+  const marksNext = document.getElementById('marks-next') as HTMLElement;
+  const progressEl = document.querySelector('.q-progress') as HTMLElement;
+  const marksTip = document.getElementById('marks-tip') as HTMLElement;
+  const marksTipName = document.getElementById('marks-tip-name') as HTMLElement;
+  const marksTipState = document.getElementById('marks-tip-state') as HTMLElement;
+
+  const saveState = document.getElementById('save-state') as HTMLElement;
+  const saveLabel = document.getElementById('save-label') as HTMLElement;
+  const qTag = document.getElementById('q-tag') as HTMLElement;
+  const secEl = document.getElementById('q-section') as HTMLElement;
+  const secEyebrow = document.getElementById('q-section-eyebrow') as HTMLElement;
+  const secTitle = document.getElementById('q-section-title') as HTMLElement;
+  const secBlurb = document.getElementById('q-section-blurb') as HTMLElement;
+  const secIntro = document.getElementById('q-section-intro') as HTMLElement;
+  const secIntroText = document.getElementById('q-section-intro-text') as HTMLElement;
+
+  /** What kind of answer this step wants, said in words rather than inferred from the controls. */
+  const KIND_LABEL: Record<Question['kind'], string> = {
+    single: 'Single select',
+    multi: 'Select all that apply',
+    short: 'Short answer',
+    long: 'Long answer',
+    email: 'Email',
+    number: 'A number',
+    date: 'A date',
+    scale: 'Rate 1 to 5',
+    matrix: 'Rate each 1 to 5',
+    rank: 'Put in order',
+  };
+
+  /** The save report. `save()` is fire-and-forget by design, so this is the only thing that ever
+   *  tells the respondent their answers left the machine. Idle until the first write. */
+  function reportSave(state: 'saving' | 'saved' | 'local') {
+    saveState.dataset.state = state === 'local' ? 'idle' : state;
+    saveLabel.textContent =
+      state === 'saving' ? 'Saving' : state === 'saved' ? 'Saved' : 'Saved on this device';
+  }
+
+  function esc(s: string): string {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  /** The email question is dropped once the start gate has captured the address. */
+  const askable = (q: Question) => !(q.kind === 'email' && answers.email);
+
+  /** The flow, with the already-answered email question taken out of it. */
+  function flow(): Step[] {
+    return buildSteps(answers)
+      .map((s) => ({ ...s, questions: s.questions.filter(askable) }))
+      .filter((s) => s.questions.length > 0);
+  }
+
+  /** Going backwards is always safe; going forwards is only safe where you have already been. */
+  const canJumpTo = (target: number) => target <= furthest;
+
+  /**
+   * `createElement` and `querySelectorAll` come back weakly typed in this app.
+   *
+   * The Workers type definitions it pulls in for its bindings redefine parts of the DOM: `button`
+   * arrives as a bare `HTMLElement` with no `disabled`, and `HTMLSelectElement` stops satisfying
+   * the `Element` constraint that `querySelectorAll<T>` puts on its parameter. The same collision
+   * is why every `appendChild` below is not an `append`. These two helpers put the real types back
+   * in one place instead of scattering casts through the rendering code.
+   */
+  const button = (): HTMLButtonElement =>
+    document.createElement('button') as unknown as HTMLButtonElement;
+  const selectsIn = (root: HTMLElement, sel: string): HTMLSelectElement[] =>
+    [...root.querySelectorAll(sel)].map((el) => el as unknown as HTMLSelectElement);
+
+  /**
+   * ── THE TOOLTIP ON THE MARKS RAIL ────────────────────────────────────────────────────────────
+   *
+   * Dan asked for two things that turn out to be the same thing. On the review call: "you can go
+   * back, but you can't remember which one you're going back to. Maybe it's a hover or something."
+   * And on this pass: "I'd like the user to be able to see what's waiting for them — on hover you
+   * can show a tooltip with the name of that section", plus "the sections ahead are inactive; when
+   * he hovers a future one it lights up greyish and the tooltip is greyish, where he can navigate
+   * the tooltip is bluish."
+   *
+   * So one control, saying one of two things. The reachability it reports is `canJumpTo` and
+   * nothing else — the rail is not allowed a second opinion about where a respondent may go.
+   */
+
+  /** The mark whose tooltip is on screen, or null. Also the first half of the touch contract. */
+  let tipMark: HTMLElement | null = null;
+
+  /**
+   * WHAT THE TOOLTIP WAS SHOWING WHEN THE PRESS STARTED, and it has to be sampled at `pointerdown`
+   * or the two-tap rule below cannot work at all. A tap on a button FOCUSES it before it clicks
+   * it, focus opens the tooltip, and by the time `click` runs `tipMark` is already this mark — so
+   * the first tap on a phone read as the second one and travelled immediately. Measured on a
+   * touch-emulated Chrome, which is the only way this shows up: with a mouse the hover has
+   * legitimately already opened it and the behaviour looks correct.
+   */
+  let tipAtPress: HTMLElement | null = null;
+
+  /**
+   * There is no hover on a phone, so a tap has to do the work of one. Read at the moment of the
+   * event rather than once at boot: a laptop with a touchscreen can answer this differently a
+   * minute later, and the wrong answer cached is a rail that navigates on the first tap.
+   */
+  const coarsePointer = () => window.matchMedia('(hover: none)').matches;
+
+  function showTip(mark: HTMLElement) {
+    const reach = mark.dataset.jump === 'true';
+    marksTipName.textContent = mark.dataset.label ?? '';
+    // The second line is the lock glyph, static in the template. Only its presence changes.
+    marksTipState.hidden = reach;
+    marksTip.dataset.reach = String(reach);
+
+    // Measured with the text already in it and BEFORE it is shown: `visibility: hidden` still
+    // lays out, so `offsetWidth` here is the width it will have on screen.
+    const box = progressEl.getBoundingClientRect();
+    const bar = mark.getBoundingClientRect();
+    const w = marksTip.offsetWidth;
+    const centre = bar.left + bar.width / 2 - box.left;
+
+    /* THE CLAMP IS THE WHOLE OVERFLOW STORY. Fourteen sections across a full-width rail means
+       section 1's tooltip wants to start left of the column and section 14's wants to end right of
+       it, and either one would push the page into a horizontal scroll. Both are pushed back inside
+       the rail's own box, which is never wider than the content column, so the page cannot scroll
+       sideways at any width. The caret is what still points at the mark the body moved away from,
+       so the clamp costs nothing in meaning. */
+    const x = Math.max(0, Math.min(centre - w / 2, box.width - w));
+    marksTip.style.top = `${Math.round(bar.bottom - box.top + 8)}px`;
+    marksTip.style.transform = `translateX(${Math.round(x)}px)`;
+    const caret = Math.min(Math.max(centre - x, 10), Math.max(w - 10, 10));
+    marksTip.style.setProperty('--tip-caret', `${Math.round(caret)}px`);
+    marksTip.dataset.show = 'true';
+
+    if (tipMark && tipMark !== mark) delete tipMark.dataset.peek;
+    // `data-peek` goes on the MARK, not the hit under the pointer: the thing being named is the
+    // section, and a section is several hits. Lighting one hit would say "this page".
+    mark.dataset.peek = reach ? 'near' : 'far';
+    tipMark = mark;
+  }
+
+  function hideTip() {
+    marksTip.dataset.show = 'false';
+    if (tipMark) delete tipMark.dataset.peek;
+    tipMark = null;
+  }
+
+  /**
+   * ROVING TABINDEX, AND IT IS NOT A FLOURISH.
+   *
+   * Every page of every section is a button, so the rail is twenty-five controls by the end of the
+   * flow. Left as twenty-five tab stops it sits between the respondent and the first question on
+   * every single screen — and this pass makes that worse, because the sections AHEAD stop being
+   * `disabled` and start being focusable. So the rail becomes one tab stop and the arrow keys walk
+   * it, which is how a toolbar behaves and is what a keyboard user will already try.
+   */
+  function railHits(): HTMLButtonElement[] {
+    return [...sectionTrack.querySelectorAll('.q-mark__hit')].map(
+      (el) => el as unknown as HTMLButtonElement,
+    );
+  }
+
+  function focusHit(hits: HTMLButtonElement[], i: number) {
+    const next = hits[Math.max(0, Math.min(i, hits.length - 1))];
+    if (!next) return;
+    for (const h of hits) h.tabIndex = h === next ? 0 : -1;
+    next.focus();
+  }
+
+  /**
+   * THE RAIL.
+   *
+   * One cell per section, and each cell's own top rule is divided into one part per page of that
+   * section. That is Oleh's reading of Dan's "slices" and it is the better one: the line above a
+   * section already belongs to that section, so dividing it says "two pages in here" without a
+   * second row of bars appearing and disappearing underneath the row.
+   *
+   * A part is a target as well as an indicator, which is what Dan asked for on the video ("so that
+   * you can move to each one"). Both the parts and the label refuse to move you forward past
+   * ground you have not covered; see `canJumpTo`.
+   */
+  function paintProgress(list: Step[]) {
+    const here = list[idx]!;
+    stepCount.textContent = `Section ${here.sectionIndex} of ${here.sectionCount}`;
+
+    // One entry per section: where it starts in the flat list, and how many pages it holds. Every
+    // screen of a section carries the same `pages`, so the first one answers for all of them.
+    const sections: { label: string; start: number; pages: number }[] = [];
+    list.forEach((step, i) => {
+      if (sections.length < step.sectionIndex) {
+        sections.push({ label: step.section.title, start: i, pages: step.pages });
+      }
+    });
+
+    // The `aria-value*` trio that used to be written here went out with `role="progressbar"` on
+    // the track. See the markup: that role made every mark inside it presentational, so the whole
+    // rail was pruned from the accessibility tree and the values described a thing nobody could
+    // reach. `Section N of 14` in the row above is real text and says the same number.
+
+    // Rebuilt only when the SHAPE changes, which is exactly when a branch opened or closed a page
+    // or a whole section. A repaint on every step would throw away the transitions.
+    const signature = sections.map((sec) => `${sec.label}/${sec.pages}`).join('|');
+
+    /**
+     * ONE MARK PER SECTION AND ONE NAME UNDERNEATH, which is the whole idea: fourteen labelled
+     * cells have about eight readable characters each, and this spends all of that room on the one
+     * title that matters.
+     *
+     * `canJumpTo` decides what is a target and `aria-disabled` reflects it, and every mark carries
+     * its section's name for anyone not reading the line below.
+     */
+    if (sectionTrack.dataset.shape !== signature) {
+      sectionTrack.dataset.shape = signature;
+      // EVERY mark is built with one segment per page of its section, including the
+      // single-page ones. Only the current mark SHOWS its division, and that is a CSS decision
+      // (`.q-mark[data-current]` opens the gap), so crossing a section never rebuilds the row.
+      sectionTrack.replaceChildren(
+        ...sections.map((sec) => {
+          const li = document.createElement('li');
+          li.className = 'q-mark';
+          // The label is carried on the MARK because the tooltip names the section, not the
+          // page, and the tooltip is anchored to the mark's box for the same reason.
+          li.dataset.label = sec.label;
+          for (let page = 0; page < sec.pages; page += 1) {
+            const hit = button();
+            hit.type = 'button';
+            hit.className = 'q-mark__hit';
+            // NO `title`. The native tooltip was the old answer to "which one am I going back
+            // to" and it is a bad one: ~1s of delay, no styling, no way to say a section is out
+            // of reach, and on a phone it never appears at all. The `.q-tip` below replaces it,
+            // and leaving both would show two tooltips for one mark.
+            hit.tabIndex = -1;
+            const target = sec.start + page;
+
+            hit.addEventListener('mouseenter', () => {
+              if (!coarsePointer()) showTip(li);
+            });
+            hit.addEventListener('mouseleave', () => {
+              if (!coarsePointer()) hideTip();
+            });
+            // FOCUS GETS EXACTLY WHAT HOVER GETS. Same call, same tooltip, same two colourways.
+            hit.addEventListener('focus', () => showTip(li));
+            hit.addEventListener('blur', hideTip);
+            hit.addEventListener('pointerdown', () => {
+              tipAtPress = tipMark;
+            });
+
+            hit.addEventListener('click', () => {
+              /* THREE OUTCOMES, AND NONE OF THEM IS SILENCE.
+                 Out of reach → the tooltip says so and the page does not move. Reachable on a
+                 phone, first tap → the tooltip names the section; the second tap on the same
+                 mark travels. Reachable with a mouse → travel, because the hover already named
+                 it. The two-tap rule exists because a 17px-wide mark on a 320px screen is a
+                 mis-tap waiting to happen, and jumping a respondent backwards without telling
+                 them where is the exact complaint this tooltip was built to answer. */
+              if (hit.dataset.jump !== 'true') return void showTip(li);
+              if (coarsePointer() && tipAtPress !== li) return void showTip(li);
+              hideTip();
+              goTo(target);
+            });
+
+            // `appendChild`, not `append`: the Workers types this app pulls in for its bindings
+            // redefine `append` with a body-ish signature and it stops accepting elements.
+            li.appendChild(hit);
+          }
+          return li;
+        }),
+      );
+    }
+
+    // A repaint moves the marks under the pointer, so whatever the tooltip was describing is no
+    // longer necessarily there. It goes.
+    hideTip();
+    let tabStop: HTMLButtonElement | null = null;
+
+    [...sectionTrack.children].forEach((node, si) => {
+      const mark = node as HTMLElement;
+      const sec = sections[si]!;
+      const isCurrent = si + 1 === here.sectionIndex;
+      const isBehind = si + 1 < here.sectionIndex;
+      mark.dataset.current = String(isCurrent);
+      // SECTION-LEVEL REACHABILITY, and it is still `canJumpTo` — asked about the section's
+      // first page, because "can I go to this section" is "can I go to where it starts". This is
+      // what the tooltip's two colourways read.
+      mark.dataset.jump = String(canJumpTo(sec.start));
+
+      [...mark.children].forEach((child, page) => {
+        const hit = child as unknown as HTMLButtonElement;
+        // A whole section behind you has every page behind you too; inside the section you are
+        // in, a segment is lit up to and including the page you are standing on.
+        hit.dataset.done = String(isBehind || (isCurrent && page + 1 <= here.page));
+        hit.dataset.current = String(isCurrent && page + 1 === here.page);
+        if (isCurrent && page + 1 === here.page) {
+          hit.setAttribute('aria-current', 'step');
+          tabStop = hit;
+        } else hit.removeAttribute('aria-current');
+
+        const jumpable = canJumpTo(sec.start + page);
+        hit.dataset.jump = String(jumpable);
+
+        /* `aria-disabled`, NOT `disabled`, AND THAT IS THE WHOLE POINT OF THE FEATURE.
+           A `disabled` button dispatches no mouse events in Chrome and takes no focus anywhere,
+           so the nine sections ahead — the ones Dan wants a respondent to be able to "see what's
+           waiting for them" on — would be the nine that can neither be hovered nor reached. The
+           preview would be for the past only, which is the opposite of the ask.
+           So they stay real buttons, they stay focusable, and the refusal is carried in three
+           places instead: the accessible name says WHY, `goTo` refuses the move, and the click
+           handler above turns the press into a tooltip rather than nothing. */
+        hit.setAttribute('aria-disabled', String(!jumpable));
+        hit.setAttribute(
+          'aria-label',
+          [
+            sec.label,
+            sec.pages > 1 ? `page ${page + 1} of ${sec.pages}` : '',
+            jumpable ? '' : 'not yet available',
+          ]
+            .filter(Boolean)
+            .join(', '),
+        );
+      });
+    });
+
+    // ONE TAB STOP FOR THE WHOLE RAIL, and it is the page you are standing on, so a Tab into the
+    // rail lands where the respondent already is rather than fourteen sections ago.
+    const hits = railHits();
+    const stop = (tabStop as HTMLButtonElement | null) ?? hits[0] ?? null;
+    for (const h of hits) h.tabIndex = h === stop ? 0 : -1;
+
+    // THE TOOLTIP DOES NOT COME BACK AFTER A JUMP, AND IT SHOULD NOT.
+    // This used to reopen the tooltip on whichever mark still held focus, because a keyboard jump
+    // repainted the rail and the repaint above closes the tooltip — so Enter on a mark answered a
+    // keyboard user by taking away the only label the rail has. `toPageTop()` changed that: a jump
+    // now moves focus off the rail and onto the section's name, which says the same word in full
+    // text and does not need a tooltip to say it. Reopening it here would leave a tooltip hanging
+    // over a mark nobody is standing on and nobody is focused on.
+
+    marksName.textContent = here.section.title;
+
+    // The page position replaces the divided rule, and only when there is a division to report.
+    marksPage.textContent = `Page ${here.page} of ${here.pages}`;
+    marksPage.hidden = here.pages < 2;
+
+    // `sections` is 0-indexed and `sectionIndex` is 1-based, so this IS the next one.
+    const next = sections[here.sectionIndex];
+    marksNext.textContent = next ? `Next · ${next.label}` : '';
+    marksNext.hidden = !next;
+  }
+
+  /** Rail clicks land here. Forward moves through unvisited ground are refused, not silently
+   *  allowed: they would skip a required answer and leave a hole nobody asked about. */
+  function goTo(target: number) {
+    if (!canJumpTo(target) || target === idx) return;
+    idx = target;
+    save();
+    render(true);
+  }
+
+  /* ── THE MARKS RAIL'S KEYBOARD AND ITS DISMISSALS ───────────────────────────────────────────
+     Attached once, at module scope, because `paintProgress` rebuilds the marks whenever a branch
+     changes the shape of the flow and a listener added in there would be added again each time. */
+  sectionTrack.addEventListener('keydown', (ev) => {
+    const key = (ev as KeyboardEvent).key;
+    const hits = railHits();
+    const at = hits.indexOf(document.activeElement as unknown as HTMLButtonElement);
+    if (at < 0) return;
+    if (key === 'ArrowRight' || key === 'ArrowDown') focusHit(hits, at + 1);
+    else if (key === 'ArrowLeft' || key === 'ArrowUp') focusHit(hits, at - 1);
+    else if (key === 'Home') focusHit(hits, 0);
+    else if (key === 'End') focusHit(hits, hits.length - 1);
+    else return;
+    ev.preventDefault();
+  });
+
+  // The second half of the touch contract: a tap anywhere else puts the tooltip away, so the
+  // "tap to name it, tap again to travel" pair cannot leave a tooltip stranded on screen.
+  document.addEventListener('pointerdown', (ev) => {
+    if (!sectionTrack.contains(ev.target as Node)) hideTip();
+  });
+
+  // The tooltip's position is measured, not declared, so anything that moves the rail under it
+  // invalidates it. Cheaper to drop it than to re-measure something nobody is looking at.
+  window.addEventListener('resize', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
+
+  // ── THE CONTROLS ───────────────────────────────────────────────────────────────────────────
+  // One builder per kind. `single`, `multi`, `short`, `long` and `email` were here already;
+  // `number` and `date` are the two Dan asked for by name on the video; `scale`, `matrix` and
+  // `rank` are the three the committed bank actually needs.
+
+  const SCALE_POINTS = ['1', '2', '3', '4', '5'];
+
+  /**
+   * THE WRITE-IN BEHIND "OTHER".
+   *
+   * Eight questions offer it and the bank writes a real blank after the word ("Other: ___"). The
+   * first build rendered the option and dropped the blank, so picking it recorded the word "Other"
+   * and nothing else. The field is hidden until the option is actually chosen, because an empty
+   * text box under every list is a question nobody asked.
+   */
+  function otherControl(q: Question): string {
+    if (!q.otherOption) return '';
+    const saved = answers[`${q.id}_other`];
+    const value = typeof saved === 'string' ? saved : '';
+    return `<label class="bo-other" data-other-box hidden><span class="bo-other__label">Which one?</span><input class="bo-field" type="text" data-other maxlength="120" value="${esc(value)}" /></label>`;
+  }
+
+  /**
+   * ── THE EXCLUSIVE OPTION ─────────────────────────────────────────────────────────────────────
+   *
+   * Eight multis in the bank carry an option that cannot be true alongside any other: "None of
+   * these", "Nothing external", "We don't back up Airtable", "Not sure". Nothing stopped a
+   * respondent holding one of those together with three real answers, and the form recorded both.
+   *
+   * IT IS NOT A TIDINESS PROBLEM. `hadIncident()` in `questions.ts` counts anything on 5.2 that is
+   * not "None of these", so ticking both routed somebody into four screens about an incident they
+   * had just said did not happen. And 4.1 is one of the six questions in the core index, where
+   * `maturity.ts` takes the BEST of the chosen options: "We don't back up Airtable" plus "A
+   * third-party backup tool" scored 3 instead of 0 — about 17 points of the final 0-100 score,
+   * moved by one stray tick, silently, in the respondent's favour.
+   *
+   * THE RULE IS SYMMETRIC, and it has to be or the contradiction is simply assembled from the
+   * other end: ticking an exclusive option clears every other box, and ticking any other box
+   * clears the exclusive ones. `collect()` reads the DOM at submit time, so the corrected state is
+   * what is written to storage rather than a correction that lives only on screen.
+   */
+  const exclusiveOf = (q: Question) => q.exclusiveOptions ?? [];
+
+  /**
+   * A checkbox that unticks itself under the respondent is confusing without a pointer to watch it
+   * happen, so the change is said out loud. Polite, not assertive: it reports something they just
+   * caused rather than interrupting them.
+   *
+   * NOT `hidden`, AND THAT IS THE WHOLE TRICK. A live region has to be in the accessibility tree
+   * BEFORE its text changes or the change is not announced at all — writing into a `hidden`
+   * element and then revealing it is the standard way to build a live region that never speaks.
+   * So it is always present and always empty, and `:empty` is what takes it off the screen.
+   */
+  function exclusiveNotice(q: Question): string {
+    if (exclusiveOf(q).length === 0) return '';
+    return `<p class="bo-q__cleared" data-cleared role="status" aria-live="polite"></p>`;
+  }
+
+  function optionControl(q: Question, saved: string | string[] | undefined): string {
+    const type = q.kind === 'single' ? 'radio' : 'checkbox';
+    return (q.options ?? [])
+      .map((o, i) => {
+        const checked =
+          q.kind === 'single' ? saved === o : Array.isArray(saved) && saved.includes(o);
+        // The letter is a position marker, not a value: generated from the index and never stored,
+        // so reordering the bank cannot make an answer mean something else.
+        const key = String.fromCharCode(65 + i);
+        // `name` is per question, or two single-selects on one page would fight over the same
+        // radio group and only one of them could ever hold an answer.
+        return `<label class="bo-opt"><span class="bo-opt__key" aria-hidden="true">${key}</span><input type="${type}" name="q-${esc(q.id)}" value="${esc(o)}" ${checked ? 'checked' : ''}/><span class="bo-opt__label">${esc(o)}</span></label>`;
+      })
+      .join('')
+      .concat(otherControl(q));
+  }
+
+  function scaleControl(q: Question, saved: string | string[] | undefined): string {
+    const cells = SCALE_POINTS.map(
+      (n) =>
+        `<label class="bo-opt bo-scale__cell"><input type="radio" name="q-${esc(q.id)}" value="${n}" ${saved === n ? 'checked' : ''}/>${n}</label>`,
+    ).join('');
+    return `<div class="bo-scale">${cells}</div>
+      <div class="bo-scale__ends"><span>${esc(q.scaleLow ?? 'Not at all')}</span><span>${esc(q.scaleHigh ?? 'Completely')}</span></div>`;
+  }
+
+  /** Stored as an array aligned with `options`, so row 0's rating is always index 0. */
+  function matrixControl(q: Question, saved: string | string[] | undefined): string {
+    const values = Array.isArray(saved) ? saved : [];
+    const rows = (q.options ?? [])
+      .map((row, r) => {
+        const cells = SCALE_POINTS.map(
+          (n) =>
+            `<label class="bo-matrix__cell"><input type="radio" name="q-${esc(q.id)}-${r}" value="${n}" ${values[r] === n ? 'checked' : ''}/>${n}</label>`,
+        ).join('');
+        return `<div class="bo-matrix__row"><span class="bo-matrix__label">${esc(row)}</span><div class="bo-matrix__cells">${cells}</div></div>`;
+      })
+      .join('');
+    // A LEGEND, NOT A PAIR OF COLUMN HEADS. The rating cells are a narrow column and these two
+    // labels are three and four words long: set as ends of that column they ran into each other and
+    // printed "NOT INTERESTEDEXTREMELY INTERESTED". One line, left of the rows, says the same thing
+    // in the reading order the respondent is already in and cannot collide however long it gets.
+    return `<p class="bo-matrix__legend">1 = ${esc(q.scaleLow ?? 'Low')} · 5 = ${esc(q.scaleHigh ?? 'High')}</p>
+      <div class="bo-matrix">${rows}</div>`;
+  }
+
+  const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
+
+  function rankControl(q: Question, saved: string | string[] | undefined): string {
+    const picked = Array.isArray(saved) ? saved : [];
+    const rows = Array.from({ length: q.rankPick ?? 3 }, (_, i) => {
+      const opts = (q.options ?? [])
+        .map((o) => `<option value="${esc(o)}" ${picked[i] === o ? 'selected' : ''}>${esc(o)}</option>`)
+        .join('');
+      return `<div class="bo-rank__row"><span class="bo-rank__n">${ORDINALS[i] ?? String(i + 1)}</span><select class="bo-field" data-rank="${i}"><option value="">Choose one</option>${opts}</select></div>`;
+    }).join('');
+    return `<div class="bo-rank">${rows}</div>`;
+  }
+
+  /** One question's markup. `data-q` is the address every other function reads it back by. */
+  function renderQuestion(q: Question): string {
+    const saved = answers[q.id];
+    const text = typeof saved === 'string' ? saved : '';
+    let control: string;
+
+    if (q.kind === 'single' || q.kind === 'multi') control = optionControl(q, saved);
+    else if (q.kind === 'scale') control = scaleControl(q, saved);
+    else if (q.kind === 'matrix') control = matrixControl(q, saved);
+    else if (q.kind === 'rank') control = rankControl(q, saved);
+    else if (q.kind === 'long')
+      control = `<textarea class="bo-field" name="q" rows="4">${esc(text)}</textarea>`;
+    else {
+      // short, email, number and date are all one native input; only the type differs, and the
+      // type is what gives `number` its keypad and `date` its picker.
+      const type =
+        q.kind === 'email' ? 'email' : q.kind === 'number' ? 'number' : q.kind === 'date' ? 'date' : 'text';
+      /* `autocomplete` ON THE EMAIL, AND IT IS NOT A CONVENIENCE.
+         Ref 12.1 — "Where should we send your copy of the report?" — is question 79 of 82 and is
+         asked of exactly the people who did NOT hand over an address at the start gate. They are
+         typing it fresh after a quarter of an hour of answering, and a typo costs them the report
+         they did all of it for. The two gate inputs above already carry `autocomplete="email"`;
+         this renderer was simply never given it, which is an omission and not a decision.
+         WCAG 2.1 SC 1.3.5 (Identify Input Purpose, level AA) is the formal name for the same
+         point: a field collecting information ABOUT the user has to declare its purpose.
+
+         NOTHING ELSE HERE WANTS A TOKEN. `number` already has its keypad, `date` gets its picker
+         from the type, and the bank contains no `short` question at all — so this is the only
+         field in the flow that asks about the person rather than about their Airtable. A
+         speculative token on the others would be a guess a browser then acts on. */
+      const extra =
+        q.kind === 'number'
+          ? ' inputmode="numeric" min="0"'
+          : q.kind === 'email'
+            ? ' autocomplete="email"'
+            : '';
+      control = `<input class="bo-field" type="${type}"${extra} name="q" value="${esc(text)}" />`;
+    }
+
+    // The kind label sits ABOVE the prompt and the hint BELOW it. Both above put the hint before
+    // the thing it explains, which is how the first pass read: an answer to a question nobody had
+    // asked yet.
+    const kindLine = `<p class="bo-q__kind">${KIND_LABEL[q.kind]}${q.required ? '' : ', optional'}</p>`;
+    const helpLine = q.help ? `<p class="bo-q__help">${esc(q.help)}</p>` : '';
+
+    return `<div class="bo-q" data-q="${esc(q.id)}">
+      ${kindLine}
+      <h2 class="bo-q__prompt">${esc(q.prompt)}</h2>
+      ${helpLine}
+      <div class="bo-q__options">${control}</div>
+      ${exclusiveNotice(q)}
+      <p class="bo-error-text bo-q__error" hidden></p>
+    </div>`;
+  }
+
+  /**
+   * `moved` IS THE DIFFERENCE BETWEEN A PAGE CHANGE AND A FIRST PAINT, and only a page change gets
+   * `toPageTop()`. The first paint is a page LOAD: the browser has its own scroll restoration for
+   * that and a resumed session is entitled to it, and stealing focus from someone who has just
+   * arrived is the thing that setting exists to prevent.
+   */
+  function render(moved = false) {
+    const list = flow();
+    if (idx >= list.length) return void submit();
+    const here = list[idx]!;
+
+    paintProgress(list);
+
+    // The header. Page one of a section says everything; later pages keep the title and give the
+    // room back, which is exactly what Dan asked for.
+    const lead = here.page === 1;
+    secEl.dataset.lead = String(lead);
+    secEyebrow.textContent = here.section.privateTail
+      ? `Section ${here.sectionIndex} of ${here.sectionCount}, optional and never published`
+      : `Section ${here.sectionIndex} of ${here.sectionCount}`;
+    secTitle.textContent = here.section.title;
+    secBlurb.textContent = here.section.blurb;
+    secIntroText.textContent = here.section.intro ?? '';
+    secIntro.hidden = !here.section.intro;
+
+    qTag.textContent = here.pages > 1 ? `[S${here.sectionIndex}.${here.page}]` : `[S${here.sectionIndex}]`;
+
+    backBtn.hidden = idx === 0;
+    nextBtn.textContent = idx === list.length - 1 ? 'Finish' : 'Next';
+
+    stepEl.innerHTML = here.questions.map(renderQuestion).join('');
+    // BEFORE `wireOther`, deliberately. Both listen to `change` on the same checkboxes and
+    // listeners run in the order they were added, so clearing has to happen first or the write-in
+    // box would be shown or hidden against the state as it stood a moment before the correction.
+    wireExclusive(here.questions);
+    wireOther(here.questions);
+    wireErrors(here.questions);
+    if (moved) toPageTop();
+  }
+
+  /**
+   * ── EVERY NEW PAGE STARTS AT THE TOP ─────────────────────────────────────────────────────────
+   *
+   * Dan: "if there were two long runs of questions — a page with a lot of questions on it — and I
+   * pressed Next at the bottom, then on the next page I'm still somewhere near the bottom, and I
+   * should start at the top." The flow never navigates: `#quiz` is re-rendered in place, so
+   * nothing resets the scroll the way a real page load would, and the next page's first question
+   * was above the reader and off screen. The old line here only did this on page ONE of a section,
+   * which is exactly the case Dan was NOT describing.
+   *
+   * THE TOP IS THE DOCUMENT'S TOP, not the top of the question list, and that is a choice. The rail,
+   * `Section N of 14`, the section's name and `Page 2 of 3` all live above the questions — and
+   * since the compact header went, that line is the ONLY place a respondent on page two can read
+   * which section they are in. It is not furniture to be skipped; it is the answer to "where am I
+   * now", which is the question a page change raises. It matters most on a rail jump backwards,
+   * where the reader did not scroll themselves and did not choose the page they landed on. The
+   * cost is measured and it is small: on the tallest page in the bank the first question starts
+   * 211px down at 1440 and 273px down at 320, and the rail itself is at 116px and 160px.
+   *
+   * INSTANTLY, AND `prefers-reduced-motion` IS THE SECOND REASON RATHER THAN THE FIRST. The
+   * tallest page is S3.2, "Your Airtable setup" — four questions, 2866px at 1440 and 3627px at
+   * 320. Pressing Next at the bottom of it is a 2727px journey, and `behavior: 'smooth'` was timed
+   * at 1211ms for exactly that scroll in Chrome: over a second of travelling back past the four
+   * questions just answered, which reads as the page hesitating rather than as motion. Instant is
+   * the right answer with motion allowed and the only answer with it suppressed, so there is no
+   * branch here to get wrong. `behavior: 'instant'` is written out rather than left to default to
+   * `auto`, so a future `scroll-behavior: smooth` on `html` cannot quietly turn this into the
+   * 1211ms version.
+   *
+   * AND FOCUS GOES WITH IT. A scroll does nothing for a keyboard or screen-reader user, whose
+   * focus is still on the old page's Next button; the section's name is the heading that says
+   * where the page change landed them, and the next Tab from it is the new page's first question.
+   * `preventScroll` because the scroll above already decided where the page sits.
+   */
+  function toPageTop() {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    marksName.focus({ preventScroll: true });
+  }
+
+  /**
+   * Reads one question's answer out of ITS OWN block. Scoping by `[data-q]` rather than by the
+   * whole page is what lets a page hold several questions: without it the first `input:checked` on
+   * the screen would be read as the answer to every one of them.
+   */
+  function collect(q: Question): string | string[] {
+    const box = stepEl.querySelector<HTMLElement>(`[data-q="${q.id}"]`);
+    if (!box) return '';
+    if (q.kind === 'multi')
+      return [...box.querySelectorAll<HTMLInputElement>('input:checked')].map((i) => i.value);
+    if (q.kind === 'matrix')
+      // One entry per row, in row order, with an unanswered row as an empty string so the array
+      // never shifts and row 2's rating cannot be read as row 1's.
+      return (q.options ?? []).map(
+        (_, r) => box.querySelector<HTMLInputElement>(`input[name="q-${q.id}-${r}"]:checked`)?.value ?? '',
+      );
+    if (q.kind === 'rank')
+      return selectsIn(box, 'select[data-rank]').map((sel) => sel.value);
+    if (q.kind === 'single' || q.kind === 'scale')
+      return box.querySelector<HTMLInputElement>('input:checked')?.value ?? '';
+    return (box.querySelector<HTMLInputElement | HTMLTextAreaElement>('[name=q]')?.value ?? '').trim();
+  }
+
+  /** Whether this question's "Other" option is currently chosen. */
+  function otherPicked(q: Question): boolean {
+    if (!q.otherOption) return false;
+    const box = stepEl.querySelector<HTMLElement>(`[data-q="${q.id}"]`);
+    return [...(box?.querySelectorAll<HTMLInputElement>('input:checked') ?? [])].some(
+      (i) => i.value === q.otherOption,
+    );
+  }
+
+  /** The write-in's text, or an empty string when the option behind it is not chosen. */
+  function collectOther(q: Question): string {
+    if (!q.otherOption || !otherPicked(q)) return '';
+    const box = stepEl.querySelector<HTMLElement>(`[data-q="${q.id}"]`);
+    return (box?.querySelector<HTMLInputElement>('[data-other]')?.value ?? '').trim();
+  }
+
+  /** Show the write-in exactly while its option is chosen, and keep doing so as that changes. */
+  function wireOther(list: Question[]) {
+    for (const q of list) {
+      if (!q.otherOption) continue;
+      const box = stepEl.querySelector<HTMLElement>(`[data-q="${q.id}"]`);
+      const field = box?.querySelector<HTMLElement>('[data-other-box]');
+      if (!box || !field) continue;
+      const sync = () => {
+        const on = otherPicked(q);
+        field.hidden = !on;
+        if (on) (field.querySelector('input') as HTMLElement | null)?.focus({ preventScroll: true });
+      };
+      for (const input of box.querySelectorAll('input')) input.addEventListener('change', sync);
+      // No focus on the first paint: this runs for every question on the page, and a saved answer
+      // would pull the caret to whichever one happened to have "Other" already chosen.
+      field.hidden = !otherPicked(q);
+    }
+  }
+
+  /**
+   * Enforce `exclusiveOptions` on every multi on this page, in both directions.
+   *
+   * Bound on `change` rather than on `click` so it fires for the keyboard (Space on a focused
+   * checkbox) exactly as it does for the mouse — and `change` is what `wireOther` and `wireErrors`
+   * already listen to, so the write-in box and the error line both see the corrected state.
+   */
+  function wireExclusive(list: Question[]) {
+    for (const q of list) {
+      const exclusive = exclusiveOf(q);
+      if (exclusive.length === 0) continue;
+      const box = stepEl.querySelector<HTMLElement>(`[data-q="${q.id}"]`);
+      if (!box) continue;
+      const notice = box.querySelector<HTMLElement>('[data-cleared]');
+      const boxes = () => [...box.querySelectorAll<HTMLInputElement>('input[type=checkbox]')];
+
+      for (const input of boxes()) {
+        input.addEventListener('change', () => {
+          if (!input.checked) return;
+          const isExclusive = exclusive.includes(input.value);
+          // Ticking an exclusive option clears everything else; ticking anything else clears the
+          // exclusive ones. One predicate, read in the two directions.
+          const cleared = boxes().filter(
+            (other) =>
+              other !== input &&
+              other.checked &&
+              (isExclusive || exclusive.includes(other.value)),
+          );
+          if (cleared.length === 0) {
+            if (notice) notice.textContent = '';
+            return;
+          }
+          for (const other of cleared) other.checked = false;
+          if (!notice) return;
+          // Named, not counted: "1 option was cleared" makes a respondent hunt for which one.
+          notice.textContent =
+            cleared.length === 1
+              ? `“${cleared[0]!.value}” was cleared: it can’t be combined with “${input.value}”.`
+              : `${cleared.length} other answers were cleared: they can’t be combined with “${input.value}”.`;
+        });
+      }
+
+      // A restored answer is corrected the moment the respondent touches the question, not behind
+      // their back on paint: silently deleting a stored answer they cannot see change is worse
+      // than showing them the contradiction they made. The notice starts empty either way.
+      if (notice) notice.textContent = '';
+    }
+  }
+
+  /**
+   * AN ERROR LINE HAS TO BE ABLE TO STOP BEING TRUE.
+   *
+   * Reported by Oleh on the ranking: pick the same priority twice, get "Each place needs a
+   * different answer", fix it, and the line stays red until you press Next again. Nothing was
+   * clearing it, so every error outlived the mistake it described and the respondent was told they
+   * were wrong while looking at a correct answer. The two permanent gate inputs already had this
+   * treatment; the question blocks are rebuilt by `render()` and so were assumed not to need it,
+   * which is true only for errors you never correct in place.
+   *
+   * `change` bubbles from radios, checkboxes and selects, `input` from the text fields, so the two
+   * together cover every control this renderer can draw.
+   */
+  function wireErrors(list: Question[]) {
+    for (const q of list) {
+      const box = stepEl.querySelector<HTMLElement>(`[data-q="${q.id}"]`);
+      if (!box) continue;
+      const clear = () => {
+        const line = box.querySelector<HTMLElement>('.bo-error-text');
+        if (line) line.hidden = true;
+        for (const marked of box.querySelectorAll('[aria-invalid]')) {
+          marked.removeAttribute('aria-invalid');
+        }
+      };
+      box.addEventListener('change', clear);
+      box.addEventListener('input', clear);
+    }
+  }
+
+  /** The error line belongs to a question, not to the screen. */
+  function failAt(q: Question, msg: string) {
+    const box = stepEl.querySelector<HTMLElement>(`[data-q="${q.id}"]`);
+    const line = box?.querySelector<HTMLElement>('.bo-error-text');
+    if (line) {
+      line.textContent = msg;
+      line.hidden = false;
+    }
+    box?.querySelector<HTMLElement>('.bo-field')?.setAttribute('aria-invalid', 'true');
+    box?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  /** Everything that can be wrong with one answer, in the order it is worth saying. */
+  function problemWith(q: Question, value: string | string[]): string | null {
+    const empty = Array.isArray(value) ? value.every((v) => v === '') : value === '';
+
+    if (q.kind === 'rank') {
+      const picked = (value as string[]).filter(Boolean);
+      if (q.required && picked.length < (q.rankPick ?? 3))
+        return `Pick ${q.rankPick ?? 3}, in the order that matters to you.`;
+      if (new Set(picked).size !== picked.length) return 'Each place needs a different answer.';
+      return null;
+    }
+    if (q.kind === 'matrix' && q.required && (value as string[]).some((v) => v === ''))
+      return 'Give every row a rating.';
+    if (q.required && empty) return 'This one is required.';
+
+    // "Other" with nothing written in it is the one answer that records less than not answering:
+    // it takes the respondent out of every named option and puts them nowhere.
+    if (q.otherOption) {
+      const picked = Array.isArray(value) ? value.includes(q.otherOption) : value === q.otherOption;
+      if (picked && collectOther(q) === '') return 'Tell us which one.';
+    }
+
+    if (empty) return null;
+    if (q.kind === 'email' && !EMAIL_RE.test(value as string))
+      return 'That does not look like an email address.';
+    if (q.kind === 'number' && !Number.isFinite(Number(value))) return 'Please enter a number.';
+    return null;
+  }
+
+  nextBtn.addEventListener('click', () => {
+    const here = flow()[idx]!;
+    const gathered: [Question, string | string[]][] = [];
+
+    // Validate the WHOLE page before writing any of it: a page that stored its first three answers
+    // and then refused to advance would leave the respondent looking at a screen whose state no
+    // longer matches what was saved.
+    for (const q of here.questions) {
+      const value = collect(q);
+      const problem = problemWith(q, value);
+      if (problem) return failAt(q, problem);
+      gathered.push([q, value]);
+    }
+
+    for (const [q, value] of gathered) {
+      answers[q.id] = value;
+      // The free text is a sibling column, never the answer itself: the option keeps counting in
+      // the distribution and the write-in stays separable from it.
+      if (q.otherOption) {
+        const text = collectOther(q);
+        if (text) answers[`${q.id}_other`] = text;
+        else delete answers[`${q.id}_other`];
+      }
+    }
+    persistLocal();
+    idx += 1;
+    furthest = Math.max(furthest, idx);
+    save();
+    render(true);
+  });
+
+  backBtn.addEventListener('click', () => {
+    if (idx > 0) idx -= 1;
+    save();
+    render(true);
+  });
+
+  function persistLocal() {
+    localStorage.setItem(KEY, JSON.stringify(answers));
+  }
+
+  /** Fire-and-forget server autosave; localStorage stays the optimistic cache. */
+  function save(extra: { email?: string; completed?: boolean } = {}): Promise<Response | void> {
+    if (!hasSession) {
+      reportSave('local');
+      return Promise.resolve();
+    }
+    reportSave('saving');
+    return fetch('/api/progress', {
+      method: 'PUT',
+      keepalive: true,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ surveyVersion: SURVEY_VERSION, answers, stepIdx: idx, ...extra }),
+    })
+      .then((res) => {
+        reportSave(res.ok ? 'saved' : 'local');
+        return res;
+      })
+      .catch(() => {
+        // The write is fire-and-forget by design and must never block the respondent, but staying
+        // silent about a failed save is what the first build did. The local cache still holds.
+        reportSave('local');
+      });
+  }
+
+  async function submit() {
+    nextBtn.disabled = true;
+    reportSave('saving');
+    await save({ completed: true });
+    let token = 'preview';
+    try {
+      const res = await fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          surveyVersion: SURVEY_VERSION,
+          answers,
+          email: answers.email ?? '',
+          // The screener's own outcome travels with the response. The bank excludes these from the
+          // core dataset, and a flag on the row is how that stays possible after the fact.
+          audienceFlags: { agency: isAgency(answers), screenedOut: isScreenedOut(answers) },
+        }),
+      });
+      const body = (await res.json()) as { token?: string };
+      if (body.token) token = body.token;
+    } catch {
+      /* stub phase: proceed with the preview token */
+    }
+    // THE ANSWERS ARE DELIBERATELY LEFT IN PLACE HERE. `/thanks` computes the score from them
+    // client-side, so clearing the key on the way out is what made the result unreachable in a real
+    // run. `/thanks` reads them, converts them to a stored result, and clears this key itself.
+    const flags = [isAgency(answers) ? 'a=1' : '', isScreenedOut(answers) ? 's=1' : '']
+      .filter(Boolean)
+      .join('&');
+    location.href = `/thanks?t=${encodeURIComponent(token)}${flags ? `&${flags}` : ''}`;
+  }
+
+  function inlineError(id: string, msg: string) {
+    const e = document.getElementById(id) as HTMLElement;
+    e.textContent = msg;
+    e.hidden = false;
+    (e.previousElementSibling as HTMLElement | null)?.setAttribute('aria-invalid', 'true');
+  }
+
+  // A field flagged invalid must be able to STOP being invalid. `render()` rebuilds the page's
+  // markup each time, so the flag cannot outlive a question there, but the two gate inputs are
+  // permanent DOM and without this the border stays red over a corrected value.
+  for (const id of ['gate-email', 'resume-email']) {
+    const field = document.getElementById(id);
+    field?.addEventListener('input', () => {
+      field.removeAttribute('aria-invalid');
+      const line = field.nextElementSibling as HTMLElement | null;
+      if (line?.classList.contains('bo-error-text')) line.hidden = true;
+    });
+  }
+
+  /**
+   * THE HIDDEN FIELDS.
+   *
+   * The bank's builder notes require two: *"`source` (community / partner / newsletter / social /
+   * paid), `audience` (customer / list / public), publish the source mix in the methodology note."*
+   * They arrive as query parameters on the link that brought the respondent here and are stored
+   * with the answers, prefixed so nothing can mistake them for a question. Nothing is rendered.
+   */
+  function captureHidden() {
+    const params = new URLSearchParams(location.search);
+    for (const field of ['source', 'audience']) {
+      const value = params.get(field);
+      if (value) answers[`_${field}`] = value.slice(0, 64);
+    }
+  }
+
+  gateForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const email = (document.getElementById('gate-email') as HTMLInputElement).value.trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) return inlineError('gate-error', 'That doesn’t look like an email address.');
+    const btn = gateForm.querySelector('button')!;
+    btn.disabled = true;
+    try {
+      // Instant anonymous session, no verification round-trip (owner requirement).
+      //
+      // Only mint one if we do not already HAVE one. better-auth answers a second anonymous sign-in
+      // with an error, and taking that at face value sets `hasSession = false`, which makes `save()`
+      // return early for the rest of the run: anyone who opened the survey once and came back later
+      // would fill it in completely with nothing written to the server.
+      if (!hasSession) {
+        const { error } = await authClient.signIn.anonymous();
+        hasSession = !error;
+      }
+    } catch {
+      hasSession = false; // offline / DB-less fallback: localStorage only
+    }
+    answers.email = email;
+    persistLocal();
+    await save({ email });
+    btn.disabled = false;
+    show('quiz');
+    // A PAGE CHANGE, and the one place it is about focus rather than scroll: the button that was
+    // just pressed is inside the section `show()` has hidden, so focus would otherwise fall to
+    // `<body>` and the next Tab would start at the top of the document.
+    render(true);
+  });
+
+  resumeForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const email = (document.getElementById('resume-email') as HTMLInputElement).value.trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) return inlineError('resume-error', 'That doesn’t look like an email address.');
+    const btn = resumeForm.querySelector('button')!;
+    btn.disabled = true;
+    const { error } = await authClient.signIn.magicLink({ email, callbackURL: '/survey' });
+    btn.disabled = false;
+    if (error) return inlineError('resume-error', 'Couldn’t send the link, please try again.');
+    (document.getElementById('resume-sent-email') as HTMLElement).textContent = email;
+    show('resume-sent');
+  });
+
+  async function init() {
+    captureHidden();
+    const params = new URLSearchParams(location.search);
+
+    // REVIEW AFFORDANCE. A returning reviewer has a session and a progress row, so `/survey`
+    // correctly resumes them into the middle of the flow and the start gate becomes unreachable.
+    // `?fresh=1` asks for the gate itself. It goes out with the jump panel.
+    if (params.has('fresh')) return show('gate');
+
+    try {
+      const { data: session } = await authClient.getSession();
+      if (session) {
+        hasSession = true;
+        const res = await fetch(`/api/progress?v=${encodeURIComponent(SURVEY_VERSION)}`);
+        if (res.ok) {
+          const p = (await res.json()) as { answers: Answers; stepIdx: number; email: string; completed: boolean };
+          if (p.completed) return void (location.href = '/thanks?t=preview');
+          answers = { email: p.email, ...p.answers };
+          captureHidden();
+          persistLocal();
+          idx = Math.min(p.stepIdx ?? 0, flow().length);
+          furthest = idx;
+          show('quiz');
+          return render();
+        }
+        // Session but no saved row: fall through to the start gate.
+      }
+    } catch {
+      /* auth unreachable → gate still works in local-only mode */
+    }
+    if (params.has('resume')) return show('resume-gate');
+    show('gate');
+  }
+
+  init();
+</script>

@@ -1,0 +1,539 @@
+---
+import {
+  BRAND_LEAD,
+  BRAND_CORE,
+  BRAND_KIND,
+  SCORE_SHORT,
+  REPORT_NAME,
+} from "../lib/brand";
+import EditionMark from "./EditionMark.astro";
+import ScoreLadder from "./ScoreLadder.astro";
+import CategoryExplainer from "./CategoryExplainer.astro";
+import ScoreName from "./ScoreName.astro";
+
+/**
+ * THE SPLASH.
+ *
+ * What changed and why. The first build was a centred stack over four identical cards, which is a
+ * named anti-pattern (same-size boxes, heading plus two lines, repeated) and reads as a template
+ * before a word is read. Three moves replace it:
+ *
+ *   1 · ASYMMETRY. The headline holds the left, the instrument holds the right. Nothing is centred.
+ *   2 · THE REWARD IS ON SCREEN ONE. The maturity meter renders here with no needle, captioned as
+ *       what the respondent leaves with. A promise you can see costs less belief than one you read.
+ *   3 · THE BENEFITS ARE A RAIL, NOT CARDS. Four statements divided by hairlines and numbered. A
+ *       rule groups as well as a box and promises less, which matters when three of the four are
+ *       still deferred promises.
+ *
+ * COPY: Dan's strings, with one class of edit. Em dashes are banned outright by DESIGN.md ("use
+ * commas, colons, semicolons, periods or parentheses"), so two of them become full stops. Nothing
+ * else in the wording moves.
+ */
+
+/**
+ * WHAT THE RESPONDENT GETS, AND WHEN.
+ *
+ * The `when` line is not decoration, it is the missing information. Three of these four are
+ * deferred promises and one lands before the respondent closes the tab, and a rail that does not
+ * say so is asking to be read as four equivalent offers. The badge says it, in words, on every
+ * card. It is the ONLY thing that distinguishes them, which is deliberate: an earlier build also
+ * drew the immediate one in the accent — its own rule, numeral, title, badge and ink — and Oleh
+ * took the whole treatment off on 2026-08-26. A permanent highlight claims one of four is current,
+ * nothing here is current, and the accent is the colour this page uses for things you can click.
+ * The difference is information, so the difference is carried by words. See `.bo-rail__item--now`
+ * in survey.css, which is now a note explaining its own absence.
+ *
+ * STILL NO ICONS, BUT NOW THERE IS ART. An icon above each of four equal-sized blocks is the
+ * template pattern `impeccable` bans by name (identical card grids; rounded icons above every
+ * heading), and that ban is untouched: the badge still carries a word, so the item survives the
+ * Never-Alone Rule without a glyph to lean on.
+ *
+ * What changed on 2026-08-26 is the scope. Oleh lifted PRODUCT.md's rejection of decorative
+ * gradients and illustration FOR THIS APP ONLY: the survey is an independent marketing surface,
+ * closer to a website than to the admin tool, and it is allowed to look like one. So each item
+ * gains a line drawing that sits in a band at its foot, behind nothing, dissolving upward before
+ * it reaches a word. It is `aria-hidden` and it is not an icon: it carries no information the
+ * title and body do not already state, it is not a label, and removing it removes nothing but
+ * atmosphere. `--rail-art-h` in survey.css gives it its own space so it never shares a row with
+ * text. The recipe is documented at `.bo-rail__art`.
+ */
+/**
+ * THE ORDER, AND THE ONE BADGE THAT WAS NOT TRUE.
+ *
+ * Reordered 2026-08-26. The band now leads and the report follows it. The rail is read left to
+ * right and the first thing in it should be the thing that actually happens first: the band is the
+ * only one of the four that lands before the respondent closes the tab, and it was sitting second,
+ * behind a promise that resolves whenever the report ships. Leading with the deferred one asks for
+ * belief before it has given anything. The numerals are `i + 1`, so 01/02/03/04 follow the array
+ * and there is no second place to keep in sync.
+ *
+ * The band's badge read `IN TEN MINUTES`, which was borrowed from the wrong clock. Ten minutes is
+ * how long the SURVEY takes — it is on the meta row above as `~10 min` and in the meter's caption —
+ * and reusing it as the band's DELIVERY time says the band arrives ten minutes from now, at the end
+ * of a wait, which is not what happens. There is no wait: the band is drawn from answers already
+ * given, so it is there as the last one is saved. `THE MOMENT YOU FINISH` is both shorter and true,
+ * and it stops the same number meaning two things on one screen.
+ *
+ * The band's body then had to give up its first clause, which said "The moment you finish" in
+ * full — with the badge carrying it, the sentence was repeating its own label back at the reader.
+ * The rest of the line is untouched, and the other three are not edited at all.
+ */
+
+const BENEFITS = [
+  {
+    when: "The moment you finish",
+    art: "band",
+    /* THE ONLY TITLE THAT IS NOT A PLAIN STRING. It names the score, so it wants the acronym
+       marked, and a data string cannot carry markup. `scored` is the flag the template reads;
+       `title` stays as the accessible plain-text fallback and as the thing to edit if the wording
+       changes. See `ScoreName.astro`. */
+    scored: true,
+    title: `Your ${SCORE_SHORT}`,
+    body: "A number out of 100 and the band it puts you in. No waiting for the report.",
+  },
+  {
+    when: "When it ships",
+    art: "report",
+    title: "The report, first",
+    body: `You get ${REPORT_NAME} before anyone else, and see how your practices compare.`,
+  },
+  {
+    when: "At launch",
+    art: "early",
+    title: "Early access",
+    body: "Respondents are first in line when Baseout opens up, with an early access discount.",
+  },
+  {
+    when: "Agencies/Partners",
+    art: "partner",
+    title: "Founding partner status",
+    body: "Agencies and consultants can join the Baseout partner program at founding level, with founding perks.",
+  },
+];
+---
+
+<div class="bo-split splash-split">
+  {
+    /* THE EYEBROW IS ITS OWN GRID ROW, and that is the whole alignment mechanism. It used to sit
+       inside the left column, which meant the split had ONE row whose top was the eyebrow's top —
+       so anything placed at the top of the RIGHT column started level with the eyebrow, two rungs
+       above where the headline starts. Lifting it into a row of its own makes row 2 open exactly
+       where the `h1` opens, in both columns at once, and the lockup below is then level with the
+       headline because of where it sits rather than because an offset keeps it there.
+
+       It moves nothing on screen: `row-gap` is zeroed for this split, so the 0.5rem the eyebrow
+       already carried as its own `margin-bottom` is still the only thing between it and the `h1`. */
+  }
+  <p class="bo-eyebrow splash-eyebrow">The first-ever</p>
+
+  <div class="splash-head">
+    {
+      /* THE NAME IS ASSEMBLED, NOT TYPED. `BRAND` carries no platform, so the Notion run is one
+            constant away. See `lib/brand.ts`. */
+    }
+    {
+      /* THE EDITION IS SAID ONCE, AND NOT HERE. The standing lockup in the right column sets
+         "Airtable edition" in full, so repeating it in the headline made the page say the same two
+         words twice before it said anything else — Oleh, 2026-08-28. The headline stops at the
+         brand, which is also the thing that carries to the Notion run: `BRAND` holds no platform.
+
+         The word does not go missing: the lede below names Airtable in its first line, and
+         `<title>` is built from `EDITION`, so neither search nor a shared link loses the platform. */
+    }
+    {
+      /* THREE PARTS, TWO VOLUMES. Dan, 2026-08-28: *"maybe we differentiate with a different font,
+         or a different colour — 'State of', and then 'Survey' below, separated from the name."*
+
+         The split is not decoration; it is the one place on the site that shows which words are the
+         coined thing. "State of" and "Survey" are what every industry benchmark is called. "DevOps
+         for App Platforms" is the part Dan named and the part that has to be remembered, so it
+         keeps the display weight and the outer two drop to `--soft` (weight 300, muted ink). Same
+         face, same size, same line — one voice at two volumes, which is the contrast this app
+         already uses and is quieter than the second typeface he floated.
+
+         EACH PART IS ITS OWN LINE, because that is what "Survey below, separated from the name"
+         asks for. The `<br>`s are gone with them: the three spans are blocks, so the headline breaks
+         where the name breaks and not where the column happens to run out. `bo-display` sets
+         `line-height: 0.95`, so this changes the rag, not the leading.
+
+         It is still ONE `h1` and one accessible name — the spans carry no roles and no aria, so a
+         screen reader reads "State of DevOps for App Platforms Survey" straight through. */
+    }
+    <h1 class="bo-display splash-title">
+      <span class="bo-display__soft">{BRAND_LEAD}</span>
+      <span class="splash-title__core">{BRAND_CORE}</span>
+      <span class="bo-display__soft">{BRAND_KIND}</span>
+    </h1>
+    <p class="bo-lede bo-measure">
+      How do teams actually protect, manage, and govern the Airtable bases their
+      business runs on? Nobody has measured it. Help us build the benchmark.
+    </p>
+    {
+      /*
+        ── ONE BUTTON. THERE IS NO SECOND DOOR ON THIS PAGE ──────────────────────────────────────
+
+        This was a pair: `Get your DOAP Score` and `Resume your survey`, side by side, equal weight.
+        Dan, 2026-08-28, and he could not finish the thought: *"the thing that I struggle with is
+        this one right here — there's two calls to action, one is 'get your DOAP score', the other
+        is like 'take the survey'. And they both, you know, you kind of get both out of them. So…
+        not sure."*
+
+        WHAT HE FELT AND DID NOT NAME: they are not two choices. They are one action and one
+        recovery path, presented as equals. Read what each actually does and there is nobody the
+        pair serves —
+
+          first visit          nothing to resume; the second button is noise
+          returning, same box  `/survey` already resumes on its own (`survey.astro`, `init()`), so
+                               the button is noise here too
+          returning, new box   the button works — and the start gate, one screen later, already
+                               offers "Already started on another device? Get a resume link"
+
+        So the second door duplicated a link on the next screen, for the one case the automatic
+        path does not cover, while charging every first-time reader a decision to ignore it. The
+        landing page has exactly one job and two equal objects at the top split it in half.
+
+        A CONDITIONAL LINK WAS BUILT HERE FIRST AND TAKEN OUT THE SAME HOUR. It was `hidden` until
+        `localStorage` proved this browser held answers, which is defensible and still added a
+        second thing to read under the one button that matters. Oleh, 2026-08-31, looking at it:
+        *"let's drop 'continue your survey' from the home page entirely. We'll sort it out there in
+        practice — let that link live only inside, on the first screen where we ask for the email."*
+        He is right that the recovery path belongs at the door it recovers, not on the poster.
+
+        NOTHING IS LOST. The resume link is on the start gate, one click away, where a returning
+        reader is already being asked to identify themselves — and on the same device they never
+        reach it, because `/survey` resumes them before the gate renders.
+
+        WHY THE BUTTON NAMES THE SCORE. Dan read the pair as reward against labour ("one is get your
+        DOAP score, the other is take the survey"). With one button it has to be one or the other,
+        and it names the reward: nobody is misled, because the headline ends in "Survey" and the
+        fact row below says "~15 min", and the coined term needs the repetition.
+      */
+    }
+    <div class="splash-cta">
+      <a class="bo-btn bo-btn--primary" href="/survey">Get your {SCORE_SHORT}</a
+      >
+    </div>
+    {
+      /* Four facts, short enough to hold one line: a wrapped row leaves a rule hanging at the
+            break, and the separator then reads as a missing item rather than a divider. */
+    }
+    <ul class="bo-meta">
+      <li>~15 min</li>
+      <li>Saves as you go</li>
+      <li>No account</li>
+      <li>Aggregate only</li>
+    </ul>
+  </div>
+
+  {
+    /*
+        The instrument, unresolved. Same component as the one on /thanks, minus the needle: this is
+        the measurement the respondent is about to take, shown before they take it.
+      */
+  }
+  <div class="splash-meter">
+    {
+      /* PLACEMENT B LIVES HERE NOW. It used to be rendered by `index.astro` as a flex child of
+         `main` asking for the page's right edge, which put it in the page CORNER under the review
+         chips — the thing Dan asked to have taken out of the corner. It is a column-mate of the
+         ladder instead: same left edge, same column, above it, and level with the headline's first
+         line because it is the first thing in row 2 of the split. */
+    }
+    <div class="splash-edition">
+      <EditionMark />
+    </div>
+    <div class="splash-meter__instrument">
+    {
+      /* `demo` — the ladder demonstrates itself. Dan, 2026-08-28: the static track *"is just a
+         rectangle and a little square"*. It is a THIRD state of the component, not a variation on
+         the finish page's `scored` one: nothing here states a number, so nothing here may come to
+         rest on one. See `ScoreLadder.astro` and the `.bo-ladder--demo` block in `survey.css`. */
+    }
+    <ScoreLadder note="0 to 100, four bands" demo>
+      <Fragment slot="eyebrow">
+        Where your <ScoreName /> lands
+      </Fragment>
+    </ScoreLadder>
+    {
+      /* THE SCALE SAYS WHAT IT IS. It was an unnamed axis with four band names under it, and
+         Oleh's note on 2026-08-27 was that nothing on it tied it to the score the button beside
+         it is selling. The name is on the label above and again in the first line here, which is
+         where there is room to say what the number actually measures. */
+    }
+    <p class="splash-meter__caption">
+      <ScoreName article /> puts a number on how a team protects, changes and documents
+      the bases it runs on. Most teams have never been placed on this scale, because
+      until now there was nothing to place them against. Fifteen minutes of answers
+      is what it takes to read your own position.
+    </p>
+    </div>
+  </div>
+</div>
+
+{
+  /*
+    THE EXPLAINER, BETWEEN THE HERO AND THE RAIL.
+
+    Where the client put it, and the placement is the argument: the hero states what the survey is
+    and the rail states what you get for taking it, and between those two the reader has one
+    question the page was not answering — what the thing being measured actually is. It belongs
+    before the reward, not after it.
+
+    IT IS NOT BEHIND ANY SWITCH. `?logo=` was a review affordance for one asset in the headline
+    block; this section has nothing to do with it and renders identically either way, so it sits
+    outside the conditional rather than being duplicated inside both arms of it.
+
+    NOTHING IS STYLED FOR IT HERE, and nothing should be. `CategoryExplainer.astro` is
+    self-contained — its own scoped styles, no props, no client script — and a rule written in this
+    file would carry THIS component's `data-astro-cid-*` and never reach inside it anyway.
+
+    THE SEAM IS ON THE RHYTHM, MEASURED. `main` is a flex column, so adjacent margins ADD rather
+    than collapsing, and stacking two large ones here was the thing to check. It comes out clean:
+    the section carries `margin-top: var(--bo-space-6)` (4.5rem, three rhythms) and no bottom
+    margin, and `.splash-rail-h` below carries `var(--bo-space-6)` on top. So the split closes,
+    three rhythms, the section, three rhythms, the rail heading — the same gap the split and the
+    rail heading had between them before this section existed. Nothing to compensate for.
+  */
+}
+<CategoryExplainer />
+
+{
+  /*
+      THE SECTION HEADING, RESTORED. An earlier build carried "What you get" over these four; it was
+      dropped when the cards became a rail, on the theory that four numbered statements under a
+      hairline announce themselves. They do not. Coming off the meter's caption, the rail's first
+      visible element is the numeral `01`, and a numeral with no antecedent is a puzzle before it is
+      a list — the reader has to get to the second card before the set is legible as a set.
+
+      It is an `h2`, and it is the reason the four item titles below are now `h3`: the rail is a
+      section of this page and its items are inside it, so the outline has to say so. Nothing about
+      them changes visually — every rail rule is written against `.bo-rail__title`, not the tag.
+
+      Size, deliberately: `--bo-t-24`, the same rung `/thanks` gives its own section heading, which
+      is a full rung and a fluid clamp below the `h1` above it. This heading opens a section; it
+      does not compete for the page.
+    */
+}
+<h2 class="splash-rail-h">What you get</h2>
+
+<ul class="bo-rail splash-rail">
+  {
+    BENEFITS.map((b, i) => (
+      <li class="bo-rail__item">
+        {/* Decoration, and nothing else. Hidden from the accessibility tree because the title
+              and body already say what it draws, so announcing it would only add a second, vaguer
+              copy of the same sentence. */}
+        <span class="bo-rail__art" data-art={b.art} aria-hidden="true" />
+        <span class="bo-rail__n">{String(i + 1).padStart(2, "0")}</span>
+        <span class="bo-badge bo-badge--later">{b.when}</span>
+        <h3 class="bo-rail__title">
+          {"scored" in b ? <Fragment>Your <ScoreName /></Fragment> : b.title}
+        </h3>
+        <p class="bo-rail__body">{b.body}</p>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  /* PAGE PLACEMENT ONLY. Every surface, colour, radius and type size comes from a `survey.css`
+     recipe; what is left here is where this page puts things. */
+  .splash-cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bo-space-2);
+    margin-top: var(--bo-space-4);
+  }
+
+  /* ── THE SPLIT'S ROWS ─ where the Airtable lockup gets its alignment from ────────────────────
+     Two rows, and the eyebrow has row 1 to itself. Row 2 therefore opens at the top of the `h1`
+     in BOTH columns, which is the whole reason the lockup in the right column can be level with
+     the headline without an offset holding it there.
+
+     `row-gap: 0`, deliberately and in both layouts. `.bo-split`'s `gap` is shorthand and sets both
+     axes; with one row that only ever showed as a column gap, and adding a second row would have
+     dropped 4.5rem between the eyebrow and the headline. Zeroing the row gap leaves the eyebrow's
+     own `margin-bottom` as the only thing between them, which is what it was before. It also
+     zeroes the 3rem the collapsed layout was using to separate the two stacked halves, so that
+     3rem comes back as an explicit `margin-top` on the meter in the media query below. */
+  .splash-split {
+    /* The anchor the stacked lockup is pinned to. Without it the lockup positions against the
+       initial containing block and lands on the VIEWPORT edge rather than the content edge — which
+       is what it did on the first attempt at this. */
+    position: relative;
+    grid-template-rows: auto auto;
+    row-gap: 0;
+  }
+
+  .splash-eyebrow {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .splash-head {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  /* ── THE HEADLINE'S THREE PARTS ──────────────────────────────────────────────────────────────
+     The two quiet ones are `.bo-display__soft` from `survey.css`, which already carries the block
+     display and the weight/colour drop. Only the loud middle is declared here, and only to become
+     a block: it inherits everything else from `.bo-display`, so if the display recipe moves, the
+     name moves with it and the frame keeps following.
+
+     `text-wrap: balance` is deliberately NOT set. The break points are the three parts, which is
+     the point of the split; letting the browser rebalance would put "Survey" back on the name's
+     line at some widths and undo the separation Dan asked for. */
+  /* BLUE AS WELL AS BOLD, since 2026-08-31. Oleh: *"let's make 'DevOps for App Platforms' blue on
+     the home screen. Set it apart with more than just the bold."*
+
+     It takes the contrast Dan asked for from one channel to two. Weight alone separates the coined
+     name from its frame, but it separates it the way any headline separates from any subhead — the
+     reader sees emphasis, not a different KIND of word. Colour says the middle line is a name.
+
+     `--bo-primary` and not a new value: it re-solves per theme on its own (#156e97 on light, the
+     brighter blue on dark), so the headline follows the same accent as the eyebrow above it and the
+     buttons below, and there is nothing here to keep in step by hand.
+
+     THE ACCENT IS NOT SPENT ANYWHERE ELSE IN THIS BLOCK, which is what lets it read as a name
+     rather than as a link. The eyebrow is small caps at 11px and the primary button is a filled
+     surface — neither is display type in accent ink, so nothing on this screen competes for the
+     same signal. If a third accented thing ever lands in the hero, this is the one to reconsider. */
+  .splash-title__core {
+    display: block;
+    color: var(--bo-primary);
+  }
+
+  /* The meter sits on the headline's baseline at desktop and moves under it when the split
+     collapses, where it gets its own air rather than being squeezed.
+
+     It STRETCHES over row 2 now instead of being bottom-aligned in it, because it has two jobs at
+     opposite ends of the column: the lockup at the top, level with the headline, and the ladder at
+     the bottom, where it has always sat. `align-items: end` on the split cannot do both. The
+     instrument keeps its old position to the pixel — `margin-top: auto` inside a stretched column
+     lands its bottom exactly where end-alignment landed the whole block's. */
+  .splash-meter {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding-bottom: var(--bo-space-2);
+  }
+
+  .splash-meter__instrument {
+    margin-top: auto;
+  }
+
+  /* THE LAST NINE PIXELS, AND THEY ARE MEASURED RATHER THAN GUESSED. Row 2 opens at the top of the
+     `h1`'s LINE BOX. The top of the headline's first line as the eye reads it is the top of its
+     INK, and `.bo-display` sets `line-height: 0.95`, which is smaller than the font's own content
+     area, so the two are not the same place. In Urbanist, at the h1's 700 weight, measured with
+     canvas `TextMetrics` on the live face:
+
+         ascent                                                          0.950em
+         descent                                                         0.250em
+         content area, therefore                                         1.200em
+         line box (`line-height: 0.95`)                                  0.950em
+         half-leading, negative, so the glyphs overhang the box       -0.125em
+         tallest ink in "State" (the "t" ascender, above cap height)      0.712em
+         -----------------------------------------------------------------------
+         ink top below line-box top   (0.950 - 0.712) - 0.125     =       0.113em
+
+     At the 5rem ceiling that is 9.0px, and it was 9.03px when measured in the page. `em` of
+     `--bo-t-display`, not a fixed value: the headline is a fluid clamp, so the overhang is too —
+     7.0px where the split first appears at 62rem, 9.0px at 1440. A `px` constant would be right at
+     exactly one width. It is PADDING and it is positive: nothing here is pulled out of position. */
+  .splash-edition {
+    padding-top: calc(var(--bo-t-display) * 0.113);
+  }
+
+  .splash-meter__caption {
+    margin: var(--bo-space-3) 0 0;
+    font-size: var(--bo-t-14);
+    line-height: 1.5;
+    color: var(--bo-muted-strong);
+  }
+
+  /* The air belongs ABOVE the heading, not between the heading and its rail. Three rhythms clear
+     of the block before it says "a new section starts here"; half a rhythm under it keeps the
+     heading attached to the four cards it names, so the gap does the grouping and no rule or box
+     has to. The left edge is not set here on purpose — this sits in the same flow as the eyebrow,
+     the headline and the meta row, so the page's one left margin is the only one it can have. */
+  .splash-rail-h {
+    /* Top is the section seam (`--bo-splash-slide`, one number in `survey.css`); bottom keeps the
+       heading attached to the four cards it names, so the gap still does the grouping. */
+    margin: var(--bo-splash-slide) 0 var(--bo-space-2);
+    font-size: var(--bo-t-24);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  .splash-rail {
+    margin-top: 0;
+  }
+
+  @media (max-width: 62rem) {
+    /* THE SPLIT STOPS BEING A SPLIT, so the row placement has to be undone explicitly — three items
+       all claiming column 1 and rows 1/2/2 would stack two of them on top of each other in a
+       single-column grid. Written out rather than left to inherit, which is the same reason the
+       theme swaps in this app are written in both directions. */
+    .splash-split {
+      grid-template-rows: none;
+    }
+
+    .splash-eyebrow,
+    .splash-head,
+    .splash-meter {
+      grid-column: auto;
+      grid-row: auto;
+    }
+
+    /* The 3rem `.bo-split` used to put here as a row gap, back as a margin. See `row-gap: 0`.
+
+       THE RULE MOVED OFF THIS BOX. It used to be this block's `border-top`, which put it ABOVE the
+       lockup — so the mark opened the instrument's section rather than closing the one before it.
+       Oleh, 2026-08-31: *"move the logo above the line."* It is `.splash-edition`'s bottom border
+       now, so the order reads: the ask, the facts about it, the edition this is, THEN the rule,
+       then the instrument. The lockup is a colophon on the block above rather than a heading on
+       the block below. */
+    .splash-meter {
+      margin-top: var(--bo-space-5);
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    /* ── THE LOCKUP STAYS IN THE FLOW, AND GETS SMALL ──────────────────────────────────────────
+       Stacked, it used to open the meter block at full size: a ~320px logo alone between the fact
+       row and the ladder, under a rule, with nothing around it to belong to. Oleh, 2026-08-31:
+       *"the Airtable logo looks very odd here"*, and then, after an attempt at moving it:
+       *"it should be small and fit clearly into the structure."*
+
+       IT WAS PINNED TO THE TOP-RIGHT CORNER FIRST AND THAT IS NOT IN THIS FILE. Absolute, level
+       with the headline, which is where it sits on a desktop. It measured fine at 390 and broke at
+       320: the headline is a fluid clamp, its middle line wraps to two, and at that width the text
+       ran to x=229 while the lockup started at 173. An overlay over type that reflows is a
+       collision waiting for a viewport nobody tested, and "fits into the structure" is the opposite
+       of floating above it.
+
+       So it keeps its place in the flow and only changes SIZE. `--edm-ink` is the wordmark's ink
+       height and every dimension in `EditionMark` derives from it, so one value takes the whole
+       lockup from 24px of ink to 16 — about a third smaller, which turns a logo standing alone into
+       a mark labelling the block under it. Nothing can collide with it, at any width, because it
+       occupies its own row. */
+    .splash-edition {
+      padding-top: 0;
+      padding-bottom: var(--bo-space-3);
+      margin-bottom: var(--bo-space-3);
+      border-bottom: 1px solid var(--bo-base-300);
+      --edm-ink: var(--bo-t-16);
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .splash-cta .bo-btn {
+      width: 100%;
+    }
+  }
+</style>
