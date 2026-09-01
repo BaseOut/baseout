@@ -68,6 +68,12 @@
       ]
     },
     "staging": {
+      // Workers Builds deploys onto the Worker the build is connected to and
+      // overrides any other name via WRANGLER_CI_OVERRIDE_NAME. The connected
+      // Workers are unsuffixed, so this env must produce the bare name or the
+      // deploy silently lands on a different Worker than the config describes.
+      // Production lives in its own account, so the two cannot collide.
+      "name": "baseout-api",
       // account_id intentionally omitted — Workers Builds runs inside the
       // owning account and supplies it. Pinning it here can only create a
       // mismatch, since production builds read this same file in a
@@ -102,7 +108,7 @@
       "services": [
         {
           "binding": "SERVER",
-          "service": "baseout-server-staging"
+          "service": "baseout-server"
         }
       ],
       "analytics_engine_datasets": [
@@ -124,6 +130,12 @@
       "routes": [{ "pattern": "api.baseout.dev", "custom_domain": true }]
     },
     "production": {
+      // Workers Builds deploys onto the Worker the build is connected to and
+      // overrides any other name via WRANGLER_CI_OVERRIDE_NAME. The connected
+      // Workers are unsuffixed, so this env must produce the bare name or the
+      // deploy silently lands on a different Worker than the config describes.
+      // Production lives in its own account, so the two cannot collide.
+      "name": "baseout-api",
       // PROVISION: production account id.
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.
@@ -156,7 +168,7 @@
       "services": [
         {
           "binding": "SERVER",
-          "service": "baseout-server-production"
+          "service": "baseout-server"
         }
       ],
       "analytics_engine_datasets": [

@@ -37,6 +37,12 @@
       ]
     },
     "staging": {
+      // Workers Builds deploys onto the Worker the build is connected to and
+      // overrides any other name via WRANGLER_CI_OVERRIDE_NAME. The connected
+      // Workers are unsuffixed, so this env must produce the bare name or the
+      // deploy silently lands on a different Worker than the config describes.
+      // Production lives in its own account, so the two cannot collide.
+      "name": "baseout-hooks",
       // account_id intentionally omitted — Workers Builds runs inside the
       // owning account and supplies it. Pinning it here can only create a
       // mismatch, since production builds read this same file in a
@@ -66,6 +72,12 @@
       "routes": [{ "pattern": "hooks.baseout.dev/webhooks/airtable/*", "zone_name": "baseout.dev" }]
     },
     "production": {
+      // Workers Builds deploys onto the Worker the build is connected to and
+      // overrides any other name via WRANGLER_CI_OVERRIDE_NAME. The connected
+      // Workers are unsuffixed, so this env must produce the bare name or the
+      // deploy silently lands on a different Worker than the config describes.
+      // Production lives in its own account, so the two cannot collide.
+      "name": "baseout-hooks",
       // PROVISION: production account id.
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.

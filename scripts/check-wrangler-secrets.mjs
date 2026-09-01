@@ -62,13 +62,42 @@ for (const app of apps) {
     console.error(`✗ ${app}: env.dev declares secrets.required — dev secrets belong in .dev.vars only`);
     failures++;
   }
-  // `name` must live ONLY at the top level so script names are DERIVED as
-  // <name>-<env>. An explicit env-level name overrides the derivation and
-  // decouples the script from the service bindings that reference it.
-  for (const e of ['dev', 'staging', 'production']) {
-    if (envs[e]?.name) {
-      console.error(`✗ ${app}: env.${e} declares "name": "${envs[e].name}" — remove it; the script name is derived as ${cfg.name}-${e}`);
-      failures++;
+  // Script naming is asymmetric, and deliberately so.
+  //
+  // dev is deployed from a developer machine, so wrangler's derivation applies
+  // and the script is <name>-dev. staging and production are deployed by
+  // Cloudflare Workers Builds, which forces the script onto whatever Worker the
+  // build is connected to by setting WRANGLER_CI_OVERRIDE_NAME. Our connected
+  // Workers are unsuffixed, so a derived <name>-staging would be silently
+  // overridden and the deploy would land on a Worker the config does not
+  // describe (the 2026-09-01 "Failed to match Worker name" warning). Those two
+  // envs therefore pin the bare name explicitly, which is safe because
+  // production lives in its own Cloudflare account and cannot collide.
+  if (envs.dev?.name) {
+    console.error(`✗ ${app}: env.dev declares "name": "${envs.dev.name}" — remove it; dev is deployed locally and derives ${cfg.name}-dev`);
+    failures++;
+  }
+  // Only applies to apps Workers Builds actually deploys. A `deploy:staging`
+  // script is the signal; apps/design has a PROPOSED config with no deploy
+  // pipeline (it still targets the Node adapter), so demanding a CI-pinned name
+  // from it would be noise.
+  let deployed = false;
+  try {
+    const pkg = JSON.parse(readFileSync(join(REPO, 'apps', app, 'package.json'), 'utf8'));
+    deployed = Boolean(pkg.scripts?.['deploy:staging']);
+  } catch {
+    // No package.json — treat as not deployed.
+  }
+  if (deployed) {
+    for (const e of ['staging', 'production']) {
+      const n = envs[e]?.name;
+      if (!n) {
+        console.error(`✗ ${app}: env.${e} must declare "name": "${cfg.name}" — Workers Builds overrides a derived name and would deploy elsewhere`);
+        failures++;
+      } else if (n !== cfg.name) {
+        console.error(`✗ ${app}: env.${e} name "${n}" must equal the top-level name "${cfg.name}" (the connected Worker is unsuffixed)`);
+        failures++;
+      }
     }
   }
   if (!cfg.name) { console.error(`✗ ${app}: no top-level "name" — nothing to derive env script names from`); failures++; }
