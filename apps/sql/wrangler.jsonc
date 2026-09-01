@@ -64,7 +64,12 @@
           "id": "ec6bd3583c3441569eff3a4b0d11ef30"
         }
       ],
-      "routes": [{ "pattern": "sql.baseout.dev/v1/*", "zone_name": "baseout.dev" }]
+      "routes": [
+        {
+          "pattern": "sql.baseout.dev/v1/*",
+          "zone_name": "baseout.dev"
+        }
+      ]
     },
     "production": {
       // PROVISION: production account id.
@@ -92,7 +97,12 @@
           "binding": "HYPERDRIVE"
         }
       ],
-      "routes": [{ "pattern": "sql.baseout.com/v1/*", "zone_name": "baseout.com" }]
+      "routes": [
+        {
+          "pattern": "sql.baseout.com/v1/*",
+          "zone_name": "baseout.com"
+        }
+      ]
     }
   }
 }
