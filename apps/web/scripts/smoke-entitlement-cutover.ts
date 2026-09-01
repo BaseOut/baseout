@@ -2,7 +2,7 @@
 // active/trialing subscription, resolve capabilities BOTH ways — legacy tier
 // table vs preferEntitlements — and diff the resulting TierCapabilitySet.
 // Read-only; prints a per-org verdict. Run:
-//   node --env-file=.env --import tsx/esm scripts/smoke-entitlement-cutover.ts
+//   node --env-file=.dev.vars --import tsx/esm scripts/smoke-entitlement-cutover.ts
 import { db, sql } from '../src/db/node'
 import { organizations } from '../src/db/schema'
 import { resolveCapabilities } from '../src/lib/capabilities/resolve'

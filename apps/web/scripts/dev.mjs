@@ -148,7 +148,7 @@ async function main() {
 
   // Reuse launch.mjs for env gating, wrangler.jsonc render, setup wizard,
   // migration-drift check, and the astro build.
-  await run('node', ['--env-file-if-exists=.env', 'scripts/launch.mjs', 'build', 'local']);
+  await run('node', ['--env-file-if-exists=.dev.vars', 'scripts/launch.mjs', 'build', 'local']);
 
   // wrangler `dev --remote` restarts on file changes and scandirs the assets
   // directory. Astro's rebuild briefly deletes `dist/client` mid-restart →

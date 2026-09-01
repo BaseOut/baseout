@@ -14,7 +14,7 @@ import { createHmac } from 'node:crypto';
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const env = Object.fromEntries(
-  readFileSync(new URL('../.env', import.meta.url), 'utf8')
+  readFileSync(new URL('../.dev.vars', import.meta.url), 'utf8')
     .split(/\r?\n/).filter(l => l && !l.startsWith('#'))
     .map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1)]; }));
 const devVars = Object.fromEntries(

@@ -2,12 +2,15 @@ import { defineConfig } from 'drizzle-kit'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+// .dev.vars is the single local env file (2026-08-31); .env kept as legacy fallback
+const devVarsPath = resolve(process.cwd(), '.dev.vars')
 const envPath = resolve(process.cwd(), '.env')
-if (existsSync(envPath)) process.loadEnvFile(envPath)
+if (existsSync(devVarsPath)) process.loadEnvFile(devVarsPath)
+else if (existsSync(envPath)) process.loadEnvFile(envPath)
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
-    'DATABASE_URL is not set. Copy .env.example to .env and fill in real values.',
+    'DATABASE_URL is not set. Copy .dev.vars.example to .dev.vars and fill in real values.',
   )
 }
 

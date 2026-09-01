@@ -13,7 +13,7 @@
 // 'instant' frequencies are skipped (webhook-driven, separate change).
 //
 // Invoked via:
-//   node --env-file-if-exists=.env scripts/bootstrap-space-do-alarms.mjs
+//   node --env-file-if-exists=.dev.vars scripts/bootstrap-space-do-alarms.mjs
 //
 // Required env:
 //   DATABASE_URL                  — master DB connection string

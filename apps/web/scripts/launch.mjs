@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const CONFIG_PATH = resolve(ROOT, 'app-config.json');
-const ENV_PATH = resolve(ROOT, '.env');
+const ENV_PATH = resolve(ROOT, '.dev.vars');
 const WRANGLER_PATH = resolve(ROOT, 'wrangler.jsonc');
 const WRANGLER_TEMPLATE_PATH = resolve(ROOT, 'wrangler.jsonc.example');
 
@@ -32,7 +32,7 @@ function renderWranglerConfig() {
   }
   const dbUrl = process.env.DATABASE_URL || (isDev ? null : DEV_DB_PLACEHOLDER);
   if (!dbUrl) {
-    return 'DATABASE_URL is not set. Copy .env.example to .env and fill in a real Postgres URL.';
+    return 'DATABASE_URL is not set. Add DATABASE_URL to .dev.vars (copy .dev.vars.example).';
   }
   const template = readFileSync(WRANGLER_TEMPLATE_PATH, 'utf8');
   let rendered = template.replaceAll('{{DATABASE_URL}}', dbUrl);
@@ -65,7 +65,7 @@ async function main() {
       missingEnv.forEach((k) => console.error(`    - ${k}`));
       if (!existsSync(ENV_PATH)) {
         console.error('');
-        console.error('  No .env file found. Run: cp .env.example .env');
+        console.error('  No .dev.vars file found. Run: cp .dev.vars.example .dev.vars');
       }
       console.error('');
       process.exit(1);
@@ -107,7 +107,7 @@ async function main() {
   if (isDev) {
     const driftCheck = spawn(
       'node',
-      ['--env-file-if-exists=.env', 'scripts/check-migrations.mjs'],
+      ['--env-file-if-exists=.dev.vars', 'scripts/check-migrations.mjs'],
       { stdio: 'inherit', shell: true, cwd: ROOT },
     );
     await new Promise((resolveProc, rejectProc) => {

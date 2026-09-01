@@ -14,7 +14,7 @@
 // two in sync.
 //
 // Invoked via:
-//   node --env-file-if-exists=.env scripts/bootstrap-retention-policies.mjs
+//   node --env-file-if-exists=.dev.vars scripts/bootstrap-retention-policies.mjs
 //
 // Required env:
 //   DATABASE_URL — master DB connection string

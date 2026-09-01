@@ -10,12 +10,12 @@
 // `cleanup <runId>` DELETEs the row when you're done.
 //
 // Why a small standalone script instead of psql: pulled out so a teammate
-// or the boss can clone the repo, drop their DATABASE_URL into .env, and
+// or the boss can clone the repo, drop their DATABASE_URL into .dev.vars, and
 // reproduce the smoke run identically — see CLAUDE.md §3.4 / §6.
 //
 // Invoked via:
-//   node --env-file-if-exists=.env scripts/smoke-seed-run.mjs seed
-//   node --env-file-if-exists=.env scripts/smoke-seed-run.mjs cleanup <runId>
+//   node --env-file-if-exists=.dev.vars scripts/smoke-seed-run.mjs seed
+//   node --env-file-if-exists=.dev.vars scripts/smoke-seed-run.mjs cleanup <runId>
 //
 // Reads DATABASE_URL from process.env. Uses the same `postgres` driver as
 // apps/server's per-request masterDb factory. No FK violations possible —

@@ -4,7 +4,7 @@
 // stripped down — apps/server has no Astro setup wizard / app-config.
 //
 // Invoked from package.json before `wrangler dev` and `wrangler deploy`.
-// Reads DATABASE_URL from process.env (loaded via `node --env-file=.env`
+// Reads DATABASE_URL from process.env (loaded via `node --env-file=.dev.vars`
 // in the npm scripts). The rendered wrangler.jsonc is gitignored.
 // Wrangler's runtime worker secrets continue to live in .dev.vars (auto-
 // loaded by `wrangler dev` itself).
@@ -38,7 +38,7 @@ const dbUrl = process.env.DATABASE_URL || (isDev ? null : DEV_DB_PLACEHOLDER);
 if (!dbUrl) {
   console.error(
     "\n  DATABASE_URL is not set." +
-      "\n  Add it to apps/server/.env (see apps/server/.dev.vars.example for the value template).\n",
+      "\n  Add it to apps/server/.dev.vars (see apps/server/.dev.vars.example for the value template).\n",
   );
   process.exit(1);
 }

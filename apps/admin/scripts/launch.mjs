@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 // apps/web/scripts/launch.mjs).
 //
 // Renders wrangler.jsonc from wrangler.jsonc.example (substituting DATABASE_URL
-// from .env into the Hyperdrive localConnectionString), then runs astro.
+// from .dev.vars into the Hyperdrive localConnectionString), then runs astro.
 //
 //   node scripts/launch.mjs dev     astro dev on baseout.local:4333
 //   node scripts/launch.mjs build   astro build (adapter emits dist/server/wrangler.json)
@@ -29,8 +29,8 @@ const DEV_DB_PLACEHOLDER = 'postgres://placeholder:placeholder@localhost:5432/pl
 
 const dbUrl = process.env.DATABASE_URL || (isDev ? null : DEV_DB_PLACEHOLDER);
 if (!dbUrl) {
-  console.error('\n  DATABASE_URL is not set. Run: cp .env.example .env');
-  console.error('  then paste the DATABASE_URL from apps/web/.env into apps/admin/.env\n');
+  console.error('\n  DATABASE_URL is not set. Run: cp .dev.vars.example .dev.vars');
+  console.error('  then paste the DATABASE_URL from apps/web/.dev.vars into apps/admin/.dev.vars\n');
   process.exit(1);
 }
 

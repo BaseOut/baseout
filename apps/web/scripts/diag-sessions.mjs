@@ -6,7 +6,7 @@ import postgres from 'postgres';
 import { readFileSync } from 'node:fs';
 
 const env = Object.fromEntries(
-  readFileSync(new URL('../.env', import.meta.url), 'utf8')
+  readFileSync(new URL('../.dev.vars', import.meta.url), 'utf8')
     .split(/\r?\n/).filter(l => l && !l.startsWith('#'))
     .map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1)]; }));
 const sql = postgres(env.DATABASE_URL, { ssl: 'require', max: 1 });

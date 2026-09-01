@@ -6,7 +6,7 @@ import postgres from 'postgres';
 import { readFileSync } from 'node:fs';
 
 const env = Object.fromEntries(
-  readFileSync(new URL('../.env', import.meta.url), 'utf8')
+  readFileSync(new URL('../.dev.vars', import.meta.url), 'utf8')
     .split(/\r?\n/)
     .filter((l) => l && !l.startsWith('#'))
     .map((l) => {

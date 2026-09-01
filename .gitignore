@@ -75,3 +75,5 @@ shared/internal/comp-ai*
 
 # Regenerable portal screenshots (scripts/support-snapshots.mjs)
 apps/support/snapshots/
+.dev.vars.*.bak
+.dev.vars.pre-*

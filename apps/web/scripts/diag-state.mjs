@@ -6,7 +6,7 @@ import postgres from 'postgres';
 import { readFileSync } from 'node:fs';
 
 const env = Object.fromEntries(
-  readFileSync(new URL('../.env', import.meta.url), 'utf8')
+  readFileSync(new URL('../.dev.vars', import.meta.url), 'utf8')
     .split(/\r?\n/)
     .filter((l) => l && !l.startsWith('#'))
     .map((l) => {
@@ -15,7 +15,7 @@ const env = Object.fromEntries(
     }),
 );
 const DATABASE_URL = env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error('DATABASE_URL not found in apps/web/.env');
+if (!DATABASE_URL) throw new Error('DATABASE_URL not found in apps/web/.dev.vars');
 
 const sql = postgres(DATABASE_URL, { ssl: 'require', max: 1 });
 
