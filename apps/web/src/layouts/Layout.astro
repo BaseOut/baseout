@@ -57,6 +57,19 @@ const embedBoot = {
       applyTheme();
       document.addEventListener('astro:after-swap', applyTheme);
     </script>
+    <script is:inline>
+      // Viewer timezone for SSR timestamps (lib/server-timezone.ts reads this
+      // cookie in middleware). Session-agnostic and non-sensitive: an IANA id
+      // like "America/Chicago". SameSite=Lax + 1y; refreshed on every load so
+      // travel/DST-zone moves catch up on the next navigation.
+      try {
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) {
+          document.cookie = 'bo_tz=' + encodeURIComponent(tz) +
+            '; path=/; max-age=31536000; samesite=lax';
+        }
+      } catch (e) { /* no Intl zone — server falls back to UTC */ }
+    </script>
   </head>
   <body class="font-sans text-base-content antialiased">
     <div id="nav-pending" class="nav-pending" hidden></div>

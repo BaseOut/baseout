@@ -23,6 +23,13 @@ declare namespace App {
       expiresAt: Date;
     } | null;
     account: import('./lib/account').AccountContext | null;
+    /**
+     * The viewer's IANA timezone for this request (bo_tz cookie, else
+     * request.cf.timezone), or null when neither was available/valid.
+     * Resolved by the viewerTimeZone middleware; `lib/time.ts` reads it via
+     * AsyncLocalStorage, so most code never touches this directly.
+     */
+    timeZone: string | null;
   }
 }
 

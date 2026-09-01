@@ -55,6 +55,32 @@
 
 const LOCALE = 'en-US'
 
+/* ── Render timezone ─────────────────────────────────────────────────────────
+ *
+ * These formatters run in TWO environments. In the browser the runtime zone IS
+ * the viewer's, so `timeZone: undefined` is already correct. Server-side the
+ * runtime zone is the Worker's (UTC), which is NOT the viewer's — that was the
+ * defect this hook removes: every SSR'd stamp printed UTC wall-clock time with
+ * no zone label to say so (the label itself was deliberately dropped, see
+ * `asOfWhen`). The server registers a per-request resolver (an
+ * AsyncLocalStorage lookup — `server-timezone.ts`, wired in middleware); the
+ * client never registers one, so client behavior is unchanged. The resolver
+ * lives behind a setter, not an import, so this module stays free of
+ * `node:async_hooks` and safe to bundle for the browser.
+ */
+type TimeZoneResolver = () => string | undefined
+
+let serverTimeZoneResolver: TimeZoneResolver | null = null
+
+export function setServerTimeZoneResolver(resolver: TimeZoneResolver | null): void {
+  serverTimeZoneResolver = resolver
+}
+
+/** The zone to format in: the resolved viewer zone, else the runtime default. */
+function renderTimeZone(): string | undefined {
+  return serverTimeZoneResolver?.() ?? undefined
+}
+
 /** Parse to a Date, or null. Never throws, never returns `Invalid Date`. */
 function parse(value: string | number | Date | null | undefined): Date | null {
   if (value === null || value === undefined || value === '') return null
@@ -73,7 +99,12 @@ export function toMs(value: string | number | Date | null | undefined): number |
 export function fmtDay(value: string | number | Date | null | undefined): string {
   const d = parse(value)
   return d
-    ? d.toLocaleDateString(LOCALE, { month: 'short', day: 'numeric', year: 'numeric' })
+    ? d.toLocaleDateString(LOCALE, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: renderTimeZone(),
+      })
     : ''
 }
 
@@ -81,26 +112,50 @@ export function fmtDay(value: string | number | Date | null | undefined): string
 export function fmtDayLong(value: string | number | Date | null | undefined): string {
   const d = parse(value)
   return d
-    ? d.toLocaleDateString(LOCALE, { month: 'long', day: 'numeric', year: 'numeric' })
+    ? d.toLocaleDateString(LOCALE, {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: renderTimeZone(),
+      })
     : ''
 }
 
 /** Day rule, compact: "Jul 14". For cells where the year is established above. */
 export function fmtDayShort(value: string | number | Date | null | undefined): string {
   const d = parse(value)
-  return d ? d.toLocaleDateString(LOCALE, { month: 'short', day: 'numeric' }) : ''
+  return d
+    ? d.toLocaleDateString(LOCALE, {
+        month: 'short',
+        day: 'numeric',
+        timeZone: renderTimeZone(),
+      })
+    : ''
 }
 
 /** Month bucket: "July 2026". For month separators in a long feed. */
 export function fmtMonth(value: string | number | Date | null | undefined): string {
   const d = parse(value)
-  return d ? d.toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' }) : ''
+  return d
+    ? d.toLocaleDateString(LOCALE, {
+        month: 'long',
+        year: 'numeric',
+        timeZone: renderTimeZone(),
+      })
+    : ''
 }
 
 /** Row time: "9:12 AM". Used beside a day header that carries the date. */
 export function fmtTime(value: string | number | Date | null | undefined): string {
   const d = parse(value)
-  return d ? d.toLocaleTimeString(LOCALE, { hour: 'numeric', minute: '2-digit', hour12: true }) : ''
+  return d
+    ? d.toLocaleTimeString(LOCALE, {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: renderTimeZone(),
+      })
+    : ''
 }
 
 /** Row absolute: "Jul 14, 9:12 AM". One value, one cell, no day header needed. */
@@ -113,6 +168,7 @@ export function fmtDateTime(value: string | number | Date | null | undefined): s
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
+        timeZone: renderTimeZone(),
       })
     : ''
 }
@@ -131,6 +187,7 @@ export function fmtAbsolute(value: string | number | Date | null | undefined): s
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    timeZone: renderTimeZone(),
   })
   return `${stamp} (${zoneLabel(d)})`
 }
@@ -183,7 +240,10 @@ export function fmtDuration(
  * should call this for display.
  */
 export function zoneLabel(at: Date = new Date()): string {
-  const part = new Intl.DateTimeFormat(LOCALE, { timeZoneName: 'shortOffset' })
+  const part = new Intl.DateTimeFormat(LOCALE, {
+    timeZoneName: 'shortOffset',
+    timeZone: renderTimeZone(),
+  })
     .formatToParts(at)
     .find((p) => p.type === 'timeZoneName')
   return part?.value ?? 'UTC'
@@ -224,7 +284,12 @@ export function zoneNote(at: Date = new Date()): string {
 export function asOfWhen(value: string | number | Date | null | undefined): string {
   const d = parse(value)
   if (!d) return ''
-  const sameYear = d.getFullYear() === new Date().getFullYear()
+  const timeZone = renderTimeZone()
+  // The year comparison happens in the SAME zone the stamp renders in —
+  // `getFullYear()` reads the runtime zone, which around New Year disagrees
+  // with the viewer's by up to a day.
+  const yearIn = (x: Date) => x.toLocaleDateString(LOCALE, { year: 'numeric', timeZone })
+  const sameYear = yearIn(d) === yearIn(new Date())
   return d.toLocaleString(LOCALE, {
     month: 'short',
     day: 'numeric',
@@ -232,6 +297,7 @@ export function asOfWhen(value: string | number | Date | null | undefined): stri
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    timeZone,
   })
 }
 
@@ -301,6 +367,7 @@ export function formatNextScheduledAt(
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    timeZone: renderTimeZone(),
   })
   return date.getTime() < now ? `Overdue — expected ${label}` : label
 }
@@ -331,5 +398,6 @@ export function expandedTimestamp(iso: string | null): string {
     dateStyle: 'medium',
     timeStyle: 'medium',
     hour12: true,
+    timeZone: renderTimeZone(),
   })
 }

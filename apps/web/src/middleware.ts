@@ -21,6 +21,7 @@ import { handleAccountCreated } from "./lib/signup/account-created";
 import { handleMagicLinkRequested, handleSessionCreated } from "./lib/auth-events";
 import { handleTwoFactorEvent } from "./lib/two-factor/events";
 import { applyNavSnapshotHeaders } from "./lib/nav-snapshot";
+import { resolveViewerTimeZone, runWithTimeZone } from "./lib/server-timezone";
 
 // /embed is public by design (shared-embed-protocol): an unauthenticated
 // embed renders its own minimal sign-in prompt (sign-in happens top-level via
@@ -159,6 +160,19 @@ export const embedFrameHeaders = defineMiddleware(async (context, next) => {
     );
   }
   return framed;
+});
+
+// Bind the VIEWER'S timezone for the whole render, so every `lib/time.ts`
+// stamp SSRs in the reader's zone instead of the Worker's (UTC) — see
+// lib/server-timezone.ts for the resolution order (bo_tz cookie, set by
+// Layout.astro → request.cf.timezone → runtime UTC fallback).
+const viewerTimeZone = defineMiddleware((context, next) => {
+  const tz = resolveViewerTimeZone(
+    context.request.headers.get('cookie'),
+    (context.request as { cf?: { timezone?: string } }).cf?.timezone,
+  );
+  context.locals.timeZone = tz ?? null;
+  return runWithTimeZone(tz, () => next());
 });
 
 const handleRequest = defineMiddleware(async (context, next) => {
@@ -353,7 +367,7 @@ function isDevRuntime(env: unknown): boolean {
   return (env as { BASEOUT_DEV?: string } | undefined)?.BASEOUT_DEV === 'true'
 }
 
-export const onRequest = sequence(embedFrameHeaders, handleRequest);
+export const onRequest = sequence(viewerTimeZone, embedFrameHeaders, handleRequest);
 
 /**
  * Append better-auth Set-Cookie headers onto an outgoing response — the
