@@ -62,7 +62,7 @@
     "dev": {
       "account_id": "33857e356899b7369fb01c18ace8d780",
       "vars": {
-        "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
+        "EMAIL_FROM": "Baseout <auth@mail.baseout.dev>",
         // auth-factory reads this as the magic-link origin; `pnpm dev`
         // overrides to https://baseout.local:4331 via `wrangler dev --var`.
         "PUBLIC_AUTH_BASE_URL": "https://baseout.local",
@@ -111,7 +111,8 @@
       },
       "send_email": [
         {
-          "name": "EMAIL"
+          "name": "EMAIL",
+          "remote": true
         }
       ],
       // `remote: true` is required for the binding to resolve to the deployed
@@ -154,7 +155,7 @@
       // mismatch, since production builds read this same file in a
       // different account. env.dev keeps its pin for local wrangler use.
       "vars": {
-        "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
+        "EMAIL_FROM": "Baseout <auth@mail.baseout.dev>",
         "PUBLIC_AUTH_BASE_URL": "https://console.baseout.dev",
         "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
         "ADMIN_APP_URL": "https://admin.baseout.dev",
