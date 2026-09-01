@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts `serviceRuns` (canonical writer of the
-// migration). Migration: apps/web/drizzle/0028_service_runs.sql (shared-service-runs).
+// migration). Migration: db/migrations/0028_service_runs.sql (shared-service-runs).
 //
 // Unlike most mirrors this one is WRITTEN by the engine — but only via the
 // withServiceRun()/openServiceRun()/finalizeServiceRun() helpers in

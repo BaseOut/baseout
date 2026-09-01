@@ -5,10 +5,10 @@
  * auth removed, there is no credential to seed — the user signs in locally
  * via magic-link (dev mode logs the URL to the worker console).
  *
- * Usage:  npm run seed
+ * Usage:  pnpm db:seed   (from the repo root)
  */
 
-import { db, sql } from '../src/db/node'
+import { db, sql } from '../../apps/web/src/db/node'
 import {
   users,
   platforms,
@@ -17,7 +17,7 @@ import {
   spaces,
   spacePlatforms,
   userPreferences,
-} from '../src/db/schema'
+} from '../../apps/web/src/db/schema'
 import { eq, sql as dsql } from 'drizzle-orm'
 
 const SEED_USER = {

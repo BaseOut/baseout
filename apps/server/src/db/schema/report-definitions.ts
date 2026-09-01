@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts (reportDefinitions — canonical writer).
-// Migration: apps/web/drizzle/0038_reports.sql
+// Migration: db/migrations/0038_reports.sql
 //
 // A report is a named DEFINITION: which sections, which bases, what time
 // window, plus one embedded delivery schedule (1:1, or none for manual-only).

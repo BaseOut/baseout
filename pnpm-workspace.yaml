@@ -9,6 +9,11 @@ packages:
   - "!apps/embed/airtable-data"
   - "!apps/embed/airtable-interface"
   - "packages/*"
+  # db/ owns the master-DB migration lineage and its runner (root CLAUDE.md
+  # §3.9, openspec/changes/system-db-migrations). A workspace member so it can
+  # hold its own drizzle-kit — the migrations are shared infrastructure read by
+  # five apps, not an apps/web concern.
+  - "db"
 
 # Transitive-dependency version pins to clear Dependabot high CVEs
 # (system-dep-remediation-2: post-consolidation re-apply + extend). pnpm 10+

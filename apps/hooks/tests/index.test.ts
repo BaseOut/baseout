@@ -16,7 +16,7 @@ import type { Env } from "../src/env";
 const VALID = "/webhooks/airtable/55555555-5555-5555-5555-555555555555";
 
 function env(overrides: Partial<Env> = {}): Env {
-  return { MASTER_ENCRYPTION_KEY: "test-key", DATABASE_URL: "postgres://unused/never-connected", ...overrides };
+  return { BASEOUT_ENCRYPTION_KEY: "test-key", DATABASE_URL: "postgres://unused/never-connected", ...overrides };
 }
 
 // Fresh per test so "DB never opened" (waitUntil never called) is isolated.
@@ -71,9 +71,9 @@ describe("hooks worker — method gate", () => {
 });
 
 describe("hooks worker — fail-closed on misconfiguration", () => {
-  it("503s (empty body) a valid POST when MASTER_ENCRYPTION_KEY is absent, before any DB work", async () => {
+  it("503s (empty body) a valid POST when BASEOUT_ENCRYPTION_KEY is absent, before any DB work", async () => {
     const ctx = newCtx();
-    const res = await worker.fetch(req(VALID, "POST"), env({ MASTER_ENCRYPTION_KEY: undefined }), ctx);
+    const res = await worker.fetch(req(VALID, "POST"), env({ BASEOUT_ENCRYPTION_KEY: undefined }), ctx);
     expect(res.status).toBe(503);
     expect(await res.text()).toBe(""); // Airtable contract: 200/204 empty on success; non-2xx must not carry a body it parses
     expect(ctx.waitUntil).not.toHaveBeenCalled(); // never constructed the master DB

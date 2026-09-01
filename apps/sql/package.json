@@ -5,12 +5,20 @@
   "type": "module",
   "description": "Public versioned read-only SQL API at sql.baseout.com. See openspec/changes/sql/proposal.md.",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "node --env-file-if-exists=.dev.vars scripts/dev.mjs --env dev",
     "build": "tsup src/index.ts --format esm --dts",
-    "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "openapi:generate": "tsx scripts/generate-openapi.ts"
+    "openapi:generate": "tsx scripts/generate-openapi.ts",
+    "build:dev": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\"",
+    "check:dev": "wrangler deploy --env dev --dry-run",
+    "deploy:dev": "wrangler deploy --env dev",
+    "build:staging": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\"",
+    "check:staging": "wrangler deploy --env staging --dry-run",
+    "deploy:staging": "wrangler deploy --env staging",
+    "build:production": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\"",
+    "check:production": "wrangler deploy --env production --dry-run",
+    "deploy:production": "wrangler deploy --env production"
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",

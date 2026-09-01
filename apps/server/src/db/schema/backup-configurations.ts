@@ -1,14 +1,14 @@
 // MIRROR of apps/web/src/db/schema/core.ts:395 (canonical writer).
-// Migrations: apps/web/drizzle/0004_user_role_and_backup_runs.sql
-//             apps/web/drizzle/0007_backup_schedule_and_cancel.sql
+// Migrations: db/migrations/0004_user_role_and_backup_runs.sql
+//             db/migrations/0007_backup_schedule_and_cancel.sql
 //             (adds next_scheduled_at — written by SpaceDO on alarm set/fire)
-//             apps/web/drizzle/0008_workspace_rediscovery.sql
+//             db/migrations/0008_workspace_rediscovery.sql
 //             (adds auto_add_future_bases — read by engine on rediscovery)
-//             apps/web/drizzle/0022_backup_scope.sql
+//             db/migrations/0022_backup_scope.sql
 //             (adds scope / schema_frequency / schema_next_scheduled_at — the
 //              schema schedule; read by SpaceDO.alarm(), schema_next written by
 //              the DO. server-backup-scope.)
-//             apps/web/drizzle/0030_airtable_webhooks.sql
+//             db/migrations/0030_airtable_webhooks.sql
 //             (adds webhook_poll_interval_seconds — read by SpaceDO webhook
 //              cadence polling. server-instant-webhook.)
 //

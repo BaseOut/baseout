@@ -1,2 +1,2 @@
 DATABASE_URL=postgres://localhost:5432/baseout_dev
-MASTER_ENCRYPTION_KEY=
+BASEOUT_ENCRYPTION_KEY=

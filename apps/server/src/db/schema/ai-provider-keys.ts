@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/ai-provider-keys.ts (canonical writer).
-// Migration: apps/web/drizzle/0036_ai_provider_keys.sql. Never migrate from this
+// Migration: db/migrations/0036_ai_provider_keys.sql. Never migrate from this
 // side — see CLAUDE.md §5.3 / §2.
 //
 // apps/web owns the write path (persistProviderKey encrypts the key). This engine

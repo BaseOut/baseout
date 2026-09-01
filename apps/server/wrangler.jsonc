@@ -1,4 +1,8 @@
-// apps/server — PROPOSED replacement for wrangler.jsonc.example (3 named envs).
+// apps/server — COMMITTED, AUTHORITATIVE wrangler config.
+// Not generated: there is no wrangler.jsonc.example and no renderer. The file
+// wrangler reads is the file you review. (scripts/launch.mjs existed only to
+// substitute a DATABASE_URL into localConnectionString; that value is now an
+// env var set by scripts/dev.mjs, so the renderer was deleted.)
 //
 // ENV MODEL (2026-08-27 revision):
 //   Top level      = shared, non-deployable config ONLY. `migrations` stays here
@@ -13,15 +17,17 @@
 // send_email/ai are non-inheritable, `wrangler deploy --env production` would
 // have stripped every binding off the live engine. Each env now restates all.
 //
-// {{DATABASE_URL}} is substituted by scripts/launch.mjs from .dev.vars and only
-// matters for env.dev — deployed Workers connect via the Hyperdrive `id`.
+// The local Postgres connection string is supplied as an env var by
+// scripts/dev.mjs and only matters for env.dev — deployed Workers connect via
+// the Hyperdrive `id`.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-server",
   "main": "./src/index.ts",
   "compatibility_date": "2026-04-22",
-  "compatibility_flags": ["nodejs_compat"],
-
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   // Durable Objects — canonical names per CLAUDE.md §5.3. The migration tag is
   // deploy-wide and stays top-level; the BINDINGS are non-inheritable and are
   // restated in every env block below.
@@ -29,18 +35,25 @@
   // gets fresh ConnectionDO/SpaceDO storage, and the production account's
   // namespaces start empty. DO SQLite state does NOT migrate across scripts
   // or accounts.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }],
-
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "ConnectionDO",
+        "SpaceDO"
+      ]
+    }
+  ],
   "env": {
     // ───────────────────────────── DEV ─────────────────────────────
     "dev": {
-      "account_id": "f094d60e8a0996752eb1efd971bda45a",
+      "account_id": "33857e356899b7369fb01c18ace8d780",
       "vars": {
         "BASEOUT_ENV": "dev",
         "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
         "PUBLIC_APP_URL": "https://baseout.local:4331",
         // Account that owns the per-Space D1 databases this Worker provisions.
-        "CLOUDFLARE_ACCOUNT_ID": "f094d60e8a0996752eb1efd971bda45a",
+        "CLOUDFLARE_ACCOUNT_ID": "33857e356899b7369fb01c18ace8d780",
         "DRIZZLE_SSL": "require",
         "TRIGGER_PROJECT_REF": "proj_lklmptmrmrkeaszrmhcs",
         // ConnectionDO lazy-refreshes an expired access token on /token.
@@ -62,29 +75,49 @@
       "triggers": {
         "crons": [
           "*/15 * * * *", // OAuth token refresh sweep + run reconciliation
-          "0 13 * * *",   // OAuth idle keep-alive (shared-oauth-refresh-keepalive)
-          "0 * * * *"     // Airtable webhook renewal (server-cron-webhook-renewal)
+          "0 13 * * *", // OAuth idle keep-alive (shared-oauth-refresh-keepalive)
+          "0 * * * *" // Airtable webhook renewal (server-cron-webhook-renewal)
         ]
       },
       // baseout-dev-pg — shared pool with baseout-dev + baseout-admin-dev.
       "hyperdrive": [
-        { "binding": "HYPERDRIVE", "id": "ba2652f40f864918a2da0849f24d12a2", "localConnectionString": "{{DATABASE_URL}}" }
+        {
+          "binding": "HYPERDRIVE",
+          "id": "00000000000000000000000000000000"
+        }
       ],
       // Platform-authenticated, no key. Local `wrangler dev` serves it through
       // a remote proxy — an expired `wrangler login` kills the dev server.
-      "ai": { "binding": "AI" },
+      "ai": {
+        "binding": "AI",
+        "remote": true
+      },
       // Native credential-less bucket binding (NOT S3 creds — r2-setup.md §2.4
       // is untouched). Read-only by discipline: the engine only .get()s.
-      "r2_buckets": [{ "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }],
-      "send_email": [{ "name": "EMAIL" }],
+      "r2_buckets": [
+        {
+          "binding": "BACKUPS_R2",
+          "bucket_name": "baseout-dev"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
       "durable_objects": {
         "bindings": [
-          { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
-          { "name": "SPACE_DO", "class_name": "SpaceDO" }
+          {
+            "name": "CONNECTION_DO",
+            "class_name": "ConnectionDO"
+          },
+          {
+            "name": "SPACE_DO",
+            "class_name": "SpaceDO"
+          }
         ]
       }
     },
-
     // ─────────────────────────── STAGING ───────────────────────────
     "staging": {
       // account_id intentionally omitted — Workers Builds runs inside the
@@ -94,8 +127,8 @@
       "vars": {
         "BASEOUT_ENV": "staging",
         "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
-        "PUBLIC_APP_URL": "https://staging.console.baseout.dev",
-        "CLOUDFLARE_ACCOUNT_ID": "f094d60e8a0996752eb1efd971bda45a",
+        "PUBLIC_APP_URL": "https://console.baseout.dev",
+        "CLOUDFLARE_ACCOUNT_ID": "33857e356899b7369fb01c18ace8d780",
         "DRIZZLE_SSL": "require",
         "TRIGGER_PROJECT_REF": "proj_lklmptmrmrkeaszrmhcs",
         "AIRTABLE_ON_DEMAND_REFRESH_ENABLED": "1",
@@ -134,25 +167,50 @@
       // Staging runs the real schedules against the staging DB. Comment these
       // out if you'd rather staging never fires background work.
       "triggers": {
-        "crons": ["*/15 * * * *", "0 13 * * *", "0 * * * *"]
+        "crons": [
+          "*/15 * * * *",
+          "0 13 * * *",
+          "0 * * * *"
+        ]
       },
       // PROVISION: baseout-staging-pg (Hyperdrive is never auto-created).
       // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
       // filled in. Do NOT use "id": "" — that silently DROPS the binding and
       // the Worker deploys with no database at all (verified on 4.112).
-      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
-      "ai": { "binding": "AI" },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ec6bd3583c3441569eff3a4b0d11ef30"
+        }
+      ],
+      "ai": {
+        "binding": "AI"
+      },
       // PROVISION: wrangler r2 bucket create baseout-backups-staging
-      "r2_buckets": [{ "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-staging" }],
-      "send_email": [{ "name": "EMAIL" }],
+      "r2_buckets": [
+        {
+          "binding": "BACKUPS_R2",
+          "bucket_name": "baseout-staging"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
       "durable_objects": {
         "bindings": [
-          { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
-          { "name": "SPACE_DO", "class_name": "SpaceDO" }
+          {
+            "name": "CONNECTION_DO",
+            "class_name": "ConnectionDO"
+          },
+          {
+            "name": "SPACE_DO",
+            "class_name": "SpaceDO"
+          }
         ]
       }
     },
-
     // ───────────────────────── PRODUCTION ──────────────────────────
     // Separate Cloudflare account. Re-provision everything there.
     "production": {
@@ -202,23 +260,48 @@
         ]
       },
       "triggers": {
-        "crons": ["*/15 * * * *", "0 13 * * *", "0 * * * *"]
+        "crons": [
+          "*/15 * * * *",
+          "0 13 * * *",
+          "0 * * * *"
+        ]
       },
       // PROVISION in the production account: baseout-live-pg.
       // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
       // filled in. Do NOT use "id": "" — that silently DROPS the binding and
       // the Worker deploys with no database at all (verified on 4.112).
-      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
-      "ai": { "binding": "AI" },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE"
+        }
+      ],
+      "ai": {
+        "binding": "AI"
+      },
       // PROVISION in the production account: baseout-live.
       // ⚠ R2 objects do NOT migrate between accounts — existing backups in the
       // current account's baseout-live must be copied before cutover.
-      "r2_buckets": [{ "binding": "BACKUPS_R2", "bucket_name": "baseout-live" }],
-      "send_email": [{ "name": "EMAIL" }],
+      "r2_buckets": [
+        {
+          "binding": "BACKUPS_R2",
+          "bucket_name": "baseout-live"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
       "durable_objects": {
         "bindings": [
-          { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
-          { "name": "SPACE_DO", "class_name": "SpaceDO" }
+          {
+            "name": "CONNECTION_DO",
+            "class_name": "ConnectionDO"
+          },
+          {
+            "name": "SPACE_DO",
+            "class_name": "SpaceDO"
+          }
         ]
       }
     }

@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:37 (canonical writer).
-// Migrations: apps/web/drizzle/0000_deep_freak.sql (initial)
+// Migrations: db/migrations/0000_deep_freak.sql (initial)
 //
 // Seeded reference table — not user-editable. apps/server reads the slug
 // for join filters (e.g. `WHERE platforms.slug = 'airtable'`) inside the

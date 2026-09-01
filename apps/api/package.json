@@ -7,13 +7,20 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsup src/index.ts --format esm --dts",
-    "deploy": "wrangler deploy",
     "deploy:dev": "wrangler deploy --env dev && pnpm run secrets:sync:dev",
     "secrets:sync:dev": "node scripts/sync-secrets.mjs --env dev",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
-    "openapi:generate": "tsx scripts/generate-openapi.ts"
+    "openapi:generate": "tsx scripts/generate-openapi.ts",
+    "check:dev": "wrangler deploy --env dev --dry-run",
+    "check:staging": "wrangler deploy --env staging --dry-run",
+    "deploy:staging": "wrangler deploy --env staging",
+    "check:production": "wrangler deploy --env production --dry-run",
+    "deploy:production": "wrangler deploy --env production",
+    "build:dev": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\"",
+    "build:staging": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\"",
+    "build:production": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\""
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",

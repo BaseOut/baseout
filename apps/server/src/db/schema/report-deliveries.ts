@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts (reportDeliveries — canonical writer).
-// Migration: apps/web/drizzle/0038_reports.sql
+// Migration: db/migrations/0038_reports.sql
 //
 // One row per recipient per rendered report, powering the UI's expandable
 // failure list + re-send. apps/web owns the migration; apps/server is the sole

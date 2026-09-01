@@ -1,7 +1,7 @@
 // MIRROR of apps/web/src/db/schema/entitlements.ts (canonical writer).
-// Migration: apps/web/drizzle/0035_usage_rollups_unique_idx.sql adds the
+// Migration: db/migrations/0035_usage_rollups_unique_idx.sql adds the
 // unique index this engine's ON CONFLICT upsert targets; the table itself
-// lands in apps/web/drizzle/0034_entitlements_catalog.sql.
+// lands in db/migrations/0034_entitlements_catalog.sql.
 //
 // apps/web owns the catalog + all entitlement migrations. apps/server writes
 // Space-attributed usage samples here from the run-completion ingestion

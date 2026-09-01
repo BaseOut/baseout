@@ -5,12 +5,12 @@
  *
  * Requires the 0034_entitlements_catalog migration applied (pnpm db:migrate).
  *
- * Usage:  pnpm --filter @baseout/web db:seed:entitlements
+ * Usage:  pnpm db:seed:entitlements   (from the repo root)
  */
 
-import { db, sql } from '../src/db/node'
-import { seedEntitlements } from '../src/db/seed/seed-entitlements'
-import { PRICING_GUIDE_VERSION } from '../src/db/seed/entitlements-catalog'
+import { db, sql } from '../../apps/web/src/db/node'
+import { seedEntitlements } from '../../apps/web/src/db/seed/seed-entitlements'
+import { PRICING_GUIDE_VERSION } from '../../apps/web/src/db/seed/entitlements-catalog'
 
 async function main() {
   console.log(`Seeding entitlement catalog (pricing guide ${PRICING_GUIDE_VERSION})...`)

@@ -43,7 +43,7 @@ function buildDeps(db: HooksDb, env: Env): HandlePingDeps {
         .set({ lastPingAt: at, lastPingSourceIp: sourceIp, modifiedAt: at })
         .where(eq(airtableWebhooks.id, id));
     },
-    encryptionKey: env.MASTER_ENCRYPTION_KEY ?? "",
+    encryptionKey: env.BASEOUT_ENCRYPTION_KEY ?? "",
     log: logEvent,
     now: () => new Date(),
   };
@@ -55,8 +55,8 @@ export default {
     const match = ROUTE_RE.exec(url.pathname);
     if (!match) return new Response(null, { status: 404 });
     if (request.method !== "POST") return new Response(null, { status: 405 });
-    if (!env.MASTER_ENCRYPTION_KEY) {
-      logEvent("webhook_receiver_misconfigured", { missing: "MASTER_ENCRYPTION_KEY" });
+    if (!env.BASEOUT_ENCRYPTION_KEY) {
+      logEvent("webhook_receiver_misconfigured", { missing: "BASEOUT_ENCRYPTION_KEY" });
       return new Response(null, { status: 503 });
     }
 

@@ -1,7 +1,7 @@
 // Master-DB access for apps/hooks — one registry table, per-request client.
 //
 // MIRROR of apps/web/src/db/schema/core.ts `airtableWebhooks` (canonical
-// writer; migration apps/web/drizzle/0030_airtable_webhooks.sql). Never
+// writer; migration db/migrations/0030_airtable_webhooks.sql). Never
 // migrate from this side. Only the columns the receiver touches — same
 // local-mirror convention as apps/api/src/db/schema.ts (the "publish via
 // @baseout/db-schema" wording in server-instant-webhook A.5 is superseded by

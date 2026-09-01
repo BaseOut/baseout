@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:1025 (canonical writer).
-// Migrations: apps/web/drizzle/0030_airtable_webhooks.sql
+// Migrations: db/migrations/0030_airtable_webhooks.sql
 //
 // Per-Space fan-out of the org-level airtable_webhooks registry
 // (server-instant-webhook Phase A): which Spaces consume a webhook, each with

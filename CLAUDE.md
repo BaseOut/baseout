@@ -44,6 +44,7 @@ packages/
   db-schema/  Drizzle schema (shared)
   shared/     Shared types + utilities
   ui/         Shared UI primitives
+db/           Master-DB migrations (canonical) + the migration runner — see §3.9
 openspec/     OpenSpec changes + specs (driven by opsx:propose|apply|archive)
 shared/       Product-spec docs (PRD, Features, Implementation Plan, Backlog)
 brand/        Brand assets + guidelines
@@ -277,6 +278,42 @@ Persistent knowledge about how the system **currently works** lives in the [lat.
 - Use wiki refs `[[file#H1#H2]]` within a single graph. **Across graphs** (root ↔ per-app, or app-to-app) use plain markdown links — `lat check` doesn't validate cross-graph wiki refs.
 - Add `// @lat: [[section-id]]` reverse refs at the top of load-bearing files only (already done for `apps/server/src/middleware.ts`, the DOs, `master-schema.ts`, `apps/web/src/middleware.ts`, `apps/web/src/lib/account.ts`, `apps/web/src/stores/account.ts`). Don't retrofit scaffold code.
 - The `lat` MCP server is registered in [.mcp.json](.mcp.json) — query the graph via MCP (`lat search`, `lat section`, `lat refs`) rather than shelling out via Bash where possible.
+
+## 3.9 Master-DB Migrations Live in `db/migrations/`
+
+> **Status:** target location, specified in `openspec/changes/system-db-migrations/`.
+> Until that change lands the files are still at `apps/web/drizzle/` — but **new**
+> migrations should be authored with this destination in mind, and nothing new should be
+> added to a second location.
+
+**One lineage, one location, one runner.** The master (core) database has exactly one
+migration history. It lives in `db/migrations/` — not inside any `apps/*` directory, because
+five apps read the schema it defines (`web`, `server`, `hooks`, `api`, `sql`) and the
+database is shared infrastructure, not one app's concern.
+
+**Rules:**
+
+- **Every core-DB migration goes in `db/migrations/`.** Generated with
+  `pnpm db:generate`, applied with `pnpm db:migrate` (or `pnpm db:migrate:tunnel` where the
+  database has no public ingress). Never hand-edit an applied migration or its journal —
+  Drizzle hashes contents, and a mismatch surfaces much later as an unexplained failure.
+- **Never create a second migration directory.** If you find yourself adding
+  `apps/<name>/drizzle/`, you are proposing a second history for one database. Mirrored
+  tables in `apps/server/src/db/schema/` carry a `// Migration: db/migrations/00XX_*.sql`
+  header comment naming the canonical source; they define no migrations of their own.
+- **Per-Space schemas are NOT part of this.** `packages/db-schema/drizzle.space-pg.config.ts`
+  and `drizzle.space-sqlite.config.ts` generate DDL applied at Space-provision time by
+  application code, against per-Space databases. They stay where they are and must never be
+  wired into the core migration runner.
+- **Expand-then-contract is required, not advisory.** Cloudflare Workers Builds deploys all
+  apps in parallel, so a migration cannot be guaranteed to land before every Worker that
+  reads the schema. Therefore: additive change (nullable / defaulted) ships in release *n*;
+  the destructive half (drop column, add `NOT NULL`, rename) ships no earlier than *n+1*,
+  after every Worker is known to be on the new code. A single change that does both **will**
+  break production regardless of CI wiring.
+- **A migration is not done until it is applied to dev.** `pnpm dev` runs `db:check` and
+  bails if the journal is ahead of `drizzle.__drizzle_migrations`. Schema-aware SSR 404s or
+  500s opaquely the moment a `SELECT` names a missing column — see `apps/web/.claude/CLAUDE.md` §5.5.
 
 ---
 

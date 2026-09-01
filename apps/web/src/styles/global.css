@@ -6,6 +6,19 @@
 /* Tailwind CSS + dark variant for Nexus themes */
 @import "@opensided/theme/styles/tailwind.css";
 
+/* Exclude the vendored donor template from Tailwind's automatic source scan.
+   Tailwind v4 auto-scans the project root, which includes
+   vendor/@opensided/theme/src — 58 of its demo pages (landing/, admin/apps/
+   ecommerce/) carry arbitrary utilities like bg-[url(/images/landing/
+   hero-bg-gradient.png)]. Tailwind emitted those url()s, Vite could not resolve
+   them (the demo images were never copied into public/), and every build
+   printed "didn't resolve at build time, it will remain unchanged to be
+   resolved at runtime" — i.e. a guaranteed 404 had any of those rules applied.
+   Safe to exclude: we consume the theme's CSS only. Nothing in apps/web,
+   apps/admin or apps/design imports its components/pages/hooks/contexts, so no
+   class we actually render lives solely in that tree. */
+@source not "../../vendor/**";
+
 /* Explicit content-scan for apps/web/src. No-op for apps/web's own build
    (Tailwind v4 already auto-scans the project root) but load-bearing for
    `apps/design`, which imports this stylesheet via Layout.astro from a

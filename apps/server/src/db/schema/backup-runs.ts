@@ -1,7 +1,7 @@
 // MIRROR of apps/web/src/db/schema/core.ts:322 (canonical writer).
-// Migrations: apps/web/drizzle/0004_user_role_and_backup_runs.sql
-//             apps/web/drizzle/0006_windy_sauron.sql (trigger_run_ids column)
-//             apps/web/drizzle/0022_backup_scope.sql (kind column — full|schema)
+// Migrations: db/migrations/0004_user_role_and_backup_runs.sql
+//             db/migrations/0006_windy_sauron.sql (trigger_run_ids column)
+//             db/migrations/0022_backup_scope.sql (kind column — full|schema)
 //
 // apps/web INSERTs each row on user-triggered or scheduled run-create.
 // apps/server flips status (queued → running → succeeded | failed |
@@ -71,7 +71,7 @@ export const backupRuns = baseout.table("backup_runs", {
   // Soft-delete marker — the cleanup pass sets this AFTER the run's storage
   // objects are removed (openspec/changes/server-retention-and-cleanup). The
   // row is retained for audit; cleanup queries filter `deleted_at IS NULL`.
-  // Migration: apps/web/drizzle/0021_backup_retention_and_cleanup.sql.
+  // Migration: db/migrations/0021_backup_retention_and_cleanup.sql.
   modifiedAt: timestamp("modified_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

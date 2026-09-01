@@ -121,6 +121,19 @@ function stabilizeClientAssets() {
   const cfg = JSON.parse(readFileSync(wranglerConfig, 'utf8'));
   if (!cfg.assets) cfg.assets = {};
   cfg.assets.directory = '../client-stable';
+
+  // LOCAL mode (the default): drop `remote: true` from BACKUP_ENGINE so
+  // apps/web talks to a LOCAL `wrangler dev` engine over the dev registry instead
+  // of the deployed sibling. This used to be a regex on the RENDERED wrangler.jsonc;
+  // that file is now committed and authoritative, so the tweak belongs here — on
+  // the adapter's throwaway dist output, alongside the assets retarget. CI and the
+  // `wrangler` npm scripts never reach this path, so `remote: true` is preserved
+  // for them and can never leak into a deploy.
+  if (process.env.BACKUP_LOCAL_ENGINE === '1') {
+    for (const svc of cfg.services ?? []) delete svc.remote;
+    console.log('  ✓ BACKUP_ENGINE bound to the LOCAL engine (remote flag dropped).');
+  }
+
   writeFileSync(wranglerConfig, JSON.stringify(cfg));
   console.log('  ✓ Assets snapshotted to dist/client-stable (wrangler ENOENT guard).');
 }
@@ -128,27 +141,35 @@ function stabilizeClientAssets() {
 async function main() {
   await ensureHostsEntry();
 
-  // `pnpm dev` runs `wrangler dev --remote` by DEFAULT. The worker runs on
-  // Cloudflare's edge, where the `send_email` binding delivers REAL magic-link
-  // emails — local Miniflare (no --remote) cannot send email at all, so login
-  // silently breaks there. The `--var` below pins PUBLIC_AUTH_BASE_URL to
-  // https://baseout.local:4331, so the emailed link and post-login redirect
-  // target your local dev server. This is the login flow that worked before
-  // `1df335f` flipped the default to a local engine.
+  // `pnpm dev` is LOCAL by default: Miniflare simulates KV, Hyperdrive and the
+  // rest, so no Cloudflare auth is needed and nothing touches real resources.
   //
-  // Opt into the fully-local backup loop (faster; binds to a sibling local
-  // engine via the dev registry) with BACKUP_LOCAL=1 — but note that mode
-  // CANNOT deliver login emails.
-  const useRemoteEngine = process.env.BACKUP_LOCAL !== '1';
+  // `pnpm dev:remote` (DEV_REMOTE=1) runs `wrangler dev --remote` instead: the
+  // worker executes on Cloudflare's edge against REAL bindings. The reason to
+  // want that is the `send_email` binding — Miniflare cannot send at all, so
+  // magic-link LOGIN EMAILS are only delivered in remote mode. It requires a
+  // valid `wrangler login` / CLOUDFLARE_API_TOKEN for the account owning the
+  // dev KV + Hyperdrive ids in wrangler.jsonc.
+  //
+  // The `--var` below pins PUBLIC_AUTH_BASE_URL to https://baseout.local:4331
+  // in both modes, so any emitted link targets your local dev server.
+  const useRemoteEngine = process.env.DEV_REMOTE === '1';
 
-  // Signal launch.mjs (below) to strip `"remote": true` from the rendered
-  // wrangler.jsonc so it matches our --remote choice. ONLY dev.mjs sets this, so
-  // the `wrangler` npm scripts and CI/deploy builds never strip (deploy-safe).
+  // Signal stabilizeClientAssets() to strip `"remote": true` from the ADAPTER'S
+  // dist/server/wrangler.json so it matches our --remote choice. ONLY dev.mjs sets
+  // this, so the `wrangler` npm scripts and CI/deploy builds never strip
+  // (deploy-safe). The committed wrangler.jsonc is never touched.
   process.env.BACKUP_LOCAL_ENGINE = useRemoteEngine ? '0' : '1';
 
-  // Reuse launch.mjs for env gating, wrangler.jsonc render, setup wizard,
-  // migration-drift check, and the astro build.
-  await run('node', ['--env-file-if-exists=.env', 'scripts/launch.mjs', 'build', 'local']);
+  // Reuse launch.mjs for env gating, setup wizard, migration-drift check, and
+  // the astro build. (It no longer renders wrangler.jsonc — that file is
+  // committed and authoritative.)
+  // CLOUDFLARE_ENV picks WHICH named env the Astro adapter flattens into
+  // dist/server/wrangler.json. wrangler.jsonc's top level holds no bindings by
+  // design (they are non-inheritable and live in env.dev/staging/production), so
+  // without this the dev worker would start with no DB, no KV and no engine.
+  process.env.CLOUDFLARE_ENV ??= 'dev';
+  await run('node', ['--env-file-if-exists=.dev.vars', 'scripts/launch.mjs', 'build', 'local']);
 
   // wrangler `dev --remote` restarts on file changes and scandirs the assets
   // directory. Astro's rebuild briefly deletes `dist/client` mid-restart →
@@ -172,14 +193,16 @@ async function main() {
 
   if (useRemoteEngine) {
     console.log('');
-    console.log('  ⚑ --remote: worker runs on Cloudflare\'s edge, so magic-link LOGIN EMAILS');
-    console.log('    are delivered for real, with links to https://baseout.local:4331.');
-    console.log('    Fully-local backup loop (no login email): BACKUP_LOCAL=1 pnpm --filter @baseout/web dev');
+    console.log('  \u2691 --remote (DEV_REMOTE=1): worker runs on Cloudflare\'s edge against REAL');
+    console.log('    bindings — real KV, real Hyperdrive, real send_email. Requires Cloudflare');
+    console.log('    auth for the account owning the ids in wrangler.jsonc (try `cfuse <acct>`).');
+    console.log('    This is the only mode that delivers magic-link LOGIN EMAILS.');
   } else {
     console.log('');
-    console.log('  ⚑ Local backup loop (BACKUP_LOCAL=1) — web binds to a LOCAL engine (no --remote).');
-    console.log('    ⚠ magic-link LOGIN EMAIL is NOT delivered in this mode — Miniflare cannot send.');
-    console.log('    For login, use the default `pnpm dev` (--remote). This mode is for backups:');
+    console.log('  \u2691 LOCAL mode (default) — Miniflare simulates KV/Hyperdrive; no Cloudflare auth.');
+    console.log('    web binds to a LOCAL engine over the dev registry (remote flag stripped).');
+    console.log('    \u26a0 magic-link LOGIN EMAIL is NOT delivered here — Miniflare cannot send.');
+    console.log('    For login email, use: pnpm --filter @baseout/web run dev:remote');
     console.log('    `pnpm dev` (repo root) also starts the engine + trigger.dev runner.');
     console.log('    Runner env must point BACKUP_ENGINE_URL at http://localhost:8787 with a');
     console.log('    matching INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md §7.4.');
@@ -204,6 +227,23 @@ async function main() {
   console.log('     prints its localhost bind address below.');
   console.log('  ────────────────────────────────────────────────────────────');
   console.log('');
+
+  // Local Hyperdrive emulation needs a real Postgres connection string. It comes
+  // from CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE in .dev.vars —
+  // this script is launched with `node --env-file-if-exists=.dev.vars`, so Node
+  // puts it in process.env and the spawned wrangler inherits it. No mapping code:
+  // the variable is simply named what wrangler looks for.
+  //
+  // NOTE: apps/web itself never needs DATABASE_URL. The Worker reaches Postgres
+  // only through the HYPERDRIVE binding; DATABASE_URL belongs to the migration
+  // runner (@baseout/db) and the diag scripts.
+  if (!process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE) {
+    console.warn('');
+    console.warn('  ! CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE is not set.');
+    console.warn('    Hyperdrive will fall back to the placeholder in wrangler.jsonc and');
+    console.warn('    every DB query will fail. Add it to apps/web/.dev.vars.');
+    console.warn('');
+  }
 
   const child = spawn('npx', ['wrangler', ...wranglerArgs], {
     stdio: 'inherit',

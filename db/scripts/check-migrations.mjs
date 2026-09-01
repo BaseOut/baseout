@@ -1,6 +1,6 @@
 // Migration-drift guard for local dev.
 //
-// Compares apps/web/drizzle/meta/_journal.json (the canonical list of
+// Compares db/migrations/meta/_journal.json (the canonical list of
 // migration tags Drizzle expects to have been applied) against
 // drizzle.__drizzle_migrations (the row-per-applied-migration tracking
 // table). If the tracker shows fewer rows than the journal lists, the
@@ -20,8 +20,10 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import postgres from 'postgres'
 
+// Lives in db/scripts/ alongside the lineage it guards (root CLAUDE.md §3.9).
+// Paths resolve from this file's own location, so it works from any CWD.
 const ROOT = resolve(import.meta.dirname, '..')
-const JOURNAL_PATH = resolve(ROOT, 'drizzle/meta/_journal.json')
+const JOURNAL_PATH = resolve(ROOT, 'migrations/meta/_journal.json')
 
 async function check() {
   if (!existsSync(JOURNAL_PATH)) {

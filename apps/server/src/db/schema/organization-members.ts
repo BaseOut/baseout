@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:85 (canonical writer).
-// Migrations: apps/web/drizzle/0000_deep_freak.sql (initial).
+// Migrations: db/migrations/0000_deep_freak.sql (initial).
 //
 // apps/server reads owner/admin membership to determine whether an Organization
 // is internally owned/administered by @openside.com staff for entitlement

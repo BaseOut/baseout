@@ -5,17 +5,21 @@
   "type": "module",
   "description": "Internal Astro SSR admin app. See openspec/changes/admin-foundation/proposal.md (tracer slice) and openspec/changes/admin/proposal.md (full console, deferred).",
   "scripts": {
-    "dev": "node --env-file-if-exists=.env scripts/launch.mjs dev",
-    "build": "node --env-file-if-exists=.env scripts/launch.mjs build",
-    "deploy": "node --env-file-if-exists=.env scripts/launch.mjs build && wrangler deploy --config dist/server/wrangler.json && pnpm run secrets:sync",
+    "dev": "node --env-file-if-exists=.dev.vars scripts/launch.mjs dev",
+    "build": "pnpm run build:dev",
     "secrets:sync": "node scripts/sync-secrets.mjs --config dist/server/wrangler.json",
-    "preview:sync": "node --env-file-if-exists=.env scripts/launch.mjs render-config && wrangler preview settings update --worker-name baseout-admin -y",
     "preview": "astro preview",
     "astro": "astro",
     "typecheck": "astro check",
     "lint": "eslint .",
     "test:unit": "vitest run",
-    "test:unit:watch": "vitest"
+    "test:unit:watch": "vitest",
+    "build:dev": "CLOUDFLARE_ENV=dev node --env-file-if-exists=.dev.vars scripts/launch.mjs build",
+    "deploy:dev": "wrangler deploy --env dev && pnpm run secrets:sync",
+    "build:staging": "CLOUDFLARE_ENV=staging node --env-file-if-exists=.dev.vars scripts/launch.mjs build",
+    "deploy:staging": "wrangler deploy --env staging",
+    "build:production": "CLOUDFLARE_ENV=production node --env-file-if-exists=.dev.vars scripts/launch.mjs build",
+    "deploy:production": "wrangler deploy --env production"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^13.1.10",

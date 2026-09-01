@@ -1,7 +1,7 @@
 // MIRROR of apps/web/src/db/schema/core.ts:196 (canonical writer).
 //
 // apps/web owns the connections table — its OAuth callback INSERTs/UPDATEs
-// rows, and the master DB migrations are generated from apps/web/drizzle/.
+// rows, and the master DB migrations are generated from db/migrations/.
 // This mirror declares the columns the engine reads (id, status, the _enc
 // tokens, expiry, scopes, platform_config, created_at — read by the
 // SpaceDO scheduler in Phase B for `ORDER BY created_at DESC` recency).

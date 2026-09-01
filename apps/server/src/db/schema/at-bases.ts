@@ -1,6 +1,6 @@
 // MIRROR of apps/web/src/db/schema/core.ts:154 (canonical writer).
-// Migrations: apps/web/drizzle/0000_deep_freak.sql
-//             apps/web/drizzle/0008_workspace_rediscovery.sql
+// Migrations: db/migrations/0000_deep_freak.sql
+//             db/migrations/0008_workspace_rediscovery.sql
 //             (adds discovered_via, first_seen_at — written by the engine on
 //             workspace rediscovery upsert)
 //

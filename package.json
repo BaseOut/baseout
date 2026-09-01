@@ -15,6 +15,9 @@
     "lint": "pnpm -r --parallel run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml,astro}\"",
     "openspec:changes": "node scripts/openspec-changes.mjs",
+    "db:generate": "pnpm --filter @baseout/db run db:generate",
+    "db:migrate": "pnpm --filter @baseout/db run db:migrate",
+    "db:check": "pnpm --filter @baseout/db run db:check",
     "ui:sync-status": "node scripts/ui-sync-status.mjs",
     "support:docs-register": "node scripts/support-docs-register.mjs",
     "support:docs-check": "node scripts/support-docs-register.mjs --check",
@@ -35,7 +38,9 @@
     "dev:design": "pnpm --filter @baseout/design dev",
     "dev:support": "pnpm --filter @baseout/support dev",
     "design": "pnpm --filter @baseout/design dev",
-    "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev"
+    "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev",
+    "db:seed": "pnpm --filter @baseout/db run db:seed",
+    "db:seed:entitlements": "pnpm --filter @baseout/db run db:seed:entitlements"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

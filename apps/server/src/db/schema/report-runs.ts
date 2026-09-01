@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts (reportRuns — canonical writer).
-// Migration: apps/web/drizzle/0038_reports.sql
+// Migration: db/migrations/0038_reports.sql
 //
 // The run history for a report definition; a run's rendered document is a
 // versioned ReportDetail JSON artifact. apps/web owns the migration; apps/server

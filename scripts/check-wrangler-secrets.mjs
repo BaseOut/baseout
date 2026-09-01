@@ -17,8 +17,20 @@ import { join } from 'node:path';
 
 const REPO = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const DEPLOYED = ['staging', 'production'];
+// Migration-aware. An app still being drafted has BOTH files: new.wrangler.jsonc
+// (the intended 3-env state) and wrangler.jsonc (the legacy pre-migration one).
+// A promoted app has only wrangler.jsonc. So new.* WINS when present — otherwise
+// this checks the very config the migration is replacing.
 const fileArg = process.argv.indexOf('--file');
-const FILENAME = fileArg > -1 ? process.argv[fileArg + 1] : 'new.wrangler.jsonc';
+const FORCED = fileArg > -1 ? process.argv[fileArg + 1] : null;
+const CANDIDATES = FORCED ? [FORCED] : ['new.wrangler.jsonc', 'wrangler.jsonc'];
+function configFor(app) {
+  for (const name of CANDIDATES) {
+    const p = join(REPO, 'apps', app, name);
+    if (existsSync(p)) return { name, path: p };
+  }
+  return null;
+}
 
 function stripJsonc(src) {
   let out = '', inStr = false, esc = false, i = 0;
@@ -34,10 +46,10 @@ function stripJsonc(src) {
 }
 
 let failures = 0;
-const apps = readdirSync(join(REPO, 'apps')).filter(a => existsSync(join(REPO, 'apps', a, FILENAME)));
+const apps = readdirSync(join(REPO, 'apps')).filter(a => configFor(a));
 
 for (const app of apps) {
-  const cfg = JSON.parse(stripJsonc(readFileSync(join(REPO, 'apps', app, FILENAME), 'utf8')));
+  const cfg = JSON.parse(stripJsonc(readFileSync(configFor(app).path, 'utf8')));
   const envs = cfg.env ?? {};
   const lists = {};
   for (const e of DEPLOYED) {
@@ -113,7 +125,7 @@ for (const e of ENVS) scriptNames[e] = new Map();
 
 const configs = {};
 for (const app of apps) {
-  const cfg = JSON.parse(stripJsonc(readFileSync(join(REPO, 'apps', app, FILENAME), 'utf8')));
+  const cfg = JSON.parse(stripJsonc(readFileSync(configFor(app).path, 'utf8')));
   configs[app] = cfg;
   for (const e of ENVS) {
     const envBlock = cfg.env?.[e];

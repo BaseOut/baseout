@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:285 (canonical writer).
-// Migrations: apps/web/drizzle/0000_deep_freak.sql (initial)
+// Migrations: db/migrations/0000_deep_freak.sql (initial)
 //
 // One row per active Platform within a subscription. apps/web is the
 // canonical writer (Stripe webhook + onboarding). apps/server reads

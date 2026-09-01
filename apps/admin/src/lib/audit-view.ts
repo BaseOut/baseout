@@ -3,7 +3,7 @@
 // PRD §16.1: staff can "view and search … audit trail". The two-row
 // intent/result model (lib/audit.ts) is paired here into one logical entry
 // per action. NOTE: `admin_audit_log.action` has NO DB CHECK constraint
-// (verified: apps/web/drizzle/0025_admin_audit_log.sql — plain text), so
+// (verified: db/migrations/0025_admin_audit_log.sql — plain text), so
 // unknown action strings must render gracefully, never crash.
 
 import type { BadgeVariant } from './ui'

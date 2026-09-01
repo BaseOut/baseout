@@ -75,3 +75,11 @@ shared/internal/comp-ai*
 
 # Regenerable portal screenshots (scripts/support-snapshots.mjs)
 apps/support/snapshots/
+
+# Per-app staging/production secret bundles fed to `wrangler secret bulk`.
+# Real credential values — never commit. The canonical name is
+# apps/<app>/.env.secrets, already covered by each app's own `.env.*` rule;
+# these no-slash patterns are belt-and-braces and also catch the other spelling
+# anywhere in the tree.
+secrets.env
+.env.secrets

@@ -15,62 +15,77 @@
   "name": "baseout-admin",
   // No `main` — the @astrojs/cloudflare adapter owns the worker entry.
   "compatibility_date": "2026-04-22",
-  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
-  // ── Astro build outputs ─────────────────────────────────────────────────
-  // Declared HERE so `wrangler deploy --env <x>` runs against THIS file rather
-  // than the adapter-generated dist/server/wrangler.json. That generated file
-  // is FLATTENED to one environment (no `env` key at all, just a
-  // `definedEnvironments` list), so it cannot accept --env — the env would have
-  // to be chosen at build time via CLOUDFLARE_ENV. Deploying the source config
-  // keeps one reviewed source of truth and makes `secrets.required` apply.
-  //
-  // Values copied verbatim from what @astrojs/cloudflare emits. All four keys
-  // are inheritable, so the top level is the correct home for them.
-  // ⚠ VERIFY the `main` path against dist/ after the first successful build —
-  // adapter output layout has moved between major versions.
-  "main": "./dist/server/entry.mjs",
-  // Astro already bundled; wrangler must upload the emitted modules as-is.
-  "no_bundle": true,
-  "rules": [{ "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }],
-  // Static output. The adapter's entry serves these through the ASSETS binding,
-  // so this is REQUIRED — it is one of the bindings the adapter injects into its
-  // own generated config and which we must now declare ourselves.
-  "assets": { "binding": "ASSETS", "directory": "./dist/client" },
-  "observability": { "enabled": false, "logs": { "enabled": false } },
-  "dev": { "port": 4333 },
-
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
+  // Astro 6 unified entrypoint — a MODULE SPECIFIER, not a file path, so it
+  // resolves in node_modules and exists before the build (@cloudflare/vite-plugin
+  // validates `main` at the START of the build; a dist/ path fails there).
+  // No `assets` / `no_bundle` / `rules`: the adapter emits those into
+  // dist/server/wrangler.json and wrangler follows the .wrangler/deploy/config.json
+  // redirect to it. Deploy flow: CLOUDFLARE_ENV=<env> astro build && wrangler deploy.
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "observability": {
+    "enabled": false,
+    "logs": {
+      "enabled": false
+    }
+  },
+  "dev": {
+    "port": 4333
+  },
   "env": {
     "dev": {
-      "account_id": "f094d60e8a0996752eb1efd971bda45a",
+      "account_id": "33857e356899b7369fb01c18ace8d780",
       // Where the customer app (and its /login + /api/admin/handoff) lives;
       // the staff gate routes unauthenticated visitors there.
-      "vars": { "WEB_APP_URL": "https://baseout-web-dev.openside.workers.dev" },
+      "vars": {
+        "WEB_APP_URL": "https://console.baseout.local"
+      },
       // REUSES the shared dev Hyperdrive (baseout-dev-pg) that baseout-dev and
       // baseout-server-dev point at — Workers on the same config share one
       // 15-conn origin pool against dev PG's ~19 usable. Do NOT create a
       // second config for admin (2026-07-08 "backups spin forever" incident).
       "hyperdrive": [
-        { "binding": "HYPERDRIVE", "id": "ba2652f40f864918a2da0849f24d12a2", "localConnectionString": "{{DATABASE_URL}}" }
+        {
+          "binding": "HYPERDRIVE",
+          "id": "00000000000000000000000000000000"
+        }
       ],
       // Admin doesn't use Astro sessions, but @astrojs/cloudflare injects a
       // SESSION binding unconditionally — without a pinned id, deploy tries to
       // interactively provision one. Dedicated namespace, NOT web's.
       // Adapter-injected binding, non-inheritable — declared per env now that
       // we deploy the source config rather than the adapter's output.
-      "images": { "binding": "IMAGES" },
-      "kv_namespaces": [{ "binding": "SESSION", "id": "dc4341c8e5fa45cc82047733f66a6113" }],
+      "images": {
+        "binding": "IMAGES"
+      },
+      "kv_namespaces": [
+        {
+          "binding": "SESSION"
+        }
+      ],
       // Staff actions (force backup, invalidate connection) call the engine's
       // INTERNAL_TOKEN-gated routes. `remote: true` lets local `astro dev`
       // proxy to the deployed sibling.
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-dev", "remote": true }]
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server-dev",
+          "remote": true
+        }
+      ]
     },
-
     "staging": {
+      "routes": [{ "pattern": "admin.baseout.dev", "custom_domain": true }],
       // account_id intentionally omitted — Workers Builds runs inside the
       // owning account and supplies it. Pinning it here can only create a
       // mismatch, since production builds read this same file in a
       // different account. env.dev keeps its pin for local wrangler use.
-      "vars": { "WEB_APP_URL": "https://staging.console.baseout.dev" },
+      "vars": {
+        "WEB_APP_URL": "https://console.baseout.dev"
+      },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
       // `vars`), so it MUST be restated per env — a top-level-only block
@@ -89,20 +104,38 @@
       // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
       // filled in. Do NOT use "id": "" — that silently DROPS the binding and
       // the Worker deploys with no database at all (verified on 4.112).
-      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ec6bd3583c3441569eff3a4b0d11ef30"
+        }
+      ],
       // PROVISION: wrangler kv namespace create baseout-staging-admin-session
       // Adapter-injected binding, non-inheritable — declared per env now that
       // we deploy the source config rather than the adapter's output.
-      "images": { "binding": "IMAGES" },
-      "kv_namespaces": [{ "binding": "SESSION", "id": "" }],
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-staging" }]
+      "images": {
+        "binding": "IMAGES"
+      },
+      "kv_namespaces": [
+        {
+          "binding": "SESSION"
+        }
+      ],
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server-staging"
+        }
+      ]
     },
-
     "production": {
+      "routes": [{ "pattern": "admin.baseout.com", "custom_domain": true }],
       // PROVISION: production account id.
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.
-      "vars": { "WEB_APP_URL": "https://console.baseout.com" },
+      "vars": {
+        "WEB_APP_URL": "https://console.baseout.com"
+      },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
       // `vars`), so it MUST be restated per env — a top-level-only block
@@ -120,13 +153,29 @@
       // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
       // filled in. Do NOT use "id": "" — that silently DROPS the binding and
       // the Worker deploys with no database at all (verified on 4.112).
-      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE"
+        }
+      ],
       // PROVISION in the production account: baseout-live-admin-session.
       // Adapter-injected binding, non-inheritable — declared per env now that
       // we deploy the source config rather than the adapter's output.
-      "images": { "binding": "IMAGES" },
-      "kv_namespaces": [{ "binding": "SESSION", "id": "" }],
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-production" }]
+      "images": {
+        "binding": "IMAGES"
+      },
+      "kv_namespaces": [
+        {
+          "binding": "SESSION",
+          "id": ""
+        }
+      ],
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server-production"
+        }
+      ]
     }
   }
   // Routes: none declared. admin.baseout.com is a dashboard Custom Domain on

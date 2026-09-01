@@ -7,10 +7,18 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsup src/index.ts --format esm --dts",
-    "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:dev": "wrangler deploy --env dev --dry-run",
+    "deploy:dev": "wrangler deploy --env dev",
+    "check:staging": "wrangler deploy --env staging --dry-run",
+    "deploy:staging": "wrangler deploy --env staging",
+    "check:production": "wrangler deploy --env production --dry-run",
+    "deploy:production": "wrangler deploy --env production",
+    "build:dev": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\"",
+    "build:staging": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\"",
+    "build:production": "pwd && echo \"no build step — wrangler bundles ./src/index.ts at deploy time\""
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",

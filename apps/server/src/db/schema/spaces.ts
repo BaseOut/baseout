@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:108 (canonical writer).
-// Migrations: apps/web/drizzle/0000_deep_freak.sql (initial)
+// Migrations: db/migrations/0000_deep_freak.sql (initial)
 //
 // apps/web writes spaces during onboarding. apps/server reads
 // `organization_id` from the SpaceDO scheduler (Phase B of

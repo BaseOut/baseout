@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:991 (canonical writer).
-// Migrations: apps/web/drizzle/0030_airtable_webhooks.sql
+// Migrations: db/migrations/0030_airtable_webhooks.sql
 //
 // Org-level Airtable webhook registry (server-instant-webhook Phase A).
 // One row per (organization, base) — Airtable caps 2 webhooks per base per

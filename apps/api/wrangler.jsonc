@@ -1,130 +1,185 @@
+// apps/api — PROPOSED replacement for wrangler.jsonc (3 named envs).
+//
+//   Top level      = shared config only; always deploy with --env.
+//   env.dev        = baseout-api-dev     (staging account)
+//   env.staging    = baseout-api-staging (staging account, `staging` branch)
+//   env.production = baseout-api         (SEPARATE production account)
+//
+// CHANGED vs the old file:
+//   - env.production/staging were name-only, so a `--env` deploy would have
+//     shipped with NO Hyperdrive, NO service binding, NO rate limiter and NO
+//     analytics dataset (those keys are non-inheritable).
+//   - the rate limiter moved off `unsafe.bindings` onto the first-class
+//     `ratelimits` key (wrangler 4.112 schema).
+//   - compatibility_date bumped 2025-01-01 → 2026-04-22 to match web/server.
+//     Safe here because this Worker is not deployed yet; do NOT bump a live
+//     Worker's date without checking the compat-flag diff.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-api",
   "main": "./src/index.ts",
-  "compatibility_date": "2025-01-01",
-  "compatibility_flags": ["nodejs_compat"],
-
-  // Outgoing service binding to the backup engine (per-Space schema reads;
-  // design D3). Local `wrangler dev` binds to a locally-running baseout-server.
-  "services": [{ "binding": "SERVER", "service": "baseout-server" }],
-
-  // Per-request usage metering (api-usage-tracking). Queryable via the AE SQL API.
-  "analytics_engine_datasets": [{ "binding": "API_USAGE", "dataset": "baseout_api_requests" }],
-
-  // Shadow rate limiting keyed by token id (beta binding). `simple` is the
-  // provisional 100 req / 60s placeholder — subject to product-owner confirmation
-  // (open question). Enforcement is gated by the RATE_LIMIT_ENFORCE var, not this.
-  "unsafe": {
-    "bindings": [
-      {
-        "name": "RATE_LIMITER",
-        "type": "ratelimit",
-        "namespace_id": "1001",
-        "simple": { "limit": 100, "period": 60 }
-      }
-    ]
-  },
-
-  "vars": {
-    // Launch state: shadow-only. Flip to "true" to enforce (429) — config, not code.
-    "RATE_LIMIT_ENFORCE": "false",
-    // Monthly-quota 429s (api-productionization 4.2) — needs AE_* creds + Dan's go.
-    "QUOTA_ENFORCE": "false",
-    // MCP appUrl deep links (api-search-tools D4) — local dev console.
-    "PUBLIC_APP_URL": "https://baseout.local:4331"
-  },
-
-  // Master-DB access. Direct postgres-js TLS from workerd hangs (~3 min, then
-  // fails) under `wrangler dev` — the same trap apps/server documents — so local
-  // dev MUST go through wrangler's local Hyperdrive simulator: `pnpm dev` runs
-  // scripts/dev.mjs, which feeds .dev.vars DATABASE_URL to the binding via
-  // WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE. The id below is a
-  // local-dev placeholder: deployed envs (production/staging) declare their own
-  // provisioned binding in their env blocks (task 5.3) — bindings are
-  // non-inheritable, so this top-level entry never reaches a deploy.
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "00000000000000000000000000000000",
-      "localConnectionString": "postgres://run-via-scripts-dev-mjs.invalid:5432/unset"
-    }
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": [
+    "nodejs_compat"
   ],
-
-  // DEPLOY-BLOCKED (production only — dev deploys today via `pnpm deploy:dev`,
-  // see env.dev below). Remaining gap = Dan's env-lane completion for apps/api
-  // (api-write-foundation task 5.3):
-  //  - Public route on the domain:
-  //      "routes": [{ "pattern": "api.baseout.com/*", "zone_name": "baseout.com" }]
-  //  - Production Hyperdrive binding in env.production
-  //      ("baseout live" Hyperdrive is Dan-owned; id goes here when assigned)
-  //  - Logpush + 4xx/5xx alerting.
-
   "env": {
-    // Dev lane (api-write-foundation task 5.1): workers.dev, shared dev
-    // Hyperdrive (NEVER a new config — the dev PG cluster is conn-starved),
-    // SERVER bound to the production engine script (`baseout-server-dev` was
-    // removed in the Aug-19 env-model shift; same posture as apps/web dev).
-    // Deploy: `pnpm --filter @baseout/api deploy:dev` (deploy + .dev.vars
-    // secret sync — never `wrangler secret put` by hand, CLAUDE.md §3.3).
-    // Bindings are non-inheritable, so everything is restated here.
     "dev": {
-      "name": "baseout-api-dev",
-      "workers_dev": true,
-      "services": [{ "binding": "SERVER", "service": "baseout-server" }],
-      "analytics_engine_datasets": [{ "binding": "API_USAGE", "dataset": "baseout_api_requests" }],
-      "unsafe": {
-        "bindings": [
-          {
-            "name": "RATE_LIMITER",
-            "type": "ratelimit",
-            "namespace_id": "1001",
-            "simple": { "limit": 100, "period": 60 }
-          }
-        ]
-      },
+      "account_id": "33857e356899b7369fb01c18ace8d780",
       "vars": {
-        "RATE_LIMIT_ENFORCE": "false",
-        "QUOTA_ENFORCE": "false",
-        "PUBLIC_APP_URL": "https://baseout-dev.openside.workers.dev"
+        // Launch state: shadow-only. "true" enforces 429 — config, not code.
+        "RATE_LIMIT_ENFORCE": "false"
       },
+      // Direct postgres-js TLS from workerd HANGS (~3 min, then fails) under
+      // `wrangler dev` — the same trap apps/server documents. Local dev must go
+      // through wrangler's Hyperdrive simulator: `pnpm dev` runs scripts/dev.mjs,
+      // which feeds .dev.vars DATABASE_URL in via
+      // WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",
-          "id": "ba2652f40f864918a2da0849f24d12a2"
+          "id": "00000000000000000000000000000000"
+        }
+      ],
+      "services": [
+        {
+          "binding": "SERVER",
+          "service": "baseout-server-dev",
+          "remote": true
+        }
+      ],
+      // Per-request usage metering (api-usage-tracking); queryable via the AE SQL API.
+      "analytics_engine_datasets": [
+        {
+          "binding": "API_USAGE",
+          "dataset": "baseout_api_requests_dev"
+        }
+      ],
+      // Provisional 100 req / 60s placeholder — pending product-owner
+      // confirmation. Enforcement is gated by RATE_LIMIT_ENFORCE, not this.
+      "ratelimits": [
+        {
+          "name": "RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": {
+            "limit": 100,
+            "period": 60
+          }
         }
       ]
     },
-    // Production scaffold (api-productionization 4.4): everything restated and
-    // ready except Dan's two values + one decision — fill <PROD_HYPERDRIVE_ID>
-    // ("baseout live"), uncomment the route, confirm PUBLIC_APP_URL. Secrets
-    // (DATABASE_URL fallback unused with Hyperdrive; INTERNAL_TOKEN) are
-    // production-managed — NOT synced from any .dev.vars. Per-tier rate
-    // limiters (RATE_LIMITER_LITE/_CORE/_PLUS/_MAX/_ENTERPRISE, same
-    // `ratelimit` type) slot in beside RATE_LIMITER when Dan's numbers land —
-    // the code already selects by plan slug (lib/ratelimit.ts limiterForPlan).
-    "production": {
-      "name": "baseout-api",
-      "services": [{ "binding": "SERVER", "service": "baseout-server" }],
-      "analytics_engine_datasets": [{ "binding": "API_USAGE", "dataset": "baseout_api_requests" }],
-      "unsafe": {
-        "bindings": [
-          {
-            "name": "RATE_LIMITER",
-            "type": "ratelimit",
-            "namespace_id": "1001",
-            "simple": { "limit": 100, "period": 60 }
-          }
+    "staging": {
+      // account_id intentionally omitted — Workers Builds runs inside the
+      // owning account and supplies it. Pinning it here can only create a
+      // mismatch, since production builds read this same file in a
+      // different account. env.dev keeps its pin for local wrangler use.
+      "vars": {
+        "RATE_LIMIT_ENFORCE": "false"
+      },
+      // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
+      // `secrets` is NOT inherited from the top level (wrangler treats it like
+      // `vars`), so it MUST be restated per env — a top-level-only block
+      // validates nothing on a --env deploy and warns. `pnpm secrets:check`
+      // asserts the two lists match; CI fails on drift.
+      // env.dev deliberately has NO block: dev secrets come from .dev.vars
+      // and are not deploy-gated.
+      "secrets": {
+        "required": [
+          "INTERNAL_TOKEN",
+          "BASEOUT_ENCRYPTION_KEY",
+          "SERVICE_HMAC_TO_BACKUP"
         ]
       },
-      "vars": {
-        "RATE_LIMIT_ENFORCE": "false",
-        "QUOTA_ENFORCE": "false"
-        // "PUBLIC_APP_URL": "<PROD_CONSOLE_ORIGIN>"  // confirm with Dan (console.baseout.dev?)
-      }
-      // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<PROD_HYPERDRIVE_ID>" }],
-      // "routes": [{ "pattern": "api.baseout.com/*", "zone_name": "baseout.com" }]
+      // PROVISION: baseout-staging-pg
+      // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
+      // filled in. Do NOT use "id": "" — that silently DROPS the binding and
+      // the Worker deploys with no database at all (verified on 4.112).
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ec6bd3583c3441569eff3a4b0d11ef30"
+        }
+      ],
+      "services": [
+        {
+          "binding": "SERVER",
+          "service": "baseout-server-staging"
+        }
+      ],
+      "analytics_engine_datasets": [
+        {
+          "binding": "API_USAGE",
+          "dataset": "baseout_api_requests_staging"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": {
+            "limit": 100,
+            "period": 60
+          }
+        }
+      ],
+      "routes": [{ "pattern": "api.baseout.dev", "custom_domain": true }]
     },
-    "staging": { "name": "baseout-api-staging" }
+    "production": {
+      // PROVISION: production account id.
+      // account_id intentionally omitted — supplied by Workers Builds in the
+      // production account. Never pin it: this file is read by both accounts.
+      "vars": {
+        "RATE_LIMIT_ENFORCE": "false"
+      },
+      // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
+      // `secrets` is NOT inherited from the top level (wrangler treats it like
+      // `vars`), so it MUST be restated per env — a top-level-only block
+      // validates nothing on a --env deploy and warns. `pnpm secrets:check`
+      // asserts the two lists match; CI fails on drift.
+      // env.dev deliberately has NO block: dev secrets come from .dev.vars
+      // and are not deploy-gated.
+      "secrets": {
+        "required": [
+          "INTERNAL_TOKEN",
+          "BASEOUT_ENCRYPTION_KEY",
+          "SERVICE_HMAC_TO_BACKUP"
+        ]
+      },
+      // PROVISION in the production account: baseout-live-pg
+      // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
+      // filled in. Do NOT use "id": "" — that silently DROPS the binding and
+      // the Worker deploys with no database at all (verified on 4.112).
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE"
+        }
+      ],
+      "services": [
+        {
+          "binding": "SERVER",
+          "service": "baseout-server-production"
+        }
+      ],
+      "analytics_engine_datasets": [
+        {
+          "binding": "API_USAGE",
+          "dataset": "baseout_api_requests"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": {
+            "limit": 100,
+            "period": 60
+          }
+        }
+      ],
+      // The baseout.com zone must exist in the PRODUCTION account for this to
+      // deploy — moving a zone between accounts is a separate migration.
+      "routes": [{ "pattern": "api.baseout.com", "custom_domain": true }]
+    }
   }
+  // Still deploy-blocked pending the ops follow-up (task 5.3): Logpush +
+  // 4xx/5xx alerting.
 }

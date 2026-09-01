@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/entitlements.ts (canonical writer).
-// Migration: apps/web/drizzle/0034_entitlements_catalog.sql.
+// Migration: db/migrations/0034_entitlements_catalog.sql.
 //
 // apps/web owns the catalog + all entitlement migrations. The engine READS these
 // sparse per-account overrides when resolving effective entitlements at usage-

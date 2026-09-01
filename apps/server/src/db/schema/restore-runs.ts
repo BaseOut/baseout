@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:restoreRuns (canonical writer).
-// Migration: apps/web/drizzle/0019_shallow_mattie_franklin.sql
+// Migration: db/migrations/0019_shallow_mattie_franklin.sql
 //
 // apps/web INSERTs each row when the user initiates a restore.
 // apps/server flips status (queued → running → succeeded | failed |

@@ -134,6 +134,12 @@ Debug output must not ship. Before any commit — especially anything destined f
 
 ## 5.5. Schema Changes Must Migrate Before They Ship
 
+> **Migration files are moving to `db/migrations/` at the repo root** — one lineage for the
+> whole core DB, since five apps read it. See root `CLAUDE.md` §3.9 and
+> `openspec/changes/system-db-migrations/`. Until that change lands they remain at
+> `apps/web/drizzle/`; either way, **never create a second migration directory**, and
+> `pnpm db:migrate` remains the only applier.
+
 If a change adds, removes, renames, or retypes a column in [src/db/schema/](../src/db/schema/) — or touches a Drizzle schema in any way that produces a new file under [drizzle/](../drizzle/) — the migration **must be applied to the dev DB in the same change that introduces the code that reads or writes the new column**. Schema-aware SSR will 404 (catch-all) or 500 the moment a `SELECT` references a missing column, and the failure mode is opaque (no helpful error in the rendered page).
 
 **Rules:**

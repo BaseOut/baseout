@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts (canonical writer).
-// Migration: apps/web/drizzle/0008_workspace_rediscovery.sql
+// Migration: db/migrations/0008_workspace_rediscovery.sql
 //
 // Tiny per-Space notification surface. apps/web reads unread rows on SSR
 // and renders an inline banner; apps/web exposes a dismiss route that

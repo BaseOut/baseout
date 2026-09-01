@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts health_score_rules (canonical writer).
-// Migrations: apps/web/drizzle/0023_health_metric_prompt.sql (adds prompt +
+// Migrations: db/migrations/0023_health_metric_prompt.sql (adds prompt +
 //             entity_tier on top of the system-per-space-db catalog).
 //
 // apps/web owns the org-scoped Health metric catalog. apps/server READS it to

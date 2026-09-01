@@ -156,7 +156,7 @@ export const spacePlatforms = baseout.table('space_platforms', {
 // MIRROR NOTE (web-workspace-bases): the engine (apps/server) READS the
 // workspace_id / workspace_name columns for the per-run auto-enroll check
 // (server-mcp-workspaces) — canonical migration is
-// apps/web/drizzle/0033_workspace_bases.sql (CLAUDE.md §2 mirror rule).
+// db/migrations/0033_workspace_bases.sql (CLAUDE.md §2 mirror rule).
 // ———————————————————————————————————————————————————————————————————————————
 
 export const atBases = baseout.table('at_bases', {
@@ -196,7 +196,7 @@ export const atBases = baseout.table('at_bases', {
 // engine when backup_configurations.auto_enroll_new_workspaces is true and
 // a new workspace first appears (design Decision 2b).
 // MIRROR NOTE: the engine (apps/server) reads AND inserts ('auto') rows —
-// canonical migration is apps/web/drizzle/0033_workspace_bases.sql
+// canonical migration is db/migrations/0033_workspace_bases.sql
 // (CLAUDE.md §2 mirror rule; paired change server-mcp-workspaces).
 // ———————————————————————————————————————————————————————————————————————————
 
@@ -837,7 +837,7 @@ export const spaceDatabases = baseout.table('space_databases', {
 // One row per restore run. Mirrors the backup_runs lifecycle (queued → running →
 // succeeded | failed | cancelling | cancelled). Canonical owner; apps/server
 // mirrors this in apps/server/src/db/schema/restore-runs.ts.
-// Migrations: apps/web/drizzle/0019_restore_runs.sql
+// Migrations: db/migrations/0019_restore_runs.sql
 // ———————————————————————————————————————————————————————————————————————————
 
 export const restoreRuns = baseout.table('restore_runs', {
@@ -883,7 +883,7 @@ export const restoreRuns = baseout.table('restore_runs', {
 // When present, provides the per-base breakdown for the run-detail UI.
 // Absent for legacy completions that predate the workflows-run-detail change.
 // Canonical owner; apps/server mirrors this in backup-run-bases.ts.
-// Migration: apps/web/drizzle/0020_backup_run_bases_and_tables.sql
+// Migration: db/migrations/0020_backup_run_bases_and_tables.sql
 // ———————————————————————————————————————————————————————————————————————————
 
 export const backupRunBases = baseout.table('backup_run_bases', {
@@ -911,7 +911,7 @@ export const backupRunBases = baseout.table('backup_run_bases', {
 // Per-table snapshot written alongside backup_run_bases rows. One row per table
 // within a base's backup snapshot. Absent for legacy completions.
 // Canonical owner; apps/server mirrors this in backup-run-tables.ts.
-// Migration: apps/web/drizzle/0020_backup_run_bases_and_tables.sql
+// Migration: db/migrations/0020_backup_run_bases_and_tables.sql
 // ———————————————————————————————————————————————————————————————————————————
 
 export const backupRunTables = baseout.table('backup_run_tables', {
@@ -937,7 +937,7 @@ export const backupRunTables = baseout.table('backup_run_tables', {
 // numeric knobs are nullable because each tier only uses a subset (see the
 // design's per-tier field table). Canonical owner; apps/server mirrors this in
 // backup-retention-policies.ts. Migration:
-// apps/web/drizzle/0021_backup_retention_and_cleanup.sql
+// db/migrations/0021_backup_retention_and_cleanup.sql
 // ———————————————————————————————————————————————————————————————————————————
 
 /** Retention policy shape per Features §6.9 — Basic → Custom ladder. */
@@ -1095,7 +1095,7 @@ export const adminErrorAcks = baseout.table('admin_error_acks', {
 // polls on its own cadence and pulls payloads via the cursor API. One webhook
 // per (org, base) — Airtable caps 2/base/integration — with per-Space
 // subscription cursors. No event rows, no queue (webhook_events was dropped
-// from the design). Canonical migration: apps/web/drizzle/0030.
+// from the design). Canonical migration: db/migrations/0030.
 export const airtableWebhooks = baseout.table('airtable_webhooks', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
   // ^ pre-generated and embedded in the notificationUrl path — NOT Airtable's id.

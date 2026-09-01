@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts (canonical writer — `spaceDatabases`).
-// Migration: apps/web/drizzle/0017_young_valeria_richards.sql
+// Migration: db/migrations/0017_young_valeria_richards.sql
 //
 // apps/web INSERTs the row at Space creation (status='pending') via the engine
 // provisioning route; apps/server (this Worker) owns the per-Space DB lifecycle:
@@ -27,12 +27,12 @@ export const spaceDatabases = baseout.table("space_databases", {
   // 'pending' | 'provisioning' | 'active' | 'migrating' | 'error'
   d1DatabaseId: text("d1_database_id"),
   // Dashboard-legible D1 name beside the UUID locator (server-d1-backend).
-  // Migration: apps/web/drizzle/0039_d1_database_name.sql
+  // Migration: db/migrations/0039_d1_database_name.sql
   d1DatabaseName: text("d1_database_name"),
   pgLocator: text("pg_locator"),
   byodbConnectionStringEnc: text("byodb_connection_string_enc"),
   // Tier-facing isolation class (shared-db-isolation-ladder L1). Migration:
-  // apps/web/drizzle/0037_db_isolation_ladder.sql. Derived from backend today;
+  // db/migrations/0037_db_isolation_ladder.sql. Derived from backend today;
   // the engine will set it explicitly once L3 cluster provisioning lands.
   isolationClass: text("isolation_class"), // d1 | shared_cluster | dedicated_cluster | byodb
   clusterId: text("cluster_id"),

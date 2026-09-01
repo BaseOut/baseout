@@ -7,7 +7,9 @@ dist/
 
 # wrangler.jsonc is generated from wrangler.jsonc.example by scripts/dev.mjs
 # (it contains the local Postgres connection string from .env)
-wrangler.jsonc
+# wrangler.jsonc is COMMITTED and authoritative (no template, no renderer).
+# No localConnectionString in any env — the local Postgres string comes from
+# CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE in .dev.vars.
 
 # environment variables — real secrets never commit; .env.example is tracked
 .env

@@ -319,6 +319,13 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
       },
     },
     advanced: {
+      // Without this, Better Auth cannot resolve a client IP and collapses rate
+      // limiting to ONE shared bucket for every caller — a real weakness on
+      // /api/auth/sign-in/magic-link in deployed envs, not just a local warning.
+      // cf-connecting-ip is the trustworthy header on Workers (set by the edge);
+      // x-forwarded-for is the fallback. Miniflare sets neither, so the warning
+      // persists in local dev — harmless there.
+      ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
       useSecureCookies: resolveUseSecureCookies(env.baseUrl),
       defaultCookieAttributes: resolveCookieAttributes(env.baseUrl),
       database: {

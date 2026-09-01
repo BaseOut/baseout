@@ -1,10 +1,10 @@
 // MIRROR of apps/web/src/db/schema/core.ts:storageDestinations (canonical writer).
 // Canonical migrations:
-//   apps/web/drizzle/0009_storage_destinations.sql           — initial (local_fs + google_drive)
-//   apps/web/drizzle/0010_storage_destinations_box.sql       — adds 'box' to CHECK
-//   apps/web/drizzle/0011_storage_destinations_dropbox.sql   — adds 'dropbox' to CHECK
-//   apps/web/drizzle/0012_storage_destinations_onedrive.sql  — adds 'onedrive' to CHECK
-//   apps/web/drizzle/0024_multi_destinations.sql              — UNIQUE(space_id) → UNIQUE(space_id, type);
+//   db/migrations/0009_storage_destinations.sql           — initial (local_fs + google_drive)
+//   db/migrations/0010_storage_destinations_box.sql       — adds 'box' to CHECK
+//   db/migrations/0011_storage_destinations_dropbox.sql   — adds 'dropbox' to CHECK
+//   db/migrations/0012_storage_destinations_onedrive.sql  — adds 'onedrive' to CHECK
+//   db/migrations/0024_multi_destinations.sql              — UNIQUE(space_id) → UNIQUE(space_id, type);
 //     a Space holds one row per provider type; the PRIMARY destination is
 //     backup_configurations.storage_type (shared-multi-destinations). The
 //     internal route resolves by (space_id, ?type=) with a config fallback.

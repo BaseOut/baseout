@@ -17,9 +17,12 @@
 // inherited from the top level environment").
 // https://developers.cloudflare.com/workers/wrangler/configuration/#environments
 //
-// scripts/launch.mjs substitutes {{DATABASE_URL}} from .env into the gitignored
-// wrangler.jsonc. Deployed Workers ignore localConnectionString (they use the
-// Hyperdrive `id`), so only env.dev carries the placeholder.
+// THIS FILE IS COMMITTED AND AUTHORITATIVE. It is not generated, and there is no
+// wrangler.jsonc.example — the file wrangler reads is the file you review.
+// The only reason a template ever existed was localConnectionString needing a
+// real credential at config-parse time; that is now injected as an env var by
+// scripts/dev.mjs instead. Deployed Workers ignore localConnectionString
+// entirely (they connect via the Hyperdrive `id`).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   // Required at top level even though nothing deploys from here; every env
@@ -27,30 +30,27 @@
   "name": "baseout-web",
   // No `main` — the @astrojs/cloudflare adapter owns the worker entry.
   "compatibility_date": "2026-04-22",
-  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
-  // ── Astro build outputs ─────────────────────────────────────────────────
-  // Declared HERE so `wrangler deploy --env <x>` runs against THIS file rather
-  // than the adapter-generated dist/server/wrangler.json. That generated file
-  // is FLATTENED to one environment (no `env` key at all, just a
-  // `definedEnvironments` list), so it cannot accept --env — the env would have
-  // to be chosen at build time via CLOUDFLARE_ENV. Deploying the source config
-  // keeps one reviewed source of truth and makes `secrets.required` apply.
-  //
-  // Values copied verbatim from what @astrojs/cloudflare emits. All four keys
-  // are inheritable, so the top level is the correct home for them.
-  // ⚠ VERIFY the `main` path against dist/ after the first successful build —
-  // adapter output layout has moved between major versions.
-  "main": "./dist/server/entry.mjs",
-  // Astro already bundled; wrangler must upload the emitted modules as-is.
-  "no_bundle": true,
-  "rules": [{ "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }],
-  // Static output. The adapter's entry serves these through the ASSETS binding,
-  // so this is REQUIRED — it is one of the bindings the adapter injects into its
-  // own generated config and which we must now declare ourselves.
-  "assets": { "binding": "ASSETS", "directory": "./dist/client" },
-  "observability": { "enabled": false, "logs": { "enabled": false } },
-  "dev": { "port": 4331 },
-
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
+  // Astro 6 unified entrypoint. This is a MODULE SPECIFIER, not a file path — it
+  // resolves through node_modules, so it exists before the build and the
+  // Cloudflare Vite plugin's main-must-exist check passes. (Astro 5 pointed main
+  // at a build output like dist/_worker.js/index.js, which cannot work here: the
+  // plugin reads this config at the START of the build.)
+  // Per the @astrojs/cloudflare docs, the deploy flow is then
+  //   CLOUDFLARE_ENV=<env> astro build && wrangler deploy
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "observability": {
+    "enabled": false,
+    "logs": {
+      "enabled": false
+    }
+  },
+  "dev": {
+    "port": 4331
+  },
   "env": {
     // ───────────────────────────── DEV ─────────────────────────────
     // ⚠ ACTION REQUIRED — the dev script is renamed baseout-dev -> baseout-web-dev,
@@ -60,17 +60,22 @@
     // with all five providers BEFORE cutover, or every Connect flow breaks —
     // and update oauth-setup.md §3/§4 in the same change (CLAUDE.md §3.7).
     "dev": {
-      "account_id": "f094d60e8a0996752eb1efd971bda45a",
+      "account_id": "33857e356899b7369fb01c18ace8d780",
       "vars": {
         "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
         // auth-factory reads this as the magic-link origin; `pnpm dev`
         // overrides to https://baseout.local:4331 via `wrangler dev --var`.
-        "PUBLIC_AUTH_BASE_URL": "https://baseout-web-dev.openside.workers.dev",
+        "PUBLIC_AUTH_BASE_URL": "https://baseout.local",
         "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
-        "ADMIN_APP_URL": "https://baseout-admin-dev.openside.workers.dev",
+        "ADMIN_APP_URL": "https://admin.baseout.local",
         // Gates /api/internal/test/last-verification for Playwright. NEVER production.
         "E2E_TEST_MODE": "true",
         // Launch state: off. "1" enforces plan entitlements on storage Connect.
+        // Local-dev marker. import.meta.env.DEV is baked false by the Astro
+        // production build that `pnpm dev` runs, so middleware needs a RUNTIME
+        // signal to enable DEV_TRUSTED_ORIGINS (else local sign-in 403s).
+        // Present ONLY here — staging/production must never see it.
+        "BASEOUT_DEV": "true",
         "ENTITLEMENT_ENFORCEMENT": "0"
         // Optional dev-only overrides, uncomment as needed:
         // "AIRTABLE_STUBS_ENABLED": "true",
@@ -82,33 +87,71 @@
       // one 15-conn origin pool against dev PG's ~19 usable. Do NOT create a
       // second config for a sibling Worker (2026-07-08 saturation incident).
       "hyperdrive": [
-        { "binding": "HYPERDRIVE", "id": "ba2652f40f864918a2da0849f24d12a2", "localConnectionString": "{{DATABASE_URL}}" }
+        {
+          "binding": "HYPERDRIVE",
+          // No localConnectionString, in any env, deliberately. The local
+          // Postgres string for wrangler's Hyperdrive emulation comes from
+          // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE in
+          // .dev.vars (Node's --env-file loads it; the spawned wrangler
+          // inherits it). One mechanism, no credential in the committed file,
+          // and a missing value produces wrangler's explicit "set this or
+          // localConnectionString" error rather than a silent bad connection.
+          "id": "00000000000000000000000000000000"
+        }
       ],
-      "kv_namespaces": [{ "binding": "SESSION", "id": "d5cac1df2216476eaeb38e9fca639559" }],
+      "kv_namespaces": [
+        {
+          "binding": "SESSION"
+        }
+      ],
       // Adapter-injected binding, non-inheritable — declared per env now that
       // we deploy the source config rather than the adapter's output.
-      "images": { "binding": "IMAGES" },
-      "send_email": [{ "name": "EMAIL" }],
+      "images": {
+        "binding": "IMAGES"
+      },
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
       // `remote: true` is required for the binding to resolve to the deployed
       // sibling during local `wrangler dev --remote`; without it wrangler 4.x
       // leaves it unbound and .fetch() returns 403.
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-dev", "remote": true }]
+      // ⚠ SEQUENCING: this targets apps/server's env.dev script, which must be
+      // DEPLOYED before web's dev worker can resolve the binding (`remote: true`
+      // resolves to a real deployed sibling). Deploy it first:
+      //   pnpm --filter @baseout/server run deploy:dev
+      // Until then a web dev/deploy fails with CF 10143 "Worker not found".
+      // `remote: true` is required for the binding to resolve during local
+      // `wrangler dev --remote`; without it wrangler 4.x leaves it unbound and
+      // .fetch() returns 403.
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server-dev"
+        }
+      ]
     },
-
     // ─────────────────────────── STAGING ───────────────────────────
     // The "production build" of the staging account, tracking the `staging`
     // branch in Workers Builds. Same account as dev, so it needs a distinct
     // script name and its own -staging resources.
     "staging": {
+      "routes": [
+        {
+          "pattern": "console.baseout.dev",
+          "custom_domain": true
+        }
+      ],
       // account_id intentionally omitted — Workers Builds runs inside the
       // owning account and supplies it. Pinning it here can only create a
       // mismatch, since production builds read this same file in a
       // different account. env.dev keeps its pin for local wrangler use.
       "vars": {
         "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
-        "PUBLIC_AUTH_BASE_URL": "https://staging.console.baseout.dev",
+        "PUBLIC_AUTH_BASE_URL": "https://console.baseout.dev",
         "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
-        "ADMIN_APP_URL": "https://staging.admin.baseout.dev",
+        "ADMIN_APP_URL": "https://admin.baseout.dev",
         // Playwright targets staging.
         "E2E_TEST_MODE": "true",
         "ENTITLEMENT_ENFORCEMENT": "0"
@@ -146,22 +189,47 @@
       // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
       // filled in. Do NOT use "id": "" — that silently DROPS the binding and
       // the Worker deploys with no database at all (verified on 4.112).
-      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ec6bd3583c3441569eff3a4b0d11ef30"
+        }
+      ],
       // PROVISION: wrangler kv namespace create baseout-staging-session
       // (or delete the "id" line and let wrangler auto-provision — it will
       // name it after the Worker and rewrite this file on deploy).
-      "kv_namespaces": [{ "binding": "SESSION", "id": "" }],
+      "kv_namespaces": [
+        {
+          "binding": "SESSION"
+        }
+      ],
       // Adapter-injected binding, non-inheritable — declared per env now that
       // we deploy the source config rather than the adapter's output.
-      "images": { "binding": "IMAGES" },
-      "send_email": [{ "name": "EMAIL" }],
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-staging" }]
+      "images": {
+        "binding": "IMAGES"
+      },
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server-staging"
+        }
+      ]
     },
-
     // ───────────────────────── PRODUCTION ──────────────────────────
     // Lives in its OWN Cloudflare account. Every resource id below must be
     // re-provisioned there — ids from the staging account are not valid.
     "production": {
+      "routes": [
+        {
+          "pattern": "console.baseout.com",
+          "custom_domain": true
+        }
+      ],
       // PROVISION: production account id (wrangler whoami in that account).
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.
@@ -204,15 +272,35 @@
       // PROVISION: `id` is omitted on purpose — wrangler HARD-ERRORS until it is
       // filled in. Do NOT use "id": "" — that silently DROPS the binding and
       // the Worker deploys with no database at all (verified on 4.112).
-      "hyperdrive": [{ "binding": "HYPERDRIVE" }],
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE"
+        }
+      ],
       // PROVISION in the production account: baseout-live-session.
       // NOTE: a new namespace = every existing session invalidated at cutover.
-      "kv_namespaces": [{ "binding": "SESSION", "id": "" }],
+      "kv_namespaces": [
+        {
+          "binding": "SESSION",
+          "id": ""
+        }
+      ],
       // Adapter-injected binding, non-inheritable — declared per env now that
       // we deploy the source config rather than the adapter's output.
-      "images": { "binding": "IMAGES" },
-      "send_email": [{ "name": "EMAIL" }],
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-production" }]
+      "images": {
+        "binding": "IMAGES"
+      },
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
+      "services": [
+        {
+          "binding": "BACKUP_ENGINE",
+          "service": "baseout-server-production"
+        }
+      ]
     }
   }
 }

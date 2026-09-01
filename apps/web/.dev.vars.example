@@ -4,11 +4,31 @@
 #
 #   cp apps/web/.dev.vars.example apps/web/.dev.vars
 #
-# DB connection + Node-tooling vars (DATABASE_URL, FONTAWESOME_TOKEN, NPM_TOKEN)
-# live in .env, NOT here — see .env.example. PUBLIC_AUTH_BASE_URL is injected by
-# the dev script's `--var` flag (wrangler 4.x `--var` wins over .dev.vars), so do
-# NOT set it here. Do NOT wrap values in quotes — wrangler treats the quotes as
-# part of the value.
+# === apps/web does NOT need DATABASE_URL ===
+# The Worker reaches Postgres only through the HYPERDRIVE binding. DATABASE_URL
+# belongs to the migration runner (@baseout/db) and the diag scripts, not here.
+#
+# What local dev DOES need is a Postgres connection string for wrangler's
+# Hyperdrive emulation, under the name wrangler looks for:
+#
+#   CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://user:pass@host:5432/db
+#
+# The suffix is the BINDING name (HYPERDRIVE). scripts/dev.mjs is launched with
+# `node --env-file-if-exists=.dev.vars`, so Node loads it into process.env and
+# the spawned wrangler inherits it — no mapping code, the name just has to match.
+# wrangler.jsonc's committed localConnectionString is a deliberate dummy; without
+# this variable every DB query fails against it. Deployed Workers ignore it
+# entirely and connect via the Hyperdrive `id`.
+#
+# NPM_TOKEN is npm-registry auth for the @opensided scope on GitHub Packages;
+# it must be exported in your shell (.npmrc reads it as ${NPM_TOKEN}), not set
+# here. FONTAWESOME_TOKEN is NOT needed — the .npmrc lines that consume it are
+# commented out and we use @fortawesome/fontawesome-free, which resolves from
+# public npm. Only uncomment them if @fortawesome/pro-* is ever added.
+#
+# PUBLIC_AUTH_BASE_URL is injected by the dev script's `--var` flag (wrangler 4.x
+# `--var` wins over .dev.vars), so do NOT set it here. Do NOT wrap values in
+# quotes — wrangler treats the quotes as part of the value.
 #
 # === R2 credentials are NOT stored here ===
 # Managed Cloudflare R2 (R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY

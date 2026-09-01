@@ -5,9 +5,10 @@ dist/
 # wrangler / miniflare local state
 .wrangler/
 worker-configuration.d.ts
-# wrangler.jsonc is generated from wrangler.jsonc.example by scripts/launch.mjs
-# (it contains the local Postgres connection string from .env)
-wrangler.jsonc
+# wrangler.jsonc is COMMITTED and authoritative — no longer generated from a
+# .example template. It holds no credential: localConnectionString is a dummy,
+# overridden at dev time via CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
+# (scripts/dev.mjs), the same pattern apps/api and apps/hooks use.
 
 # dependencies
 node_modules/

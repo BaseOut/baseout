@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:backupRetentionPolicies (canonical writer).
-// Migration: apps/web/drizzle/0021_backup_retention_and_cleanup.sql
+// Migration: db/migrations/0021_backup_retention_and_cleanup.sql
 //
 // One row per Space — the resolved retention policy the cleanup engine prunes
 // against. apps/web writes these (backfill script + the deferred retention

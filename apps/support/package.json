@@ -14,7 +14,15 @@
     "typecheck": "astro check",
     "emails": "mjml emails/*.mjml -o emails/ --config.allowIncludes true --config.keepComments false",
     "emails:check": "rm -rf .emails-check && mkdir -p .emails-check && mjml emails/*.mjml -o .emails-check/ --config.allowIncludes true --config.keepComments false && for f in emails/*.html; do diff \"$f\" \".emails-check/$(basename \"$f\")\" || exit 1; done && rm -rf .emails-check",
-    "deploy": "astro build && wrangler deploy"
+    "build:dev": "astro build",
+    "check:dev": "wrangler deploy --env dev --dry-run",
+    "deploy:dev": "wrangler deploy --env dev",
+    "build:staging": "astro build",
+    "check:staging": "wrangler deploy --env staging --dry-run",
+    "deploy:staging": "wrangler deploy --env staging",
+    "build:production": "astro build",
+    "check:production": "wrangler deploy --env production --dry-run",
+    "deploy:production": "wrangler deploy --env production"
   },
   "dependencies": {
     "@astrojs/markdoc": "1.0.6",

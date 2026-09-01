@@ -121,7 +121,7 @@ function buildAuthEnv(): Parameters<typeof createAppAuth>[1] {
     // Vite bakes import.meta.env.DEV into the bundle at build time:
     // true under `npm run dev` (astro dev), false under `npm run wrangler`
     // (astro build + wrangler dev --remote) and in deployed workers.
-    dev: import.meta.env.DEV,
+    dev: import.meta.env.DEV || isDevRuntime(env),
   };
 }
 
@@ -335,7 +335,7 @@ const handleRequest = defineMiddleware(async (context, next) => {
       // destination instead of stranding at the root.
       return withAuthCookies(context.redirect(
         resolveLoginBounceTarget(context.url.searchParams.get('returnTo'), {
-          dev: import.meta.env.DEV,
+          dev: import.meta.env.DEV || isDevRuntime(env),
           adminAppUrl: (env as unknown as { ADMIN_APP_URL?: string }).ADMIN_APP_URL,
         }),
       ));
@@ -346,6 +346,12 @@ const handleRequest = defineMiddleware(async (context, next) => {
     context.locals.cfContext.waitUntil(sql.end({ timeout: 5 }));
   }
 });
+
+
+/** True only in local dev. See the BASEOUT_DEV note at the `dev:` call site. */
+function isDevRuntime(env: unknown): boolean {
+  return (env as { BASEOUT_DEV?: string } | undefined)?.BASEOUT_DEV === 'true'
+}
 
 export const onRequest = sequence(embedFrameHeaders, handleRequest);
 

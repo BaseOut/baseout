@@ -1,7 +1,7 @@
 /**
  * Better Auth `twoFactor` plugin table (web-auth-2fa).
  *
- * Web-owned migration (apps/web/drizzle/0032_two_factor.sql), generated to
+ * Web-owned migration (db/migrations/0032_two_factor.sql), generated to
  * match better-auth 1.6.x's twoFactor schema (model 'twoFactor' → plural
  * table 'two_factors' under the drizzle adapter's usePlural mapping).
  *

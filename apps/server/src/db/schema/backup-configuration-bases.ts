@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:419 (canonical writer).
-// Migration: apps/web/drizzle/0004_user_role_and_backup_runs.sql
+// Migration: db/migrations/0004_user_role_and_backup_runs.sql
 //
 // One row per (backup_configuration, at_base). apps/web writes selection
 // state when the user picks bases. apps/server reads which bases are

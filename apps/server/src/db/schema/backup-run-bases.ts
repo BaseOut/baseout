@@ -1,5 +1,5 @@
 // MIRROR of apps/web/src/db/schema/core.ts:backupRunBases (canonical writer).
-// Migration: apps/web/drizzle/0020_complex_the_hood.sql
+// Migration: db/migrations/0020_complex_the_hood.sql
 //
 // apps/server INSERTs one row per per-base completion callback when the
 // Trigger.dev backup-base task provides per-table detail (optional tables[]
