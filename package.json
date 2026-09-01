@@ -2,7 +2,7 @@
   "name": "baseout",
   "private": true,
   "version": "0.0.0",
-  "description": "Baseout monorepo — backup, restore, and data intelligence layer for Airtable",
+  "description": "Baseout monorepo \u2014 backup, restore, and data intelligence layer for Airtable",
   "packageManager": "pnpm@11.1.1",
   "engines": {
     "node": ">=20",
@@ -40,7 +40,8 @@
     "design": "pnpm --filter @baseout/design dev",
     "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev",
     "db:seed": "pnpm --filter @baseout/db run db:seed",
-    "db:seed:entitlements": "pnpm --filter @baseout/db run db:seed:entitlements"
+    "db:seed:entitlements": "pnpm --filter @baseout/db run db:seed:entitlements",
+    "db:migrate:tunnel": "pnpm --filter @baseout/db run db:migrate:tunnel"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

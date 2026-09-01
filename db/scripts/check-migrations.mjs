@@ -95,7 +95,7 @@ process.stderr.write(
   `\n  ✘ Pending Drizzle migrations: ${result.expected - result.applied} not yet applied.\n` +
     `\n${list}\n` +
     `\n  Run:\n` +
-    `    pnpm --filter @baseout/web db:migrate\n` +
+    `    pnpm db:migrate\n` +
     `\n  Then restart \`pnpm --filter @baseout/web dev\`.\n` +
     `  (Schema drift would 404/500 any SSR page that SELECTs a missing column.)\n\n`,
 )

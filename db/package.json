@@ -3,15 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Master-DB migration lineage + runner. See root CLAUDE.md §3.9.",
+  "description": "Master-DB migration lineage + runner. See root CLAUDE.md \u00a73.9.",
   "scripts": {
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node scripts/migrate.mjs",
     "db:check": "node --env-file-if-exists=.dev.vars --env-file-if-exists=../apps/web/.dev.vars scripts/check-migrations.mjs",
     "db:seed": "node --env-file=.dev.vars --import tsx/esm seed/seed.ts",
-    "db:seed:entitlements": "node --env-file=.dev.vars --import tsx/esm seed/seed-entitlements.ts"
+    "db:seed:entitlements": "node --env-file=.dev.vars --import tsx/esm seed/seed-entitlements.ts",
+    "db:migrate:tunnel": "TUNNEL=1 node scripts/migrate.mjs"
   },
   "devDependencies": {
+    "cloudflared": "^0.7.3",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.16.3",

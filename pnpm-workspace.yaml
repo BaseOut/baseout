@@ -67,6 +67,10 @@ allowBuilds:
   '@embedded-postgres/darwin-x64': true
   '@embedded-postgres/linux-arm64': true
   '@embedded-postgres/linux-x64': true
+  # Downloads the cloudflared binary. db/scripts/migrate.mjs shells out to
+  # `cloudflared access tcp` to reach the master DB in staging/production,
+  # where it has no public ingress (system-db-migrations design §D2).
+  cloudflared: true
   esbuild: true # Vite / Astro bundler — installs platform binary
   msw: true # Test mocking — sets up service worker
   protobufjs: true # Transitive — codegens long.js descriptors
