@@ -14,6 +14,11 @@ import { usersWithTwoFactor } from './two-factor/adapter-schema'
 import { withTwoFactorSecretEncryption } from './two-factor/encryption'
 import { twoFactorAllMethods } from './two-factor/all-methods'
 import type { TwoFactorEvent } from './two-factor/events'
+import {
+  userCreateRuntimeEnvFields,
+  type OrgRuntimeEnv,
+} from './runtime-env'
+import { withUserEnvScope } from './auth-env-scope'
 
 type DrizzleDb = Parameters<typeof drizzleAdapter>[0]
 
@@ -66,6 +71,13 @@ export interface AuthFactoryEnv extends SendEmailEnv {
     accountId: string
     userId: string
   }) => Promise<void>
+  /**
+   * Worker env (shared-org-runtime-env, D3 second amendment): stamps
+   * users.runtime_env at creation and scopes every email-addressed user
+   * lookup at the adapter boundary — the same email is a separate user row
+   * per env (unique(email, runtime_env)).
+   */
+  runtimeEnv?: OrgRuntimeEnv | null
 }
 
 // Hosts the per-request `baseURL` resolver accepts. Better Auth's
@@ -172,7 +184,10 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
     // (adds twoFactorEnabled without touching @baseout/db-schema — see
     // two-factor/adapter-schema.ts), wrapped with the master-key storage
     // hook for TOTP secret/backup-code columns (web-auth-2fa; PRD §20.2).
-    database: withTwoFactorSecretEncryption(
+    // Composition order: env scope OUTERMOST so every email-addressed user
+    // query — including the two-factor wrapper's own — is env-scoped.
+    database: withUserEnvScope(
+      withTwoFactorSecretEncryption(
       drizzleAdapter(db, {
         provider: 'pg',
         usePlural: true,
@@ -186,6 +201,8 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
           await env.onTwoFactorEvent?.({ kind: 'enabled', userId })
         },
       },
+      ),
+      env.runtimeEnv ?? null,
     ),
     user: {
       additionalFields: {
@@ -214,11 +231,23 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
           required: false,
           input: false,
         },
+        runtimeEnv: {
+          type: 'string',
+          required: false,
+          input: false,
+          defaultValue: 'staging',
+        },
       },
     },
     databaseHooks: {
       user: {
         create: {
+          before: async (user) => ({
+            data: {
+              ...user,
+              ...userCreateRuntimeEnvFields(env.runtimeEnv ?? null),
+            },
+          }),
           // The single account-creation point (post-verification) for every
           // signup method — the signup-domain-association fork hook.
           after: async (user) => {
@@ -271,6 +300,9 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
         sendMagicLink: async ({ email, url }) => {
           // CC7.2: record the authentication attempt — never the url/token.
           await env.onMagicLinkRequested?.({ email })
+          // No env gate here (D3 second amendment): the adapter's env scope
+          // means an other-env user simply doesn't resolve — this flow either
+          // finds THIS env's user or creates one.
           const rendered = renderMagicLinkEmail({ email, url })
           await sendEmail({ to: email, ...rendered }, env)
         },

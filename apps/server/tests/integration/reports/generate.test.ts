@@ -77,6 +77,19 @@ describe("generateReport", () => {
     expect(deps.persistDocument).not.toHaveBeenCalled();
   });
 
+  it("returns env_mismatch without inserting a run", async () => {
+    const deps = makeDeps({
+      assertSpaceRuntimeEnv: vi.fn(async () => false),
+    });
+    const res = await generateReport(
+      { definitionId: "def-1", spaceId: "space-1", trigger: { kind: "manual" }, now },
+      deps,
+    );
+    expect(res).toEqual({ ok: false, reason: "env_mismatch" });
+    expect(deps.insertRunningRun).not.toHaveBeenCalled();
+    expect(deps.enqueueRender).not.toHaveBeenCalled();
+  });
+
   it("marks the run failed (chain not advanced) when assembly throws", async () => {
     const deps = makeDeps({
       fetchSectionData: vi.fn(async () => {

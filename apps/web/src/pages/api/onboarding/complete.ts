@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro'
 import { env } from 'cloudflare:workers'
+import { resolveRuntimeEnv } from '../../../lib/runtime-env'
 import {
   markTermsAccepted,
   OnboardingError,
@@ -94,7 +95,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   let snapshot
   try {
-    snapshot = await provisionOnboarding(locals.db, locals.user.id, validated)
+    snapshot = await provisionOnboarding(
+      locals.db,
+      locals.user.id,
+      validated,
+      resolveRuntimeEnv({
+        BASEOUT_ENV: env.BASEOUT_ENV,
+        BASEOUT_DEV: env.BASEOUT_DEV,
+      }),
+    )
   } catch (err) {
     if (err instanceof OnboardingError) {
       if (err.detail.kind === 'already_onboarded') {
@@ -105,6 +114,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
       }
       if (err.detail.kind === 'user_not_found') {
         return jsonResponse({ error: 'User not found' }, 404)
+      }
+      if (err.detail.kind === 'env_unavailable') {
+        return jsonResponse(
+          { error: 'This environment is not configured for sign-up.' },
+          503,
+        )
       }
     }
     throw err

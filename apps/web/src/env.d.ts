@@ -15,6 +15,8 @@ declare namespace App {
       email: string;
       image: string | null | undefined;
       termsAcceptedAt: Date | null;
+      /** Stamped at user creation; session gate compares to Worker BASEOUT_ENV. */
+      runtimeEnv?: string | null;
     } | null;
     session: {
       id: string;
@@ -58,5 +60,13 @@ declare namespace Cloudflare {
      * an "Open Help Center" CTA. Unset = mailto-only (DNS/auth not live).
      */
     PUBLIC_SUPPORT_URL?: string;
+    /**
+     * Worker runtime environment (`shared-org-runtime-env`). Must be
+     * `dev` | `staging` | `production`. Gates which Organizations this
+     * Worker may load, create, or back up.
+     */
+    BASEOUT_ENV?: string;
+    /** Local-dev marker; `resolveRuntimeEnv` treats `"true"` as `dev`. */
+    BASEOUT_DEV?: string;
   }
 }

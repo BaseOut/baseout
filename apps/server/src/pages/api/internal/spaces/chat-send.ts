@@ -19,6 +19,7 @@ import {
   getThread,
 } from "../../../../lib/per-space/chat-io";
 import { enqueueChatRespond } from "../../../../lib/trigger-client";
+import { spaceMatchesWorkerEnv } from "../../../../lib/assert-organization-runtime-env";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -68,6 +69,9 @@ export async function spacesChatSendHandler(
     .where(eq(spaces.id, spaceId))
     .limit(1);
   if (!spaceOrg) return jsonResponse({ error: "not_found" }, 404);
+  if (!(await spaceMatchesWorkerEnv(masterDb, env, spaceId))) {
+    return jsonResponse({ error: "env_mismatch" }, 403);
+  }
 
   let prepared: {
     userMessageId: string;

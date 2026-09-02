@@ -22,6 +22,7 @@ import { resolveTypeFilter } from "../storage/resolve-destination-type";
 import { enqueueRestoreBase } from "../trigger-client";
 import type { Env } from "../../env";
 import type { ProcessRestoreStartDeps, SourceRunInfo } from "./start";
+import { organizationMatchesWorkerEnv } from "../assert-organization-runtime-env";
 
 type MasterDb = ReturnType<typeof import("../../db/worker").createMasterDb>["db"];
 
@@ -103,5 +104,7 @@ export function buildRestoreStartDeps(db: MasterDb, env: Env): ProcessRestoreSta
         .where(eq(restoreRuns.id, id));
     },
     enqueueRestoreBase: (payload) => enqueueRestoreBase(env, payload),
+    assertOrganizationRuntimeEnv: (organizationId) =>
+      organizationMatchesWorkerEnv(db, env, organizationId),
   };
 }

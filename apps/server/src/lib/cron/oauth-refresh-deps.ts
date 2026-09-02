@@ -19,7 +19,7 @@
 
 import { and, eq, isNotNull, lte, or, isNull, asc, sql, inArray, ne } from "drizzle-orm";
 import { createMasterDb } from "../../db/worker";
-import { airtableWebhooks, connections, platforms } from "../../db/schema";
+import { airtableWebhooks, connections, platforms, organizations } from "../../db/schema";
 import { REFRESH_LOOKAHEAD_MS } from "../connections/resolve-airtable-token";
 import { runConnectionAutoInvalidate } from "../connections/auto-invalidate";
 import {
@@ -34,6 +34,7 @@ import {
   keepaliveShadowsInMode,
 } from "./keepalive-mode";
 import type { Env } from "../../env";
+import { workerOrgScope } from "../runtime-env";
 
 // Refresh a connection whose refresh token expires within this window, so the
 // idle-expiry (~60 days) never lapses. 15 days of margin → each idle connection
@@ -67,17 +68,23 @@ async function refreshConnectionViaDO(
   return "failed";
 }
 
+function scopedRuntimeEnv(env: Env): string {
+  return workerOrgScope({ BASEOUT_ENV: env.BASEOUT_ENV });
+}
+
 /** Active Airtable connections whose refresh token nears its idle-expiry. */
-function listKeepaliveConnections(db: MasterDb, limit: number) {
+function listKeepaliveConnections(db: MasterDb, env: Env, limit: number) {
   const staleBefore = new Date(Date.now() + KEEPALIVE_LOOKAHEAD_MS);
   return db
     .select({ id: connections.id })
     .from(connections)
     .innerJoin(platforms, eq(platforms.id, connections.platformId))
+    .innerJoin(organizations, eq(organizations.id, connections.organizationId))
     .where(
       and(
         eq(platforms.slug, "airtable"),
         eq(connections.status, "active"),
+        eq(organizations.runtimeEnv, scopedRuntimeEnv(env)),
         isNotNull(connections.refreshTokenEnc),
         // NULL = never-populated legacy row → eligible so it self-populates on
         // first keep-alive (bounded by the per-firing cap, so no stampede).
@@ -123,10 +130,12 @@ export async function runScheduledOauthRefresh(
           .select({ id: connections.id })
           .from(connections)
           .innerJoin(platforms, eq(platforms.id, connections.platformId))
+          .innerJoin(organizations, eq(organizations.id, connections.organizationId))
           .where(
             and(
               eq(platforms.slug, "airtable"),
               eq(connections.status, "active"),
+              eq(organizations.runtimeEnv, scopedRuntimeEnv(env)),
               isNotNull(connections.refreshTokenEnc),
               or(
                 isNull(connections.tokenExpiresAt),
@@ -165,7 +174,11 @@ export async function runScheduledKeepalive(
     // 'shadow': run the selection and log what we WOULD refresh — no writes —
     // so counts can be compared against the live sweep before cutover.
     if (keepaliveShadowsInMode(mode)) {
-      const rows = await listKeepaliveConnections(db, KEEPALIVE_MAX_PER_FIRING + 1);
+      const rows = await listKeepaliveConnections(
+        db,
+        env,
+        KEEPALIVE_MAX_PER_FIRING + 1,
+      );
       const truncated = rows.length > KEEPALIVE_MAX_PER_FIRING;
       logEvent({
         event: "oauth_keepalive",
@@ -187,7 +200,7 @@ export async function runScheduledKeepalive(
     }
     return await runOauthRefreshSweep({
       maxPerSweep: KEEPALIVE_MAX_PER_FIRING,
-      listStaleConnections: async (limit) => listKeepaliveConnections(db, limit),
+      listStaleConnections: async (limit) => listKeepaliveConnections(db, env, limit),
       refreshConnection: (connectionId) =>
         refreshConnectionViaDO(env, connectionId),
       log: (event) => logEvent({ ...event, event: "oauth_keepalive", mode }),
@@ -226,6 +239,13 @@ export async function runScheduledConnectionInvalidation(
               isNotNull(connections.pendingReauthAt),
               lte(connections.pendingReauthAt, cutoff),
               inArray(connections.platformId, airtablePlatforms),
+              inArray(
+                connections.organizationId,
+                db
+                  .select({ id: organizations.id })
+                  .from(organizations)
+                  .where(eq(organizations.runtimeEnv, scopedRuntimeEnv(env))),
+              ),
             ),
           )
           .returning({ id: connections.id });

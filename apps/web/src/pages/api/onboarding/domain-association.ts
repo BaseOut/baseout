@@ -14,7 +14,9 @@
  */
 
 import type { APIRoute } from 'astro'
+import { env } from 'cloudflare:workers'
 import { and, eq, gt } from 'drizzle-orm'
+import { resolveRuntimeEnv } from '../../../lib/runtime-env'
 import { organizationJoinRequests, organizations } from '../../../db/schema'
 import {
   resolveOrganizationsForEmail,
@@ -93,7 +95,15 @@ export const GET: APIRoute = async ({ locals }) => {
   if (!db) return jsonResponse({ error: 'Database not initialized' }, 500)
   return handleGet({
     user: locals.user ? { id: locals.user.id, email: locals.user.email } : null,
-    resolve: (email) => resolveOrganizationsForEmail(db, email),
+    resolve: (email) =>
+      resolveOrganizationsForEmail(
+        db,
+        email,
+        resolveRuntimeEnv({
+          BASEOUT_ENV: (env as { BASEOUT_ENV?: string }).BASEOUT_ENV,
+          BASEOUT_DEV: (env as { BASEOUT_DEV?: string }).BASEOUT_DEV,
+        }),
+      ),
     listOpenRequests: (userId) => listOpenRequests(db, userId),
   })
 }

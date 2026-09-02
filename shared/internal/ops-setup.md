@@ -52,6 +52,23 @@ app registration matrix + workarounds when URIs are missing.
 - [ ] DNS: `baseout.dev` → `baseout` Worker.
 - [ ] Email: `login@mail.baseout.dev` deliverable.
 
+- [ ] **`runtime_env` production backfill (shared-org-runtime-env D7 — BLOCKS
+      merge toward main).** Migrations `0040_org_runtime_env` and
+      `0041_user_runtime_env` use `DEFAULT 'staging'`. On the **separate
+      production** Postgres they would tag every real Organization and user
+      `staging`, and the production Worker would lock everyone out. Immediately
+      after those migrations apply on prod, run:
+
+      ```sql
+      UPDATE baseout.organizations SET runtime_env = 'production';
+      UPDATE baseout.users SET runtime_env = 'production';
+      ```
+
+      Confirm: `SELECT runtime_env, count(*) FROM baseout.organizations GROUP BY 1;`
+      shows only `production`. The production Workers log a structured
+      `production_runtime_env_lockout` error if the organizations table is
+      non-empty and zero rows are tagged `production`.
+
 ### Secrets (per Cloudflare env)
 
 For each env (`staging`, `production`), run locally with a wrangler logged into

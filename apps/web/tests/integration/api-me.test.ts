@@ -38,7 +38,7 @@ describe('GET /api/me (integration)', () => {
   it('returns 200 with the AccountContext shape for an onboarded user', async () => {
     const { userId, email, name } = await seedUser()
     const { organizationId, spaceId, slug } = await seedOrgWithMembership(userId)
-    const account = await getAccountContext(db, userId)
+    const account = await getAccountContext(db, userId, 'dev')
     expect(account).toBeTruthy()
 
     const res = await callGet({ account })
@@ -59,7 +59,7 @@ describe('GET /api/me (integration)', () => {
   it('does not leak fields beyond the documented AccountContext shape', async () => {
     const { userId } = await seedUser()
     await seedOrgWithMembership(userId)
-    const account = await getAccountContext(db, userId)
+    const account = await getAccountContext(db, userId, 'dev')
 
     const res = await callGet({ account })
     const body = (await res.json()) as Record<string, unknown>

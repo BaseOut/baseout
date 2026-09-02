@@ -128,6 +128,7 @@ async function seedActiveConnection(): Promise<{ connectionId: string }> {
     id: organizationId,
     name: 'Harness Spike Org',
     slug: `harness-spike-${organizationId.slice(0, 8)}`,
+    runtimeEnv: 'dev',
   })
   // platforms.slug is unique and other suites truncate/seed it — reuse if present.
   const existing = await db

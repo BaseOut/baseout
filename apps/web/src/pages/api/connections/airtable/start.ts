@@ -27,6 +27,8 @@ import {
 } from '../../../../lib/airtable/cookie'
 import { sanitizeReturnTo } from '../../../../lib/airtable/return-to'
 import { shouldSetSecureOAuthCookie } from '../../../../lib/oauth/local-dev-secure'
+import { requireWritableOrganization } from '../../../../lib/authz/organization-runtime'
+import { resolveRuntimeEnv } from '../../../../lib/runtime-env'
 
 function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -39,6 +41,18 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
   if (!locals.user) return jsonError('Not authenticated', 401)
   const account = locals.account
   if (!account?.organization || !account?.space) {
+    return jsonError('No active organization or space', 403)
+  }
+  try {
+    await requireWritableOrganization(locals.db, {
+      organizationId: account.organization.id,
+      userId: locals.user.id,
+      runtimeEnv: resolveRuntimeEnv({
+        BASEOUT_ENV: (env as unknown as { BASEOUT_ENV?: string }).BASEOUT_ENV,
+        BASEOUT_DEV: (env as unknown as { BASEOUT_DEV?: string }).BASEOUT_DEV,
+      }),
+    })
+  } catch {
     return jsonError('No active organization or space', 403)
   }
 

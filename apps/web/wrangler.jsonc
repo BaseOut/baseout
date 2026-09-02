@@ -76,6 +76,7 @@
         // signal to enable DEV_TRUSTED_ORIGINS (else local sign-in 403s).
         // Present ONLY here — staging/production must never see it.
         "BASEOUT_DEV": "true",
+        "BASEOUT_ENV": "dev",
         "ENTITLEMENT_ENFORCEMENT": "0"
         // Optional dev-only overrides, uncomment as needed:
         // "AIRTABLE_STUBS_ENABLED": "true",
@@ -161,6 +162,7 @@
         "ADMIN_APP_URL": "https://admin.baseout.dev",
         // Playwright targets staging.
         "E2E_TEST_MODE": "true",
+        "BASEOUT_ENV": "staging",
         "ENTITLEMENT_ENFORCEMENT": "0"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
@@ -252,6 +254,7 @@
         "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
         "ADMIN_APP_URL": "https://admin.baseout.com",
         // NO E2E_TEST_MODE — dev/staging only.
+        "BASEOUT_ENV": "production",
         "ENTITLEMENT_ENFORCEMENT": "0"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.

@@ -19,6 +19,7 @@ import {
   type CreateJoinRequestResult,
 } from '../../../lib/signup/join-requests'
 import { renderJoinRequestAdminEmail } from '../../../lib/email/templates/join-request'
+import { resolveRuntimeEnv } from '../../../lib/runtime-env'
 import { sendEmail } from '../../../lib/email/send'
 
 const UUID_RE =
@@ -115,7 +116,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     user,
     body,
     create: (organizationId) =>
-      createJoinRequest(db, { requester: user!, organizationId }),
+      createJoinRequest(db, {
+        requester: user!,
+        organizationId,
+        runtimeEnv: resolveRuntimeEnv({
+          BASEOUT_ENV: (env as { BASEOUT_ENV?: string }).BASEOUT_ENV,
+          BASEOUT_DEV: (env as { BASEOUT_DEV?: string }).BASEOUT_DEV,
+        }),
+      }),
     notifyAdmins: async ({ adminEmails, organizationName, requesterEmail }) => {
       const rendered = renderJoinRequestAdminEmail({
         organizationName,

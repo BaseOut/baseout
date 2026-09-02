@@ -26,6 +26,7 @@ import {
 import { exchangeCodeForTokens } from '../../../../lib/airtable/oauth'
 import { persistAirtableConnection } from '../../../../lib/airtable/persist'
 import { sanitizeReturnTo } from '../../../../lib/airtable/return-to'
+import { resolveRuntimeEnv } from '../../../../lib/runtime-env'
 import {
   appendQuery,
   resolveSuccessRedirect,
@@ -153,6 +154,10 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
       tokens,
       whoami,
       bases,
+      runtimeEnv: resolveRuntimeEnv({
+        BASEOUT_ENV: (env as unknown as { BASEOUT_ENV?: string }).BASEOUT_ENV,
+        BASEOUT_DEV: (env as unknown as { BASEOUT_DEV?: string }).BASEOUT_DEV,
+      }),
     })
   } catch {
     return redirectWith(failUrl('persist_failed'), clearCookie)

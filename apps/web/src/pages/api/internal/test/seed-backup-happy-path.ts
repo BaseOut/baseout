@@ -131,10 +131,10 @@ export const POST: APIRoute = async ({ url, request, locals }) => {
   const orgSlug = `e2e-${userId.slice(0, 12)}`
   const [org] = await db
     .insert(organizations)
-    .values({ name: `E2E ${email}`, slug: orgSlug })
+    .values({ name: `E2E ${email}`, slug: orgSlug, runtimeEnv: 'dev' })
     .onConflictDoUpdate({
       target: organizations.slug,
-      set: { name: `E2E ${email}` },
+      set: { name: `E2E ${email}`, runtimeEnv: 'dev' },
     })
     .returning()
   if (!org) return json({ error: 'org_upsert_failed' }, 500)

@@ -249,6 +249,20 @@ describe("processRunStart — happy path", () => {
 });
 
 describe("processRunStart — validation failures", () => {
+  it("returns env_mismatch when the Organization is not in this Worker env", async () => {
+    const deps = makeDeps();
+    const result = await processRunStart(
+      { runId: RUN_ID },
+      {
+        ...deps,
+        now: () => NOW,
+        assertOrganizationRuntimeEnv: async () => false,
+      },
+    );
+
+    expect(result).toEqual({ ok: false, error: "env_mismatch" });
+    expect(deps.enqueueBackupBase).not.toHaveBeenCalled();
+  });
   it("returns run_not_found when fetchRunById resolves to null", async () => {
     const deps = makeDeps();
     deps.fetchRunById = vi.fn(async () => null);
