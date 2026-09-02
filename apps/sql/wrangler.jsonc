@@ -2,7 +2,7 @@
 //
 //   Top level      = shared config only; always deploy with --env.
 //   env.dev        = baseout-sql-dev     (staging account)
-//   env.staging    = baseout-sql-staging (staging account, `staging` branch)
+//   env.staging    = baseout-sql (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-sql         (SEPARATE production account)
 //
 // CHANGED vs the old file:

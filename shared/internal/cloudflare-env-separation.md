@@ -1,5 +1,13 @@
 # Cloudflare prod/staging separation — what the docs actually say
 
+> **⚠ SUPERSEDED 2026-09-01 (`system-staging-readiness`).** The
+> "production + previews, no `env.staging`" model this file resolves to was
+> **reversed** by Dan's Aug-31→Sep-1 refactor (`539318a7`→`4f1c8e46`): every
+> app now has committed `env.dev`/`env.staging`/`env.production` blocks in
+> `wrangler.jsonc`, staging is a real named env on a shared dev/staging
+> account, and prod lives on a separate account. Current model:
+> `shared/internal/ops-setup.md` (top banner). This file is history only.
+
 **Status:** LARGELY RESOLVED 2026-08-24; **BETA DOCS + CONFIG MODEL LANDED 2026-08-25** (see the
 section immediately below). Kept for the audit trail and the still-open beta questions.
 

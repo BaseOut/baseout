@@ -1,5 +1,14 @@
 # Implementation tasks
 
+> **RE-BASED 2026-09-01** by [`shared-managed-r2-staging`](../shared-managed-r2-staging/proposal.md):
+> the 2026-08-27 Cloudflare env model renamed the buckets to
+> `baseout-{dev,staging,live}` and moved dev/staging to the staging account
+> (`33857e356899b7369fb01c18ace8d780`); prod is a separate account. Read every
+> `baseout-backups-*` / `f094d60e…` / `baseout-server-staging`-style reference
+> below through `shared/internal/r2-setup.md` §1 (the re-based source of truth).
+> Phase 4 (staging) is being executed by `shared-managed-r2-staging` — its boxes
+> here get ticked with pointers to that change's §5.7 log entries.
+
 > Phases are sequential — staging is gated on dev being fully green, prod on staging being fully green. Each verification step gets logged into `shared/internal/r2-setup.md` §5 with date + run ID so the audit trail builds as the rollout proceeds.
 
 ## Phase 0 — Pre-flight (one-time, no env-specific work)

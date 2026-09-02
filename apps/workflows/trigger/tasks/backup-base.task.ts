@@ -483,6 +483,13 @@ async function postCompletion(
 
 export const backupBaseTask = task({
   id: "backup-base",
+  // One backup per Connection at a time: the engine passes
+  // concurrencyKey=connectionId at trigger time, so each Connection gets its
+  // own limit-1 instance of this queue. Bases on the SAME connection run
+  // serially (the ConnectionDO /lock below then always succeeds inside its
+  // 60s retry window — multi-base runs used to race it and die
+  // lock_unavailable); different Connections still run in parallel.
+  queue: { name: "backup-base-per-connection", concurrencyLimit: 1 },
   maxDuration: 600,
   run: async (payload: BackupBaseTaskPayload, { ctx }) => {
     const engineUrl = process.env.BACKUP_ENGINE_URL;

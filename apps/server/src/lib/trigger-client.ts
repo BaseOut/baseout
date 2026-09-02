@@ -73,6 +73,10 @@ export async function enqueueBackupBase(
   const handle = await tasks.trigger<typeof backupBaseTask>(
     "backup-base",
     payload,
+    // Serialize per Connection: pairs with the task's limit-1
+    // "backup-base-per-connection" queue (see backup-base.task.ts) so bases
+    // sharing a Connection never race the ConnectionDO lock.
+    { queue: "backup-base-per-connection", concurrencyKey: payload.connectionId },
   );
   return { id: handle.id };
 }

@@ -8,7 +8,7 @@
 //   Top level      = shared, non-deployable config ONLY. `migrations` stays here
 //                    (it is deploy-wide, not per-env). Always deploy with --env.
 //   env.dev        = baseout-server-dev     (staging account)
-//   env.staging    = baseout-server-staging (staging account, `staging` branch)
+//   env.staging    = baseout-server (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-server         (SEPARATE production account)
 //
 // CHANGED vs the old file: top level used to BE production (name
@@ -31,10 +31,10 @@
   // Durable Objects — canonical names per CLAUDE.md §5.3. The migration tag is
   // deploy-wide and stays top-level; the BINDINGS are non-inheritable and are
   // restated in every env block below.
-  // ⚠ Each Worker script owns its OWN DO namespaces: baseout-server-staging
-  // gets fresh ConnectionDO/SpaceDO storage, and the production account's
-  // namespaces start empty. DO SQLite state does NOT migrate across scripts
-  // or accounts.
+  // ⚠ Each Worker script owns its OWN DO namespaces: the staging account's
+  // baseout-server gets fresh ConnectionDO/SpaceDO storage, and the production
+  // account's namespaces start empty. DO SQLite state does NOT migrate across
+  // scripts or accounts.
   "migrations": [
     {
       "tag": "v1",

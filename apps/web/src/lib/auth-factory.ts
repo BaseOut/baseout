@@ -92,6 +92,8 @@ const AUTH_BASE_URL = {
     'baseout.local',
     'baseout.local:*',
     'baseout.dev',
+    'console.baseout.dev',
+    'console.baseout.com',
   ],
   fallback: 'https://baseout.dev',
 }
@@ -102,7 +104,14 @@ const AUTH_BASE_URL = {
 // the two is unreliable, so declare the CSRF list explicitly here. When
 // adding a new deployed origin, update both. `localhost` is intentionally
 // absent — see the comment on `allowedHosts` above.
-const PROD_TRUSTED_ORIGINS = ['https://baseout.dev']
+const PROD_TRUSTED_ORIGINS = [
+  'https://baseout.dev',
+  // Deployed console origins (wrangler env.staging / env.production routes).
+  // Without these, an unset PUBLIC_AUTH_BASE_URL falls back to baseout.dev
+  // and the CSRF gate rejects the console hosts.
+  'https://console.baseout.dev',
+  'https://console.baseout.com',
+]
 // `http://baseout.local:*` covers the admin console (apps/admin) which runs
 // over http in local dev (its session cookie is non-Secure locally). Trusting
 // it lets a magic-link callbackURL round-trip staff back to the admin origin

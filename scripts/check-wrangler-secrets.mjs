@@ -17,6 +17,14 @@ import { join } from 'node:path';
 
 const REPO = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const DEPLOYED = ['staging', 'production'];
+// Deliberate staging-only secrets: env.staging pairs them with a staging-only
+// var, and production intentionally carries neither. Every entry needs a
+// justification comment — this list weakens the identical-lists invariant.
+const STAGING_ONLY_SECRETS = {
+  // Gates /api/internal/test/* (Playwright bypass) behind an HMAC; only
+  // staging sets E2E_TEST_MODE=true, production must never have the surface.
+  web: ['E2E_TEST_TOKEN'],
+};
 // Migration-aware. An app still being drafted has BOTH files: new.wrangler.jsonc
 // (the intended 3-env state) and wrangler.jsonc (the legacy pre-migration one).
 // A promoted app has only wrangler.jsonc. So new.* WINS when present — otherwise
@@ -118,8 +126,9 @@ for (const app of apps) {
 
   const [a, b] = DEPLOYED;
   const setA = new Set(lists[a]), setB = new Set(lists[b]);
-  const onlyA = lists[a].filter(k => !setB.has(k));
-  const onlyB = lists[b].filter(k => !setA.has(k));
+  const stagingOnlyAllowed = STAGING_ONLY_SECRETS[app] ?? [];
+  const onlyA = lists[a].filter(k => !setB.has(k) && !(a === 'staging' && stagingOnlyAllowed.includes(k)));
+  const onlyB = lists[b].filter(k => !setA.has(k) && !(b === 'staging' && stagingOnlyAllowed.includes(k)));
   if (onlyA.length || onlyB.length) {
     console.error(`✗ ${app}: secrets.required drift`);
     if (onlyA.length) console.error(`    only in ${a}: ${onlyA.join(', ')}`);

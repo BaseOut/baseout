@@ -6,7 +6,7 @@
 //   Script names are DERIVED, not declared: `name` lives only at the top level
 //   and wrangler appends the env (appendEnvName in its source), so:
 //     env.dev        -> baseout-web-dev         (staging account)
-//     env.staging    -> baseout-web-staging     (staging account, `staging` branch)
+//     env.staging    -> baseout-web (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //     env.production -> baseout-web-production  (SEPARATE production account)
 //   Never set `name` inside an env block — it would override the derivation and
 //   silently decouple these from the service bindings that reference them.
@@ -130,7 +130,8 @@
       "services": [
         {
           "binding": "BACKUP_ENGINE",
-          "service": "baseout-server-dev"
+          "service": "baseout-server-dev",
+          "remote": true
         }
       ]
     },
@@ -186,6 +187,11 @@
           "BOX_OAUTH_CLIENT_SECRET",
           "DROPBOX_OAUTH_CLIENT_ID",
           "DROPBOX_OAUTH_CLIENT_SECRET",
+          // Gates the /api/internal/test/* Playwright bypass endpoints that
+          // E2E_TEST_MODE=true (vars above) exposes on this env — without it
+          // they 401 with no deploy-time warning. Staging-only; production
+          // carries neither the var nor this secret.
+          "E2E_TEST_TOKEN",
           "GOOGLE_DRIVE_OAUTH_CLIENT_ID",
           "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
           "MICROSOFT_OAUTH_CLIENT_ID",

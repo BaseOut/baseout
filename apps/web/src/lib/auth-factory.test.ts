@@ -152,3 +152,26 @@ describe('createAuth — session lifetime', () => {
   })
 
 })
+
+// system-staging-readiness: console.baseout.dev worked only because
+// better-auth auto-trusts the resolved baseURL origin — the moment
+// PUBLIC_AUTH_BASE_URL is unset, baseURL falls back to https://baseout.dev
+// and the CSRF gate rejects the staging origin. Pin both deployed console
+// origins in the explicit lists so the fallback path can't strand them.
+describe('createAuth — deployed console origins', () => {
+  it('trusts the staging and production console origins explicitly', () => {
+    const trusted = (build('https://baseout.dev').options as {
+      trustedOrigins: string[]
+    }).trustedOrigins
+    expect(trusted).toContain('https://console.baseout.dev')
+    expect(trusted).toContain('https://console.baseout.com')
+  })
+
+  it('accepts the console hosts in Host-header baseURL resolution', () => {
+    const baseURL = (build(undefined).options as {
+      baseURL: { allowedHosts: string[]; fallback: string }
+    }).baseURL
+    expect(baseURL.allowedHosts).toContain('console.baseout.dev')
+    expect(baseURL.allowedHosts).toContain('console.baseout.com')
+  })
+})
