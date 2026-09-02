@@ -9,6 +9,7 @@ import { healthHandler } from "./pages/api/health";
 import { internalPingHandler } from "./pages/api/internal/ping";
 import { dbSmokeHandler } from "./pages/api/internal/db-smoke";
 import { triggerSmokeHandler } from "./pages/api/internal/trigger-smoke";
+import { r2SmokeHandler } from "./pages/api/internal/r2-smoke";
 import { whoamiHandler } from "./pages/api/internal/connections/whoami";
 import { connectionsWorkspacesHandler } from "./pages/api/internal/connections/workspaces";
 import {
@@ -333,6 +334,9 @@ export default {
       }
       if (url.pathname === "/api/internal/__trigger-smoke") {
         return await triggerSmokeHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/__r2-smoke") {
+        return await r2SmokeHandler(request, env, ctx, locals);
       }
 
       // Retention cleanup (openspec/changes/server-retention-and-cleanup):
