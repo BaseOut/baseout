@@ -95,6 +95,10 @@ export async function whoamiHandler(
       encryptedToken: row.accessTokenEnc,
     }),
   });
+  if (tokenRes.status === 403) {
+    await tokenRes.body?.cancel?.();
+    return json({ error: "refresh_env_mismatch" }, 403);
+  }
   if (tokenRes.status === 409) {
     // reauth_required — the refresh token is dead; the connection needs reconnecting.
     return json({ error: "connection_status", status: "pending_reauth" }, 409);

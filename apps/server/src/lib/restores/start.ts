@@ -64,6 +64,11 @@ export interface ProcessRestoreStartDeps {
   enqueueRestoreBase: (
     payload: RestoreBaseTaskPayload,
   ) => Promise<{ id: string }>;
+  /**
+   * shared-org-runtime-env: Organization must belong to this Worker env.
+   * Optional so existing unit stubs stay valid; production wiring always sets it.
+   */
+  assertOrganizationRuntimeEnv?: (organizationId: string) => Promise<boolean>;
   /** Test seam — defaults to () => new Date() in production. */
   now?: () => Date;
 }
@@ -79,7 +84,8 @@ export type ProcessRestoreStartResult =
         | "invalid_connection"
         | "storage_not_found"
         | "source_run_not_found"
-        | "source_run_not_restorable";
+        | "source_run_not_restorable"
+        | "env_mismatch";
     };
 
 export async function processRestoreStart(
@@ -102,6 +108,12 @@ export async function processRestoreStart(
   if (!connection) return { ok: false, error: "connection_not_found" };
   if (connection.status !== "active") {
     return { ok: false, error: "invalid_connection" };
+  }
+  if (deps.assertOrganizationRuntimeEnv) {
+    const allowed = await deps.assertOrganizationRuntimeEnv(
+      connection.organizationId,
+    );
+    if (!allowed) return { ok: false, error: "env_mismatch" };
   }
 
   // 3. Storage destination must exist for this Space. The restore task needs

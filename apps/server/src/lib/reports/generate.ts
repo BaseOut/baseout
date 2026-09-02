@@ -90,12 +90,15 @@ export interface GenerateDeps {
     reportName: string;
   }): Promise<void>;
   markFailed(runId: string, error: string): Promise<void>;
+  /** shared-org-runtime-env: Space's Organization must match this Worker. */
+  assertSpaceRuntimeEnv?: (spaceId: string) => Promise<boolean>;
 }
 
 export type GenerateReason =
   | "no_definition"
   | "already_running"
-  | "error";
+  | "error"
+  | "env_mismatch";
 
 export interface GenerateResult {
   ok: boolean;
@@ -109,6 +112,10 @@ export async function generateReport(
 ): Promise<GenerateResult> {
   const def = await deps.fetchDefinition(input.spaceId, input.definitionId);
   if (!def) return { ok: false, reason: "no_definition" };
+  if (deps.assertSpaceRuntimeEnv) {
+    const allowed = await deps.assertSpaceRuntimeEnv(def.spaceId);
+    if (!allowed) return { ok: false, reason: "env_mismatch" };
+  }
 
   const adHoc = !!input.windowOverride;
   let window: { start: Date; end: Date };

@@ -13,6 +13,7 @@ import { fetchSectionData } from "./section-data";
 import { putDocument } from "./report-storage";
 import { sendReportEmail } from "./email";
 import type { DeliverDeps } from "./delivery";
+import { spaceMatchesWorkerEnv } from "../assert-organization-runtime-env";
 import {
   getDefinition,
   getRunById,
@@ -122,6 +123,7 @@ export function productionGenerateDeps(env: Env, db: AppDb): GenerateDeps {
       });
     },
     markFailed: (runId, error) => markRunFailed(db, runId, error),
+    assertSpaceRuntimeEnv: (spaceId) => spaceMatchesWorkerEnv(db, env, spaceId),
   };
 }
 

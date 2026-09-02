@@ -113,6 +113,17 @@ describe("processRunDelete — error gates", () => {
     },
   );
 
+  it("returns env_mismatch when the Organization is not in this Worker env", async () => {
+    const deps = makeDeps();
+    const result = await processRunDelete(
+      { runId: RUN_ID },
+      { ...deps, assertOrganizationRuntimeEnv: async () => false },
+    );
+    expect(result).toEqual({ ok: false, error: "env_mismatch" });
+    expect(deps.computeRunPrefixes).not.toHaveBeenCalled();
+    expect(deps.markRunDeleting).not.toHaveBeenCalled();
+  });
+
   it("returns delete_in_progress when status is already 'deleting' (double-click)", async () => {
     const deps = makeDeps();
     deps.fetchRunForDelete = vi.fn(async () => ({

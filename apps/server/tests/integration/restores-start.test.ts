@@ -334,6 +334,20 @@ describe("processRestoreStart — validation failures", () => {
     expect(result).toEqual({ ok: false, error: "invalid_connection" });
   });
 
+  it("returns env_mismatch when the Organization is not in this Worker env", async () => {
+    const deps = makeDeps();
+    const result = await processRestoreStart(
+      { restoreId: RESTORE_ID },
+      {
+        ...deps,
+        now: () => NOW,
+        assertOrganizationRuntimeEnv: async () => false,
+      },
+    );
+    expect(result).toEqual({ ok: false, error: "env_mismatch" });
+    expect(deps.enqueueRestoreBase).not.toHaveBeenCalled();
+  });
+
   it("returns storage_not_found when fetchStorageDestinationBySpace resolves to null (422)", async () => {
     const deps = makeDeps();
     deps.fetchStorageDestinationBySpace = vi.fn(async () => null);

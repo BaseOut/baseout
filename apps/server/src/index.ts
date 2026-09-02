@@ -111,6 +111,7 @@ import {
   runScheduledConnectionInvalidation,
 } from "./lib/cron/oauth-refresh-deps";
 import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
+import { maybeLogProductionLockout } from "./lib/runtime-env-lockout";
 import { runScheduledWebhookRenewal } from "./lib/cron/webhook-renewal-deps";
 import { runScheduledReportSweep } from "./lib/reports/sweep";
 
@@ -965,6 +966,7 @@ export default {
     // failures are swallowed, so job behavior is unchanged.
     const { db, sql } = createMasterDb(env);
     try {
+      await maybeLogProductionLockout(db, env);
       for (const job of jobs) {
         if (job === "oauth-refresh-sweep") {
           await withServiceRun(db, "oauth_refresh_sweep", async () => ({ counts: numericCounts(await runScheduledOauthRefresh(env)) }));
@@ -975,6 +977,8 @@ export default {
         } else if (job === "connection-auto-invalidate") {
           await withServiceRun(db, "connection_auto_invalidate", async () => ({ counts: numericCounts(await runScheduledConnectionInvalidation(env)) }));
         } else if (job === "service-runs-prune") {
+          // Unfiltered on purpose (shared-org-runtime-env design D8): prune is
+          // idempotent telemetry cleanup, not org-scoped customer work.
           await withServiceRun(db, "service_runs_prune", () => pruneServiceRuns(db));
         } else if (job === "webhook-renewal") {
           await withServiceRun(db, "webhook_renewal", async () => ({ counts: numericCounts(await runScheduledWebhookRenewal(env)) }));

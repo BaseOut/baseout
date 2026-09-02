@@ -15,6 +15,7 @@ import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 import { resolveScoreInputs } from "../../../../lib/per-space/health-resolve";
 import { runEngineHealthScore, workersAiScoreMetric } from "../../../../lib/per-space/health-score-run";
 import { resolveByokAdapterForSpace } from "../../../../lib/ai/byok-credential";
+import { spaceMatchesWorkerEnv } from "../../../../lib/assert-organization-runtime-env";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,6 +49,9 @@ export async function spacesHealthRerunHandler(
   const baseId = body.baseId;
 
   const { db: masterDb, sql } = locals.getMasterDb();
+  if (!(await spaceMatchesWorkerEnv(masterDb, env, spaceId))) {
+    return jsonResponse({ error: "env_mismatch" }, 403);
+  }
   const space = await resolveSpaceDb(masterDb, spaceId);
   if (!space || space.status !== "active") return jsonResponse({ error: "space_db_not_ready" }, 409);
   if (space.backend !== "managed_pg" || !space.pgLocator) {

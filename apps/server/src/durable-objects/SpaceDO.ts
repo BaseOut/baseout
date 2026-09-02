@@ -63,6 +63,7 @@ import {
 import {
   enqueueIncrementalBackup as enqueueIncrementalBackupTask,
 } from "../lib/trigger-client";
+import { connectionMatchesWorkerEnv } from "../lib/assert-organization-runtime-env";
 import type { Env } from "../env";
 
 // DO storage key for the two next-fire timestamps.
@@ -790,8 +791,22 @@ function productionDeps(env: Env): SpaceDOAlarmDeps {
         await pg.end({ timeout: 5 });
       }
     },
-    enqueueIncrementalBackup: (payload) =>
-      enqueueIncrementalBackupTask(env, payload),
+    enqueueIncrementalBackup: async (payload) => {
+      const { db, sql: pg } = createMasterDb(env);
+      try {
+        const allowed = await connectionMatchesWorkerEnv(
+          db,
+          env,
+          payload.connectionId,
+        );
+        if (!allowed) {
+          throw new Error("env_mismatch");
+        }
+        return enqueueIncrementalBackupTask(env, payload);
+      } finally {
+        await pg.end({ timeout: 5 }).catch(() => {});
+      }
+    },
     updateSubscriptionPolledAt: async (subscriptionId, polledAt) => {
       const { db, sql: pg } = createMasterDb(env);
       try {

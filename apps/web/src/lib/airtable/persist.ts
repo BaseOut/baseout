@@ -18,6 +18,8 @@ import {
 import { encryptToken } from '../crypto'
 import type { TokenResponse } from './oauth'
 import type { AirtableBaseSummary, AirtableWhoami } from './client'
+import { requireWritableOrganization } from '../authz/organization-runtime'
+import type { OrgRuntimeEnv } from '../runtime-env'
 
 export interface PersistInputs {
   userId: string
@@ -26,6 +28,7 @@ export interface PersistInputs {
   tokens: TokenResponse
   whoami: AirtableWhoami
   bases: AirtableBaseSummary[]
+  runtimeEnv: OrgRuntimeEnv | null
 }
 
 export interface PersistResult {
@@ -38,6 +41,11 @@ export async function persistAirtableConnection(
   encryptionKey: string,
   inputs: PersistInputs,
 ): Promise<PersistResult> {
+  await requireWritableOrganization(db, {
+    organizationId: inputs.organizationId,
+    userId: inputs.userId,
+    runtimeEnv: inputs.runtimeEnv,
+  })
   const [platform] = await db
     .select({ id: platforms.id })
     .from(platforms)

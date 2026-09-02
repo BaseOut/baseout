@@ -21,6 +21,7 @@ import {
   users,
 } from '../../db/schema'
 import { PUBLIC_EMAIL_DOMAINS } from './public-email-domains'
+import type { OrgRuntimeEnv } from '../runtime-env'
 
 export interface MatchedOrganization {
   id: string
@@ -89,11 +90,15 @@ export interface DomainAssociationResult {
 export async function resolveOrganizationsForEmail(
   db: AppDb,
   email: string,
+  // shared-org-runtime-env D3 second amendment: only THIS env's Organizations
+  // may be offered/joined. Null (unknown worker env) matches nothing.
+  runtimeEnv: OrgRuntimeEnv | null,
 ): Promise<DomainAssociationResult> {
   const domain = emailDomain(email)
   if (!domain || isPublicEmailDomain(domain)) {
     return { domain, organizations: [] }
   }
+  const envScope = runtimeEnv ?? '__none__'
 
   const [derived, overrides] = await Promise.all([
     db
@@ -111,6 +116,7 @@ export async function resolveOrganizationsForEmail(
       .where(
         and(
           eq(users.emailVerified, true),
+          eq(organizations.runtimeEnv, envScope),
           sql`lower(split_part(${users.email}, '@', 2)) = ${domain}`,
         ),
       ),
@@ -126,7 +132,12 @@ export async function resolveOrganizationsForEmail(
         organizations,
         eq(organizations.id, organizationDomains.organizationId),
       )
-      .where(eq(organizationDomains.domain, domain)),
+      .where(
+        and(
+          eq(organizationDomains.domain, domain),
+          eq(organizations.runtimeEnv, envScope),
+        ),
+      ),
   ])
 
   return {

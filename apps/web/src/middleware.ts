@@ -6,6 +6,8 @@ import { applyFrameAncestors, buildFrameAncestors } from "./lib/embed/frame-head
 import { createDb } from "./db";
 import { createAppAuth } from "./lib/auth";
 import { getAccountContext } from "./lib/account";
+import { resolveRuntimeEnv, sessionMatchesWorkerEnv } from "./lib/runtime-env";
+import { maybeLogProductionLockout } from "./lib/runtime-env-lockout";
 import {
   extractSessionTokenCookie,
   SESSION_CACHE,
@@ -20,6 +22,7 @@ import { resolveLoginCallback } from "./lib/return-to";
 import { handleAccountCreated } from "./lib/signup/account-created";
 import { handleMagicLinkRequested, handleSessionCreated } from "./lib/auth-events";
 import { handleTwoFactorEvent } from "./lib/two-factor/events";
+import { handleSsoAccountLinked } from "./lib/airtable/sso-linked";
 import { applyNavSnapshotHeaders } from "./lib/nav-snapshot";
 
 // /embed is public by design (shared-embed-protocol): an unauthenticated
@@ -168,12 +171,20 @@ const handleRequest = defineMiddleware(async (context, next) => {
   }
 
   const { db, sql } = createDb(resolveDbUrl());
+  const workerRuntimeEnv = resolveRuntimeEnv({
+    BASEOUT_ENV: (env as { BASEOUT_ENV?: string }).BASEOUT_ENV,
+    BASEOUT_DEV: (env as { BASEOUT_DEV?: string }).BASEOUT_DEV,
+  });
+  context.locals.cfContext.waitUntil(
+    maybeLogProductionLockout(db, workerRuntimeEnv).catch(() => {}),
+  );
   const authEnv = buildAuthEnv();
   const auth = createAppAuth(db, {
     ...authEnv,
+    runtimeEnv: workerRuntimeEnv,
     // signup-domain-association fork hook — records known-domain matches at
     // account creation so /welcome can offer join-or-create (never blocks).
-    onAccountCreated: (user) => handleAccountCreated(db, user),
+    onAccountCreated: (user) => handleAccountCreated(db, user, workerRuntimeEnv),
     // web-auth CC7.2: authentication-event trail (login-link + sign-in).
     onMagicLinkRequested: (input) => handleMagicLinkRequested(db, input),
     onSessionCreated: (session) => handleSessionCreated(db, session),
@@ -215,7 +226,11 @@ const handleRequest = defineMiddleware(async (context, next) => {
   const cacheable = !!sessionToken && !isAuthApi;
   if (cacheable) {
     const hit = SESSION_CACHE.get(sessionToken);
-    if (hit && hit.expiresAt > Date.now()) {
+    if (
+      hit &&
+      hit.expiresAt > Date.now() &&
+      sessionMatchesWorkerEnv(hit.user?.runtimeEnv, workerRuntimeEnv)
+    ) {
       context.locals.user = hit.user;
       context.locals.session = hit.session;
       context.locals.account = hit.account;
@@ -231,7 +246,7 @@ const handleRequest = defineMiddleware(async (context, next) => {
       }
     }
     const l2 = await readSessionCacheL2(sessionToken);
-    if (l2) {
+    if (l2 && sessionMatchesWorkerEnv(l2.user?.runtimeEnv, workerRuntimeEnv)) {
       context.locals.user = l2.user;
       context.locals.session = l2.session;
       context.locals.account = l2.account;
@@ -275,6 +290,7 @@ const handleRequest = defineMiddleware(async (context, next) => {
     if (session) {
       const sessionUser = session.user as typeof session.user & {
         termsAcceptedAt?: Date | string | null;
+        runtimeEnv?: string | null;
       };
       const termsAcceptedAt = sessionUser.termsAcceptedAt
         ? sessionUser.termsAcceptedAt instanceof Date
@@ -282,30 +298,42 @@ const handleRequest = defineMiddleware(async (context, next) => {
           : new Date(sessionUser.termsAcceptedAt)
         : null;
 
-      context.locals.user = {
-        id: session.user.id,
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
-        termsAcceptedAt,
-      };
-      context.locals.session = session.session;
-      context.locals.account = await getAccountContext(db, session.user.id);
+      const userRuntimeEnv = sessionUser.runtimeEnv ?? null;
+      if (!sessionMatchesWorkerEnv(userRuntimeEnv, workerRuntimeEnv)) {
+        context.locals.user = null;
+        context.locals.session = null;
+        context.locals.account = null;
+      } else {
+        context.locals.user = {
+          id: session.user.id,
+          name: session.user.name,
+          email: session.user.email,
+          image: session.user.image,
+          termsAcceptedAt,
+          runtimeEnv: userRuntimeEnv,
+        };
+        context.locals.session = session.session;
+        context.locals.account = await getAccountContext(
+          db,
+          session.user.id,
+          workerRuntimeEnv,
+        );
 
-      if (cacheable) {
-        SESSION_CACHE.set(sessionToken, {
-          user: context.locals.user,
-          session: context.locals.session,
-          account: context.locals.account,
-          expiresAt: Date.now() + SESSION_TTL_MS,
-        });
-        context.locals.cfContext.waitUntil(
-          writeSessionCacheL2(sessionToken, {
+        if (cacheable) {
+          SESSION_CACHE.set(sessionToken, {
             user: context.locals.user,
             session: context.locals.session,
             account: context.locals.account,
-          }),
-        );
+            expiresAt: Date.now() + SESSION_TTL_MS,
+          });
+          context.locals.cfContext.waitUntil(
+            writeSessionCacheL2(sessionToken, {
+              user: context.locals.user,
+              session: context.locals.session,
+              account: context.locals.account,
+            }),
+          );
+        }
       }
     } else {
       context.locals.user = null;
@@ -313,7 +341,7 @@ const handleRequest = defineMiddleware(async (context, next) => {
       context.locals.account = null;
     }
 
-    if (!session && !isPublicRoute(context.url.pathname)) {
+    if (!context.locals.user && !isPublicRoute(context.url.pathname)) {
       if (context.url.pathname.startsWith('/api/')) {
         return new Response(JSON.stringify({ error: 'Not authenticated' }), {
           status: 401,
@@ -328,7 +356,7 @@ const handleRequest = defineMiddleware(async (context, next) => {
     const gate = applyOnboardingGate(context);
     if (gate) return withAuthCookies(gate);
 
-    if (session && (context.url.pathname === '/login' || context.url.pathname === '/register')) {
+    if (context.locals.user && (context.url.pathname === '/login' || context.url.pathname === '/register')) {
       // Honor a validated returnTo so a user whose session cookie reappears by
       // the time they land on /login (transient withholding) — or a signed-in
       // staffer bounced here from the admin console — continues to their

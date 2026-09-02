@@ -102,6 +102,7 @@ describe("ConnectionDO /token", () => {
     await runInDurableObject(stub, async (instance) => {
       instance.setResolveAirtableTokenImplForTests(resolverSpy);
       instance.setOnDemandRefreshEnabledForTests(true);
+      instance.setConnectionEnvCheckForTests(async () => true);
     });
 
     const body = JSON.stringify({ connectionId: "conn-race" });
@@ -113,6 +114,35 @@ describe("ConnectionDO /token", () => {
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
     expect(peak).toBe(1);
+  });
+
+  it("refuses decrypt when the Connection's Organization env mismatches", async () => {
+    const stub = getStub(`env-mismatch-${crypto.randomUUID()}`);
+    const decryptSpy = vi.fn(async (cipher: string) => `plain-${cipher}`);
+    const resolverSpy = vi.fn(async () => ({
+      ok: true as const,
+      accessToken: "should-not-run",
+      refreshed: false,
+    }));
+
+    await runInDurableObject(stub, async (instance) => {
+      instance.setDecryptImplForTests(decryptSpy);
+      instance.setResolveAirtableTokenImplForTests(resolverSpy);
+      instance.setOnDemandRefreshEnabledForTests(true);
+      instance.setConnectionEnvCheckForTests(async () => false);
+    });
+
+    const res = await stub.fetch("http://do/token", {
+      method: "POST",
+      body: JSON.stringify({
+        connectionId: "conn-other-env",
+        encryptedToken: "cipher-A",
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "refresh_env_mismatch" });
+    expect(decryptSpy).not.toHaveBeenCalled();
+    expect(resolverSpy).not.toHaveBeenCalled();
   });
 
   it("returns 400 when encryptedToken is missing or empty", async () => {
@@ -143,6 +173,7 @@ describe("ConnectionDO /token", () => {
       instance.setDecryptImplForTests(decryptSpy);
       instance.setResolveAirtableTokenImplForTests(resolverSpy);
       instance.setOnDemandRefreshEnabledForTests(true);
+      instance.setConnectionEnvCheckForTests(async () => true);
     });
 
     const res = await stub.fetch("http://do/token", {

@@ -172,6 +172,7 @@ export async function createJoinRequest(
   inputs: {
     requester: { id: string; email: string }
     organizationId: string
+    runtimeEnv: import('../runtime-env').OrgRuntimeEnv | null
   },
   now: Date = new Date(),
 ): Promise<CreateJoinRequestResult> {
@@ -180,6 +181,7 @@ export async function createJoinRequest(
   const { domain, organizations: matches } = await resolveOrganizationsForEmail(
     db,
     requester.email,
+    inputs.runtimeEnv,
   )
   const target = matches.find((o) => o.id === organizationId)
   if (!target) return { ok: false, reason: 'domain_mismatch' }

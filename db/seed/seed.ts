@@ -88,6 +88,7 @@ async function seed() {
     .values({
       name: 'Openside',
       slug: 'openside',
+      runtimeEnv: 'dev',
     })
     .onConflictDoUpdate({
       target: organizations.slug,

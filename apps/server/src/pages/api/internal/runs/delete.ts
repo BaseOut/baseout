@@ -43,6 +43,8 @@ function statusFor(result: ProcessRunDeleteResult): number {
     case "run_not_terminal":
     case "delete_in_progress":
       return 409;
+    case "env_mismatch":
+      return 403;
   }
 }
 
@@ -64,7 +66,7 @@ export async function runsDeleteHandler(
 
   const result = await processRunDelete(
     { runId },
-    buildRunDeleteDeps(db),
+    buildRunDeleteDeps(db, env),
   );
 
   if (!result.ok) {

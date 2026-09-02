@@ -5,6 +5,8 @@ import {
   listSpacesForOrg,
   SpaceError,
 } from '../../../lib/spaces'
+import { requireWritableOrganization } from '../../../lib/authz/organization-runtime'
+import { resolveRuntimeEnv } from '../../../lib/runtime-env'
 import { createBackupEngine } from '../../../lib/backup-engine'
 import { resolveEntitlements } from '../../../lib/entitlements/resolve'
 import { checkCreationCap } from '../../../lib/entitlements/enforce-create'
@@ -43,6 +45,19 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
   const orgId = locals.account?.organization?.id
   if (!orgId) {
+    return jsonResponse({ error: 'No active organization' }, 403)
+  }
+
+  try {
+    await requireWritableOrganization(locals.db, {
+      organizationId: orgId,
+      userId: locals.user.id,
+      runtimeEnv: resolveRuntimeEnv({
+        BASEOUT_ENV: env.BASEOUT_ENV,
+        BASEOUT_DEV: env.BASEOUT_DEV,
+      }),
+    })
+  } catch {
     return jsonResponse({ error: 'No active organization' }, 403)
   }
 

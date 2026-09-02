@@ -51,6 +51,8 @@ function statusFor(result: ProcessRunStartResult): number {
     case "unsupported_storage_type":
     case "no_bases_selected":
       return 422;
+    case "env_mismatch":
+      return 403;
   }
 }
 

@@ -17,10 +17,12 @@
 
 import {
   boolean,
+  check,
   index,
   pgSchema,
   text,
   timestamp,
+  unique,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
@@ -39,18 +41,29 @@ export const users = baseout.table('users', {
   firstName: text('first_name'),
   lastName: text('last_name'),
   jobTitle: text('job_title'),
-  email: text('email').notNull().unique(),
+  // Unique per (email, runtime_env) — composite constraint below. The same
+  // address exists as a SEPARATE user row per environment.
+  email: text('email').notNull(),
   emailVerified: boolean('email_verified').notNull(),
   image: text('image'),
   role: text('role').notNull().default('customer'),
   // 'customer' | 'super' — 'super' granted via auth-factory databaseHooks for
   // @openside.com staff; gates /ops console (see middleware.applyOpsGate).
+  // Which Worker env owns this user (shared-org-runtime-env; design D3 second
+  // amendment). Inherited from the account side of the split — stamped from
+  // the worker env at creation (databaseHooks.user.create.before), never set
+  // independently. Auth email lookups are env-scoped at the adapter boundary
+  // (apps/web/src/lib/auth-env-scope.ts). Existing rows backfill to 'staging'.
+  runtimeEnv: text('runtime_env').notNull().default('staging'),
   termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
   marketingOptInAt: timestamp('marketing_opt_in_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 }, (table) => [
   index('users_role_idx').on(table.role),
+  unique('users_email_runtime_env_unique').on(table.email, table.runtimeEnv),
+  // Expression byte-identical to migration 0041 / snapshot — don't reformat.
+  check('users_runtime_env_check', sql`"runtime_env" IN ('dev', 'staging', 'production')`),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————

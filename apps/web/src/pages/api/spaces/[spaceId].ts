@@ -6,6 +6,9 @@
  */
 import type { APIRoute } from 'astro'
 import { renameSpace, SpaceError } from '../../../lib/spaces'
+import { requireWritableOrganization } from '../../../lib/authz/organization-runtime'
+import { resolveRuntimeEnv } from '../../../lib/runtime-env'
+import { env } from 'cloudflare:workers'
 import type { AccountContext } from '../../../lib/account'
 import type { AppDb } from '../../../db'
 
@@ -59,6 +62,20 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
 export const PATCH: APIRoute = async ({ locals, params, request }) => {
   const db = locals.db
   if (!db) return jsonResponse({ error: 'Database not initialized' }, 500)
+  if (locals.user && locals.account?.organization?.id) {
+    try {
+      await requireWritableOrganization(db, {
+        organizationId: locals.account.organization.id,
+        userId: locals.user.id,
+        runtimeEnv: resolveRuntimeEnv({
+          BASEOUT_ENV: env.BASEOUT_ENV,
+          BASEOUT_DEV: env.BASEOUT_DEV,
+        }),
+      })
+    } catch {
+      return jsonResponse({ error: 'space_not_found' }, 403)
+    }
+  }
   const body = await request.json().catch(() => null)
   return handlePatch({
     account: locals.account ?? null,

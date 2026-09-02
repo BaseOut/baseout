@@ -28,11 +28,13 @@ export interface CreatedUser {
 export async function handleAccountCreated(
   db: AppDb,
   user: CreatedUser,
+  runtimeEnv: import('../runtime-env').OrgRuntimeEnv | null,
 ): Promise<void> {
   try {
     const { domain, organizations } = await resolveOrganizationsForEmail(
       db,
       user.email,
+      runtimeEnv,
     )
     if (organizations.length === 0) return
     await writeAuthAuditSafe(db, {

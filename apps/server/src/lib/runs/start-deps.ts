@@ -29,6 +29,7 @@ import { boolFeatureFrom } from "../capabilities/entitlement-capabilities";
 import { resolveEntitlements } from "../entitlements/resolve";
 import type { Env } from "../../env";
 import type { ProcessRunStartDeps, IncludedBase } from "./start";
+import { organizationMatchesWorkerEnv } from "../assert-organization-runtime-env";
 
 type MasterDb = ReturnType<typeof import("../../db/worker").createMasterDb>["db"];
 
@@ -132,5 +133,7 @@ export function buildRunStartDeps(db: MasterDb, env: Env): ProcessRunStartDeps {
     // processRunStart; 403-degraded until the workspacesAndBases:read scope
     // decision lands).
     runWorkspaceAutoEnroll: buildWorkspaceAutoEnrollDep(db, env),
+    assertOrganizationRuntimeEnv: (organizationId) =>
+      organizationMatchesWorkerEnv(db, env, organizationId),
   };
 }

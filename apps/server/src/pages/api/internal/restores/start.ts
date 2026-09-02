@@ -52,6 +52,8 @@ function statusFor(result: ProcessRestoreStartResult): number {
     case "source_run_not_found":
     case "source_run_not_restorable":
       return 422;
+    case "env_mismatch":
+      return 403;
   }
 }
 

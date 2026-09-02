@@ -25,6 +25,9 @@
   "env": {
     "dev": {
       "account_id": "33857e356899b7369fb01c18ace8d780",
+      "vars": {
+        "BASEOUT_ENV": "dev"
+      },
       // Direct postgres-js TLS from workerd hangs under `wrangler dev`, so local
       // dev goes through wrangler's Hyperdrive simulator: `pnpm dev` runs
       // scripts/dev.mjs, which feeds .dev.vars DATABASE_URL in via
@@ -47,6 +50,9 @@
       // owning account and supplies it. Pinning it here can only create a
       // mismatch, since production builds read this same file in a
       // different account. env.dev keeps its pin for local wrangler use.
+      "vars": {
+        "BASEOUT_ENV": "staging"
+      },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
       // `vars`), so it MUST be restated per env — a top-level-only block
@@ -81,6 +87,9 @@
       // PROVISION: production account id.
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.
+      "vars": {
+        "BASEOUT_ENV": "production"
+      },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
       // `vars`), so it MUST be restated per env — a top-level-only block

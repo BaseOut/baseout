@@ -10,6 +10,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm'
 import { uniqueSlug } from '../slug'
 import { insertDefaultReport } from '../reports/default-report'
+import type { OrgRuntimeEnv } from '../runtime-env'
 
 export const REFERRAL_SOURCES = [
   'google',
@@ -59,6 +60,7 @@ export type CompleteOnboardingError =
     }
   | { kind: 'already_onboarded' }
   | { kind: 'user_not_found' }
+  | { kind: 'env_unavailable' }
 
 export class OnboardingError extends Error {
   constructor(public detail: CompleteOnboardingError) {
@@ -173,6 +175,7 @@ export async function provisionOnboarding(
   db: AppDb,
   userId: string,
   input: ValidatedOnboarding,
+  runtimeEnv: OrgRuntimeEnv | null,
 ): Promise<OnboardingOrgSnapshot> {
   const [user] = await db
     .select({
@@ -186,15 +189,21 @@ export async function provisionOnboarding(
 
   if (!user) throw new OnboardingError({ kind: 'user_not_found' })
   if (user.termsAcceptedAt) throw new OnboardingError({ kind: 'already_onboarded' })
+  if (!runtimeEnv) throw new OnboardingError({ kind: 'env_unavailable' })
 
-  // Resume path: user has an owner org but Stripe never completed.
+  // Resume path: user has an owner org in THIS env but Stripe never completed.
   const [existingOwner] = await db
     .select({ organizationId: organizationMembers.organizationId })
     .from(organizationMembers)
+    .innerJoin(
+      organizations,
+      eq(organizations.id, organizationMembers.organizationId),
+    )
     .where(
       and(
         eq(organizationMembers.userId, userId),
         eq(organizationMembers.role, 'owner'),
+        eq(organizations.runtimeEnv, runtimeEnv),
       ),
     )
     .limit(1)
@@ -261,6 +270,7 @@ export async function provisionOnboarding(
         slug,
         referralSource: input.referralSource,
         referralCode: input.referralCode,
+        runtimeEnv,
       })
       .returning({ id: organizations.id })
 

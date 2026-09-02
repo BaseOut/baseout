@@ -14,9 +14,10 @@ import {
   spaces,
   userPreferences,
 } from '../db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc } from 'drizzle-orm'
 import { listSpacesForOrg } from './spaces'
 import { isInternalEmail } from './capabilities/internal-access'
+import type { OrgRuntimeEnv } from './runtime-env'
 
 export interface AccountContext {
   user: {
@@ -62,6 +63,7 @@ async function promoteToStaffIfInternal(
 export async function getAccountContext(
   db: AppDb,
   userId: string,
+  runtimeEnv: OrgRuntimeEnv | null,
 ): Promise<AccountContext | null> {
   // Happy path: one round-trip. Joins user → prefs → active org → membership → active space.
   // Null right-side rows are fine — when prefs row is missing or its fk columns are null,
@@ -80,6 +82,7 @@ export async function getAccountContext(
         name: organizations.name,
         slug: organizations.slug,
       },
+      orgRuntimeEnv: organizations.runtimeEnv,
       membership: {
         role: organizationMembers.role,
         isDefault: organizationMembers.isDefault,
@@ -117,15 +120,21 @@ export async function getAccountContext(
     // role-only surfaces catch up, but a transient write failure must not block
     // normal account loading.
   }
-  let organization: AccountContext['organization'] = row.org?.id ? row.org : null
-  let membership: AccountContext['membership'] = row.membership?.role
-    ? row.membership
-    : null
-  let space: AccountContext['space'] = row.space?.id ? row.space : null
+  const prefsOrgMatchesEnv =
+    !!row.org?.id &&
+    runtimeEnv !== null &&
+    row.orgRuntimeEnv === runtimeEnv
 
-  // Fallback: no active-org preference set — resolve default membership + first space
-  // in a single second query.
-  if (!organization) {
+  let organization: AccountContext['organization'] = prefsOrgMatchesEnv
+    ? row.org
+    : null
+  let membership: AccountContext['membership'] =
+    prefsOrgMatchesEnv && row.membership?.role ? row.membership : null
+  let space: AccountContext['space'] =
+    prefsOrgMatchesEnv && row.space?.id ? row.space : null
+
+  // Fallback: no in-env active org — first same-env membership (prefer is_default).
+  if (!organization && runtimeEnv !== null) {
     const [fallback] = await db
       .select({
         org: {
@@ -149,7 +158,13 @@ export async function getAccountContext(
         eq(organizations.id, organizationMembers.organizationId),
       )
       .leftJoin(spaces, eq(spaces.organizationId, organizations.id))
-      .where(eq(organizationMembers.userId, userId))
+      .where(
+        and(
+          eq(organizationMembers.userId, userId),
+          eq(organizations.runtimeEnv, runtimeEnv),
+        ),
+      )
+      .orderBy(desc(organizationMembers.isDefault))
       .limit(1)
 
     if (fallback) {
