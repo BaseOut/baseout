@@ -5,6 +5,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "include": ["trigger/**/*", "trigger.config.ts", "tests/**/*"],
+  "include": ["trigger/**/*", "trigger.config.ts", "tests/**/*", "ci/**/*"],
   "exclude": ["node_modules", "dist"]
 }

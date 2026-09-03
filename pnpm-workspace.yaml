@@ -14,6 +14,12 @@ packages:
   # hold its own drizzle-kit — the migrations are shared infrastructure read by
   # five apps, not an apps/web concern.
   - "db"
+  # architecture/diagram is the interactive ReactFlow view of
+  # architecture/systems-overview.md (arch.baseout.dev). A workspace member so
+  # its React/Vite deps resolve and Workers Builds can `pnpm --filter` it. It
+  # lives under architecture/ rather than apps/ deliberately: it ships no product
+  # surface and depends on no @baseout/* package.
+  - "architecture/diagram"
 
 # Transitive-dependency version pins to clear Dependabot high CVEs
 # (system-dep-remediation-2: post-consolidation re-apply + extend). pnpm 10+

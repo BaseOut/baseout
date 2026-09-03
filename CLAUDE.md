@@ -52,7 +52,7 @@ scripts/      Repo automation (e.g. openspec-changes.mjs — `pnpm openspec:chan
 references/   Third-party reference material
 ```
 
-Package manager pinned at `pnpm@9.12.0`. New apps go in `apps/<name>/` with package name `@baseout/<name>`. New shared utilities go in `packages/<name>/`.
+Package manager pinned at `pnpm@11.1.1` (`packageManager` in the root `package.json`). New apps go in `apps/<name>/` with package name `@baseout/<name>`. New shared utilities go in `packages/<name>/`.
 
 ## Current
 
@@ -478,6 +478,8 @@ Trigger.dev v3 task project. Runs on the Trigger.dev cloud's **Node** runner —
 - **Type-only exports.** `trigger/tasks/index.ts` re-exports task references as `export type` so the Backend Worker can `tasks.trigger<typeof X>(...)` without bundling the task body.
 - **Engine callback contract.** Tasks POST per-table progress and a final completion to `/api/internal/runs/:runId/{progress,complete}`. Transport errors are fire-and-forget — the run-row state machine + DO lock alarm are the safety nets.
 - **Test runner.** Plain Vitest with `environment: "node"` — no `@cloudflare/vitest-pool-workers`. External APIs (Airtable, R2/BYOS, engine HTTP) mocked at the boundary.
+- **Deploy: Cloudflare Workers Builds → Trigger.dev, not GitHub Actions.** Build command `pnpm run build` (workspace deps then `tsc --noEmit` — `@baseout/shared` resolves to `dist/*`, so it MUST be built before the task bundle is assembled); deploy command `pnpm run deploy:staging` (`staging` branch) / `pnpm run deploy:production` (`main`), both of which are `trigger.dev deploy --env {staging,prod}`. Build variables: `TRIGGER_ACCESS_TOKEN` (secret), `PNPM_VERSION=11.1.1` (the image ships pnpm 10 and does not read `packageManager`; `pnpm-workspace.yaml` uses pnpm-11-only keys), `NODE_VERSION=22.23.2`. Full settings + rationale: [apps/workflows/README.md](apps/workflows/README.md) "Deploy" and [shared/internal/cloudflare-env-separation.md](shared/internal/cloudflare-env-separation.md) §8.
+- **The anchor Worker is not a runtime.** Workers Builds attaches per *Cloudflare Worker*, and this app is not one — so `wrangler.jsonc` + `ci/worker-stub.ts` exist only to create a `baseout-workflows` Worker record for the build trigger to hang off of. Deploy it once by hand per account (`pnpm --filter @baseout/workflows exec wrangler deploy`); CI never runs wrangler here, so it stays pinned at a 404 stub forever. Never add a binding, a var, or a route to it, and never move task code into it.
 - **File layout.**
 
 ```
@@ -490,9 +492,13 @@ trigger/
     _lib/                 Pure helpers — airtable client, csv stream, field normalizer, fs writer, path layout
 trigger.config.ts         Trigger.dev project config (maxDuration: 600 default; per-task overrides allowed)
 tests/                    Vitest (Node) — one file per pure module + task wrapper
+ci/
+  worker-stub.ts          NOT runtime — 404 handler that exists only so a Cloudflare
+                          Worker record exists for Workers Builds to attach to
+wrangler.jsonc            Anchor config for that record. No bindings, no vars, no envs.
 ```
 
-There is intentionally no `src/`, no UI, no DB layer here — the workflows app holds task code, helpers, and tests only.
+There is intentionally no `src/`, no UI, no DB layer here — the workflows app holds task code, helpers, tests, and the CI anchor only. `ci/` is deliberately named so it can never be mistaken for the task runtime; the "no `src/`" rule stands.
 
 ---
 

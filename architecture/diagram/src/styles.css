@@ -1,0 +1,456 @@
+/* Light palette on bare :root; dark redefines only the tokens, so a colour is
+   never defined solely inside a media query. */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #14181f;
+  --ink-dim: #5b6472;
+  --line: #d8dde5;
+  --line-soft: #e8ecf1;
+
+  --live: #1a7f52;
+  --live-bg: #e6f5ee;
+  --built: #9a6400;
+  --built-bg: #fdf2dc;
+  --proposed: #5b6472;
+  --proposed-bg: #eef0f3;
+  --external: #2a5fa8;
+  --external-bg: #e7effa;
+  --infra: #6b3fa0;
+  --infra-bg: #f1eafa;
+
+  --edge: #8a94a3;
+  --edge-thick: #c2410c;
+  --note-bg: #fffbe8;
+  --note-line: #e8d99a;
+
+  --stg-line: #2a5fa8;
+  --stg-bg: rgba(42, 95, 168, 0.05);
+  --prod-line: #1a7f52;
+  --prod-bg: rgba(26, 127, 82, 0.05);
+  --danger-line: #c2410c;
+  --danger-bg: rgba(194, 65, 12, 0.05);
+  --neutral-line: #b6bec9;
+  --neutral-bg: rgba(120, 130, 145, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --ink: #e7ecf3;
+    --ink-dim: #9aa5b4;
+    --line: #2c333d;
+    --line-soft: #232a33;
+
+    --live: #5fd6a0;
+    --live-bg: rgba(95, 214, 160, 0.12);
+    --built: #e6b455;
+    --built-bg: rgba(230, 180, 85, 0.12);
+    --proposed: #9aa5b4;
+    --proposed-bg: rgba(154, 165, 180, 0.12);
+    --external: #7fb0f0;
+    --external-bg: rgba(127, 176, 240, 0.12);
+    --infra: #bda1ea;
+    --infra-bg: rgba(189, 161, 234, 0.12);
+
+    --edge: #6b7684;
+    --edge-thick: #f97316;
+    --note-bg: #1e1c14;
+    --note-line: #4a4127;
+
+    --stg-bg: rgba(127, 176, 240, 0.06);
+    --prod-bg: rgba(95, 214, 160, 0.06);
+    --danger-bg: rgba(249, 115, 22, 0.06);
+    --neutral-line: #3a424e;
+    --neutral-bg: rgba(154, 165, 180, 0.04);
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --ink: #e7ecf3;
+  --ink-dim: #9aa5b4;
+  --line: #2c333d;
+  --line-soft: #232a33;
+  --live: #5fd6a0;
+  --live-bg: rgba(95, 214, 160, 0.12);
+  --built: #e6b455;
+  --built-bg: rgba(230, 180, 85, 0.12);
+  --proposed: #9aa5b4;
+  --proposed-bg: rgba(154, 165, 180, 0.12);
+  --external: #7fb0f0;
+  --external-bg: rgba(127, 176, 240, 0.12);
+  --infra: #bda1ea;
+  --infra-bg: rgba(189, 161, 234, 0.12);
+  --edge: #6b7684;
+  --edge-thick: #f97316;
+  --note-bg: #1e1c14;
+  --note-line: #4a4127;
+  --neutral-line: #3a424e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font:
+    14px/1.5 ui-sans-serif,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── header ───────────────────────────────────────────────────────────────── */
+
+.hd {
+  flex: 0 0 auto;
+  padding: 14px 18px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.hd-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hd h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.hd-dim {
+  color: var(--ink-dim);
+  font-weight: 450;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lg i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid;
+}
+
+.lg.s-live i {
+  background: var(--live-bg);
+  border-color: var(--live);
+}
+.lg.s-built i {
+  background: var(--built-bg);
+  border-color: var(--built);
+}
+.lg.s-proposed i {
+  background: var(--proposed-bg);
+  border-color: var(--proposed);
+}
+.lg.s-external i {
+  background: var(--external-bg);
+  border-color: var(--external);
+}
+.lg.s-infra i {
+  background: var(--infra-bg);
+  border-color: var(--infra);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 13px;
+  border-radius: 7px 7px 0 0;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: var(--line-soft);
+}
+
+.tab.is-on {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--bg);
+  border-color: var(--line);
+  margin-bottom: -1px;
+  padding-bottom: 8px;
+}
+
+.blurb {
+  margin: 10px 2px 12px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  max-width: 105ch;
+}
+
+/* ── canvas ───────────────────────────────────────────────────────────────── */
+
+.canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ft {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  font-size: 11px;
+  color: var(--ink-dim);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.ft code {
+  font-size: 11px;
+  background: var(--line-soft);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ── nodes ────────────────────────────────────────────────────────────────── */
+
+.n-svc {
+  width: 200px;
+  padding: 9px 11px 22px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.n-svc.is-sel {
+  outline: 2px solid var(--external);
+  outline-offset: 1px;
+}
+
+.n-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.n-label {
+  font-weight: 620;
+  font-size: 13px;
+  letter-spacing: -0.005em;
+}
+
+.n-tag {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+.n-sub {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.n-status {
+  position: absolute;
+  left: 11px;
+  bottom: 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+/* Status drives the left rail + the chip colour. */
+.s-live {
+  border-left: 3px solid var(--live);
+}
+.s-live .n-status {
+  color: var(--live);
+}
+.s-built {
+  border-left: 3px solid var(--built);
+}
+.s-built .n-status {
+  color: var(--built);
+}
+.s-proposed {
+  border-left: 3px solid var(--proposed);
+  border-style: dashed;
+}
+.s-proposed .n-status {
+  color: var(--proposed);
+}
+.s-external {
+  border-left: 3px solid var(--external);
+}
+.s-external .n-status {
+  color: var(--external);
+}
+.s-infra {
+  border-left: 3px solid var(--infra);
+}
+.s-infra .n-status {
+  color: var(--infra);
+}
+
+.n-group {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  border: 1.5px dashed var(--neutral-line);
+  background: var(--neutral-bg);
+}
+
+.g-label {
+  position: absolute;
+  top: -9px;
+  left: 14px;
+  padding: 1px 8px;
+  background: var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border-radius: 4px;
+}
+
+.g-sub {
+  margin-left: 7px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.g-staging {
+  border-color: var(--stg-line);
+  background: var(--stg-bg);
+}
+.g-production {
+  border-color: var(--prod-line);
+  background: var(--prod-bg);
+}
+.g-danger {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+}
+
+.n-note {
+  padding: 8px 10px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--note-bg);
+  border: 1px solid var(--note-line);
+  border-radius: 7px;
+}
+
+/* ── edges ────────────────────────────────────────────────────────────────── */
+
+.react-flow__edge.e-solid .react-flow__edge-path {
+  stroke: var(--edge);
+}
+
+.react-flow__edge.e-dashed .react-flow__edge-path {
+  stroke: var(--edge);
+  stroke-dasharray: 5 4;
+}
+
+.react-flow__edge.e-thick .react-flow__edge-path {
+  stroke: var(--edge-thick);
+}
+
+.react-flow__edge-text {
+  fill: var(--ink-dim);
+}
+
+.react-flow__edge-textbg {
+  fill: var(--bg);
+}
+
+.react-flow__handle {
+  width: 5px;
+  height: 5px;
+  background: var(--edge);
+  border: none;
+  opacity: 0.35;
+}
+
+.react-flow__attribution {
+  background: transparent;
+  font-size: 9px;
+}
+
+/* ReactFlow paints its own surface; keep it on our token. */
+.react-flow__pane {
+  background: var(--bg);
+}
+
+.react-flow__controls-button {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  fill: var(--ink);
+}
+
+.react-flow__minimap {
+  background: var(--panel);
+}
+
+@media (max-width: 700px) {
+  .legend {
+    order: 3;
+  }
+  .blurb {
+    display: none;
+  }
+}

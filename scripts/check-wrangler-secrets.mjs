@@ -24,9 +24,9 @@ const DEPLOYED = ['staging', 'production'];
 const fileArg = process.argv.indexOf('--file');
 const FORCED = fileArg > -1 ? process.argv[fileArg + 1] : null;
 const CANDIDATES = FORCED ? [FORCED] : ['new.wrangler.jsonc', 'wrangler.jsonc'];
-function configFor(app) {
+function configFor(dir) {
   for (const name of CANDIDATES) {
-    const p = join(REPO, 'apps', app, name);
+    const p = join(REPO, dir, name);
     if (existsSync(p)) return { name, path: p };
   }
   return null;
@@ -46,11 +46,43 @@ function stripJsonc(src) {
 }
 
 let failures = 0;
-const apps = readdirSync(join(REPO, 'apps')).filter(a => configFor(a));
+// Workers live under apps/* plus a short list of deliberate exceptions —
+// architecture/diagram is a real deployed Worker (arch.baseout.dev) that ships no
+// product surface, so it sits outside apps/. It still must obey every rule here:
+// the 2026-09-03 baseout-arch rename left its env names pinned to the old value
+// and nothing caught it, because this script only looked at apps/.
+const EXTRA_DIRS = ['architecture/diagram'];
+const apps = [
+  ...readdirSync(join(REPO, 'apps')).map((a) => `apps/${a}`),
+  ...EXTRA_DIRS,
+].filter((d) => configFor(d)).map((dir) => ({ dir, label: dir.split('/').pop() }));
 
-for (const app of apps) {
-  const cfg = JSON.parse(stripJsonc(readFileSync(configFor(app).path, 'utf8')));
+for (const { dir, label: app } of apps) {
+  const cfg = JSON.parse(stripJsonc(readFileSync(configFor(dir).path, 'utf8')));
   const envs = cfg.env ?? {};
+
+  // Is this config actually deployed BY WRANGLER? Two apps have a wrangler.jsonc
+  // that is not:
+  //   - apps/design: a PROPOSED config with no deploy pipeline at all (still on
+  //     the Node adapter).
+  //   - apps/workflows: an ANCHOR config. It exists only so a Cloudflare Worker
+  //     record exists for Workers Builds to attach to; the deploy command is
+  //     `trigger.dev deploy`, and CI never runs wrangler there. It deliberately
+  //     has no envs, so every per-env rule below would be noise.
+  // The signal is not "has a deploy:staging script" — workflows has one — but
+  // "that script actually invokes wrangler deploy".
+  let deployed = false;
+  try {
+    const pkg = JSON.parse(readFileSync(join(REPO, dir, 'package.json'), 'utf8'));
+    deployed = /wrangler\s+deploy/.test(pkg.scripts?.['deploy:staging'] ?? '');
+  } catch {
+    // No package.json — treat as not deployed.
+  }
+  if (!deployed) {
+    console.log(`· ${app}: not wrangler-deployed (no \`wrangler deploy\` in deploy:staging) — per-env rules skipped`);
+    continue;
+  }
+
   const lists = {};
   for (const e of DEPLOYED) {
     if (!envs[e]) { console.error(`✗ ${app}: env.${e} is missing`); failures++; continue; }
@@ -77,27 +109,14 @@ for (const app of apps) {
     console.error(`✗ ${app}: env.dev declares "name": "${envs.dev.name}" — remove it; dev is deployed locally and derives ${cfg.name}-dev`);
     failures++;
   }
-  // Only applies to apps Workers Builds actually deploys. A `deploy:staging`
-  // script is the signal; apps/design has a PROPOSED config with no deploy
-  // pipeline (it still targets the Node adapter), so demanding a CI-pinned name
-  // from it would be noise.
-  let deployed = false;
-  try {
-    const pkg = JSON.parse(readFileSync(join(REPO, 'apps', app, 'package.json'), 'utf8'));
-    deployed = Boolean(pkg.scripts?.['deploy:staging']);
-  } catch {
-    // No package.json — treat as not deployed.
-  }
-  if (deployed) {
-    for (const e of ['staging', 'production']) {
-      const n = envs[e]?.name;
-      if (!n) {
-        console.error(`✗ ${app}: env.${e} must declare "name": "${cfg.name}" — Workers Builds overrides a derived name and would deploy elsewhere`);
-        failures++;
-      } else if (n !== cfg.name) {
-        console.error(`✗ ${app}: env.${e} name "${n}" must equal the top-level name "${cfg.name}" (the connected Worker is unsuffixed)`);
-        failures++;
-      }
+  for (const e of ['staging', 'production']) {
+    const n = envs[e]?.name;
+    if (!n) {
+      console.error(`✗ ${app}: env.${e} must declare "name": "${cfg.name}" — Workers Builds overrides a derived name and would deploy elsewhere`);
+      failures++;
+    } else if (n !== cfg.name) {
+      console.error(`✗ ${app}: env.${e} name "${n}" must equal the top-level name "${cfg.name}" (the connected Worker is unsuffixed)`);
+      failures++;
     }
   }
   if (!cfg.name) { console.error(`✗ ${app}: no top-level "name" — nothing to derive env script names from`); failures++; }
@@ -153,8 +172,8 @@ const scriptNames = {};   // env -> Map<scriptName, app>
 for (const e of ENVS) scriptNames[e] = new Map();
 
 const configs = {};
-for (const app of apps) {
-  const cfg = JSON.parse(stripJsonc(readFileSync(configFor(app).path, 'utf8')));
+for (const { dir, label: app } of apps) {
+  const cfg = JSON.parse(stripJsonc(readFileSync(configFor(dir).path, 'utf8')));
   configs[app] = cfg;
   for (const e of ENVS) {
     const envBlock = cfg.env?.[e];
@@ -165,7 +184,7 @@ for (const app of apps) {
 }
 
 let refFailures = 0;
-for (const app of apps) {
+for (const { label: app } of apps) {
   for (const e of ENVS) {
     for (const svc of configs[app].env?.[e]?.services ?? []) {
       const target = scriptNames[e].get(svc.service);

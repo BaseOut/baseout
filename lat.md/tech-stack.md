@@ -11,7 +11,7 @@ TypeScript everywhere, strict mode. All backend apps run on Cloudflare Workers; 
 | Source language | TypeScript (strict, ESNext, verbatimModuleSyntax) |
 | Worker runtime | Cloudflare Workers (workerd) |
 | Tooling runtime | Node ≥20 (lat.md needs ≥22) |
-| Package manager | pnpm 9.12.0 |
+| Package manager | pnpm 11.1.1 |
 
 ## Frontend
 
