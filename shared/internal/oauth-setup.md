@@ -112,7 +112,17 @@ Staging app `8a326784…` (Dan's Airtable account):
 
 | Required URI                                                     | Registered? | Owner |
 |------------------------------------------------------------------|-------------|-------|
-| `https://console.baseout.dev/api/connections/airtable/callback`  | ❓ UNVERIFIED — Dan says set up; first Reconnect after the committed-var deploy is the test | Dan |
+| `https://console.baseout.dev/api/connections/airtable/callback`  | ✅ registered (verified 2026-09-03: Airtable offers error-redirect back, which requires registration) | Dan |
+
+> ⚠ **Development-use limitation (bit us 2026-09-03):** an Airtable OAuth
+> integration without a support email + privacy policy + terms-of-service URL
+> is limited to development use — **only the owner's Airtable account can
+> authorize it**; everyone else gets the generic "failed to properly construct
+> a request" page for ANY scope. This is why staging Connect "worked for Dan"
+> and failed for everyone else. Dan lifted it 2026-09-03. LAUNCH GATE: before
+> external users Connect on staging/production, the integration needs those
+> three fields filled or it silently reverts to owner-only behavior on any new
+> app.
 
 > **Scope set changed 2026-07-28** (Features §17 Q20 resolved): the code
 > grant in `apps/web/src/lib/airtable/config.ts` now requests
