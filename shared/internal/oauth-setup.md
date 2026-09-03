@@ -89,14 +89,30 @@ As of 2026-06-03. **Update every row here when a URI is registered or removed.**
 in the same pass that adds the `baseout.local:4331/...` replacement — the
 gap checklist in §4 lists the removals.
 
-### 3.1 Airtable OAuth app (`client_id=1ae05093-12f2-48f0-b451-6d2ce3f2530a`)
+### 3.1 Airtable Connect OAuth apps — one app PER ENV since 2026-09-01
+
+**Rotation (2026-09-01, Dan):** staging Connect moved to its own OAuth app
+`client_id=8a326784-9556-4272-b42c-2c8d474c8519` (Dan's Airtable account).
+The legacy app `1ae05093-12f2-48f0-b451-6d2ce3f2530a` stays for local + dev
+only. **Client ids are committed wrangler `vars`** (public values) in
+apps/web + apps/server `env.staging`/`env.production`; only the client
+SECRET is a Cloudflare Secret. Rationale: dashboard-entered *vars* are wiped
+by every `wrangler deploy` (keep_vars=false default) — that wipe silently
+resurrected the legacy app on staging after each push (2026-09-02/03
+incident); committed vars survive, secrets always survive.
+
+Legacy app `1ae05093…` (local + dev):
 
 | Required URI                                                                       | Registered? | Owner of registration |
 |------------------------------------------------------------------------------------|-------------|-----------------------|
 | `https://baseout.local:4331/api/connections/airtable/callback`                     | ✅ done     | Airtable account that owns the integration (currently unclear — no company account) |
 | `https://baseout-dev.openside.workers.dev/api/connections/airtable/callback`       | ✅ done     | same                  |
-| `https://baseout-staging.openside.workers.dev/api/connections/airtable/callback`   | ❌ MISSING  | same                  |
-| `https://console.baseout.dev/api/connections/airtable/callback`                    | ❌ MISSING  | same                  |
+
+Staging app `8a326784…` (Dan's Airtable account):
+
+| Required URI                                                     | Registered? | Owner |
+|------------------------------------------------------------------|-------------|-------|
+| `https://console.baseout.dev/api/connections/airtable/callback`  | ❓ UNVERIFIED — Dan says set up; first Reconnect after the committed-var deploy is the test | Dan |
 
 > **Scope set changed 2026-07-28** (Features §17 Q20 resolved): the code
 > grant in `apps/web/src/lib/airtable/config.ts` now requests

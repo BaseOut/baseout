@@ -132,6 +132,11 @@
       // different account. env.dev keeps its pin for local wrangler use.
       "vars": {
         "BASEOUT_ENV": "staging",
+        // Airtable Connect OAuth app for staging (rotated 2026-09-01, Dan).
+        // Public value, committed as a var so deploys can't wipe it — must
+        // stay identical to apps/web env.staging or token refresh breaks
+        // (id/secret drift = connections flip to status='invalid').
+        "AIRTABLE_OAUTH_CLIENT_ID": "8a326784-9556-4272-b42c-2c8d474c8519",
         "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
         "PUBLIC_APP_URL": "https://console.baseout.dev",
         "CLOUDFLARE_ACCOUNT_ID": "33857e356899b7369fb01c18ace8d780",
@@ -155,7 +160,8 @@
       // and are not deploy-gated.
       "secrets": {
         "required": [
-          "AIRTABLE_OAUTH_CLIENT_ID",
+          // AIRTABLE_OAUTH_CLIENT_ID intentionally absent: committed var in
+          // this env's vars block (public value), not a secret.
           "AIRTABLE_OAUTH_CLIENT_SECRET",
           "BASEOUT_ENCRYPTION_KEY",
           "BOX_OAUTH_CLIENT_ID",
@@ -231,6 +237,9 @@
       // production account. Never pin it: this file is read by both accounts.
       "vars": {
         "BASEOUT_ENV": "production",
+        // PROVISION: production Airtable Connect OAuth app id (public value —
+        // same committed-var model as env.staging).
+        "AIRTABLE_OAUTH_CLIENT_ID": "",
         "EMAIL_FROM": "Baseout Reports <reports@mail.baseout.dev>",
         "PUBLIC_APP_URL": "https://console.baseout.com",
         // PROVISION: must be the PRODUCTION account id — this is the account
@@ -256,7 +265,8 @@
       // and are not deploy-gated.
       "secrets": {
         "required": [
-          "AIRTABLE_OAUTH_CLIENT_ID",
+          // AIRTABLE_OAUTH_CLIENT_ID intentionally absent: committed var in
+          // this env's vars block (public value), not a secret.
           "AIRTABLE_OAUTH_CLIENT_SECRET",
           "BASEOUT_ENCRYPTION_KEY",
           "BOX_OAUTH_CLIENT_ID",

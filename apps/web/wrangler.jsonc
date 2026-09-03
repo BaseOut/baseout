@@ -164,7 +164,14 @@
         // Playwright targets staging.
         "E2E_TEST_MODE": "true",
         "BASEOUT_ENV": "staging",
-        "ENTITLEMENT_ENFORCEMENT": "0"
+        "ENTITLEMENT_ENFORCEMENT": "0",
+        // Airtable Connect OAuth app for staging (rotated 2026-09-01, Dan).
+        // The client id is PUBLIC (it rides in the authorize URL) and lives
+        // here as a committed var because dashboard-entered vars are WIPED on
+        // every `wrangler deploy` (keep_vars defaults false) — that wipe is
+        // what kept resurrecting the retired 1ae05093… app. Only the client
+        // SECRET stays in Cloudflare Secrets (secrets survive deploys).
+        "AIRTABLE_OAUTH_CLIENT_ID": "8a326784-9556-4272-b42c-2c8d474c8519"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
@@ -178,7 +185,9 @@
           "ADMIN_HANDOFF_SECRET",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_ID",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET",
-          "AIRTABLE_OAUTH_CLIENT_ID",
+          // AIRTABLE_OAUTH_CLIENT_ID intentionally absent: it is a committed
+          // var above (public value), not a secret. Only the SECRET half is
+          // secret-managed.
           "AIRTABLE_OAUTH_CLIENT_SECRET",
           "BACKUP_ENGINE_INTERNAL_TOKEN",
           "BASEOUT_ENCRYPTION_KEY",
@@ -256,6 +265,10 @@
       // production account. Never pin it: this file is read by both accounts.
       "vars": {
         "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
+        // PROVISION: production Airtable Connect OAuth app id (public value —
+        // same committed-var model as env.staging; empty = Connect disabled
+        // with a clean "not configured" error until provisioned).
+        "AIRTABLE_OAUTH_CLIENT_ID": "",
         "PUBLIC_AUTH_BASE_URL": "https://console.baseout.com",
         "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
         "ADMIN_APP_URL": "https://admin.baseout.com",
@@ -275,7 +288,8 @@
           "ADMIN_HANDOFF_SECRET",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_ID",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET",
-          "AIRTABLE_OAUTH_CLIENT_ID",
+          // AIRTABLE_OAUTH_CLIENT_ID intentionally absent: committed var in
+          // this env's vars block (public value), not a secret.
           "AIRTABLE_OAUTH_CLIENT_SECRET",
           "BACKUP_ENGINE_INTERNAL_TOKEN",
           "BASEOUT_ENCRYPTION_KEY",
