@@ -196,11 +196,13 @@
           "BOX_OAUTH_CLIENT_SECRET",
           "DROPBOX_OAUTH_CLIENT_ID",
           "DROPBOX_OAUTH_CLIENT_SECRET",
-          // Gates the /api/internal/test/* Playwright bypass endpoints that
-          // E2E_TEST_MODE=true (vars above) exposes on this env — without it
-          // they 401 with no deploy-time warning. Staging-only; production
-          // carries neither the var nor this secret.
-          "E2E_TEST_TOKEN",
+          // E2E_TEST_TOKEN intentionally NOT required (2026-09-03): it gates
+          // the /api/internal/test/* Playwright bypass endpoints that
+          // E2E_TEST_MODE=true exposes, and it has never been provisioned on
+          // the staging Worker — requiring it hard-fails every deploy
+          // (wrangler validates required secrets against the remote set).
+          // The endpoints safely 401 while it is unset. PROVISION: set it via
+          // `wrangler secret put E2E_TEST_TOKEN` and re-add here.
           "GOOGLE_DRIVE_OAUTH_CLIENT_ID",
           "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
           "MICROSOFT_OAUTH_CLIENT_ID",
