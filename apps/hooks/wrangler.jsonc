@@ -2,7 +2,7 @@
 //
 //   Top level      = shared config only; always deploy with --env.
 //   env.dev        = baseout-hooks-dev     (staging account)
-//   env.staging    = baseout-hooks-staging (staging account, `staging` branch)
+//   env.staging    = baseout-hooks (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-hooks         (SEPARATE production account)
 //
 // CHANGED vs the old file: env.production/staging were name-only, so a `--env`

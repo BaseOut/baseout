@@ -2,7 +2,7 @@
 //
 //   Top level      = shared config only; always deploy with --env.
 //   env.dev        = baseout-admin-dev     (staging account)
-//   env.staging    = baseout-admin-staging (staging account, `staging` branch)
+//   env.staging    = baseout-admin (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-admin         (SEPARATE production account)
 //
 // `astro dev` runs SSR inside workerd, where a direct postgres-js TCP

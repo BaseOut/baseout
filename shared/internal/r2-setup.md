@@ -22,43 +22,54 @@ The implementation/launch plan this file backs lives in
 
 **READ-path amendment (2026-07-27, `server-media-index`):** the engine Worker
 now carries a **native, credential-less `r2_buckets` binding** — `BACKUPS_R2`
-in `apps/server/wrangler.jsonc(.example)` (top-level + `env.dev`) — used ONLY
+in `apps/server/wrangler.jsonc` (restated in every env block) — used ONLY
 by the Media Library download route
 (`GET /api/internal/spaces/:spaceId/media/:assetId/download`, `.get()` only:
 read-only by discipline). This does NOT touch the write-path stance: all
 writes stay on the Trigger.dev Node runner via S3 creds, and every rule in
 §2.4 about `R2_*` credentials stands unchanged — a native binding carries no
-credentials. Staging/prod env blocks gain the binding when those envs are
-provisioned (§3.2/§3.3).
+credentials. All three env blocks now carry the binding (2026-08-27 env model).
 
-| Env     | Worker binding | Bucket bound               | Status |
-|---------|----------------|----------------------------|--------|
-| dev     | `BACKUPS_R2`   | `baseout-backups-dev`      | LIVE — bucket auto-created 2026-07-27 by wrangler resource provisioning during the `baseout-server-dev` deploy (empty; the write-path S3 token per §3.1 is still pending, so nothing lands in it until Trigger.dev creds exist) |
-| staging | `BACKUPS_R2`   | `baseout-backups-staging`  | pending env block (shared-server-service-binding-staging-prod) |
-| prod    | `BACKUPS_R2`   | `baseout-backups-prod`     | pending env block |
+| Env     | Worker binding | Bucket bound      | Status |
+|---------|----------------|-------------------|--------|
+| dev     | `BACKUPS_R2`   | `baseout-dev`     | binding committed in `env.dev` (`apps/server/wrangler.jsonc`) |
+| staging | `BACKUPS_R2`   | `baseout-staging` | binding committed in `env.staging` |
+| prod    | `BACKUPS_R2`   | `baseout-live`    | binding committed in `env.production` (separate prod account) |
+
+> **RE-BASED 2026-09-01 (`shared-managed-r2-staging`).** The 2026-08-27 env-model
+> revision replaced the planned `baseout-backups-{dev,staging,prod}` buckets with
+> **`baseout-dev` / `baseout-staging` / `baseout-live`** — the names committed in
+> `apps/server/wrangler.jsonc` are the source of truth (R2 buckets can't be
+> renamed, and the wrangler config is what's deployed). dev + staging live on the
+> staging Cloudflare account `33857e356899b7369fb01c18ace8d780`; production is a
+> SEPARATE account (ID held by Dan / Workers Builds). Everything below is updated
+> to those names; historical references to `baseout-backups-*` in archived
+> changes describe the pre-revision plan.
 
 ---
 
 ## 1. Environments
 
-| Env     | R2 bucket name             | Trigger.dev env  | Engine Worker (writes via `INTERNAL_TOKEN`) |
-|---------|----------------------------|------------------|---------------------------------------------|
-| dev     | `baseout-backups-dev`      | Development      | `baseout-server-dev`                        |
-| staging | `baseout-backups-staging`  | Staging          | `baseout-server-staging`                    |
-| prod    | `baseout-backups-prod`     | Production       | `baseout-server`                            |
+| Env     | R2 bucket name    | Cloudflare account                          | Trigger.dev env | Engine Worker (writes via `INTERNAL_TOKEN`) |
+|---------|-------------------|---------------------------------------------|-----------------|---------------------------------------------|
+| dev     | `baseout-dev`     | staging acct `33857e356899b7369fb01c18ace8d780` | Development     | `baseout-server-dev` (`--env dev`)          |
+| staging | `baseout-staging` | staging acct `33857e356899b7369fb01c18ace8d780` | Staging         | `baseout-server-staging` (`--env staging`; deploys via Workers Builds from the `staging` branch) |
+| prod    | `baseout-live`    | SEPARATE production account (ID with Dan)   | Production      | `baseout-server` (`--env production`)       |
 
-Shared across all three envs:
+All three Workers deploy from the single committed `apps/server/wrangler.jsonc`
+(one config, always `--env`; the 2026-08-27 env model). Per env:
 
-- **`R2_ACCOUNT_ID`**: `f094d60e8a0996752eb1efd971bda45a`
-  (Same Cloudflare account ID the legacy `baseout-backup-engine` used —
-  see `dev/baseout/baseout-backup-engine/wrangler.jsonc`.)
-- **S3 endpoint URL**: `https://f094d60e8a0996752eb1efd971bda45a.r2.cloudflarestorage.com`
+- **`R2_ACCOUNT_ID`**: the account that owns that env's bucket — dev/staging use
+  `33857e356899b7369fb01c18ace8d780`; prod uses the production account ID.
+  (The `f094d60e8a09…` ID in older revisions of this doc was the legacy
+  `baseout-backup-engine` account — no longer valid.)
+- **S3 endpoint URL**: `https://<that env's R2_ACCOUNT_ID>.r2.cloudflarestorage.com`
 - **Region**: `auto` (R2 convention; `aws4fetch` passes this verbatim).
 
 **Local dev mirrors the dev env** — `npx trigger.dev dev` reads
 `apps/workflows/.env`, which holds the same four `R2_*` values as the
 Trigger.dev Development environment. There is no separate "localhost"
-bucket; local backup smoke runs write into `baseout-backups-dev`.
+bucket; local backup smoke runs write into `baseout-dev`.
 
 > ⚠️ **R2 creds do NOT live in any `.dev.vars` file.** Both
 > `apps/server/.dev.vars` (engine Worker) and `apps/web/.dev.vars` (frontend
@@ -77,7 +88,7 @@ API token:
 
 | Field           | Value                                                                         |
 |-----------------|-------------------------------------------------------------------------------|
-| **Token name**  | `baseout-backups-<env>-rw` (e.g. `baseout-backups-dev-rw`)                    |
+| **Token name**  | `<bucket>-rw` (e.g. `baseout-staging-rw`)                                     |
 | **Permissions** | `Object Read & Write` (Read is required — `deletePrefix` calls `ListObjectsV2`) |
 | **Specify bucket** | the single env-scoped bucket from [§1](#1-environments). Do NOT use a global / account-wide token. |
 | **TTL**         | Indefinite — rotation is event-driven, not calendar-driven (see [§2.3](#23-rotation)) |
@@ -140,36 +151,41 @@ bucket-scoped surface like this.
 
 ## 3. Per-env provisioning status
 
-As of 2026-06-10. **Update every row here when a bucket / token /
-env-var is created, rotated, or removed.**
+Re-based 2026-09-01 to the `baseout-{dev,staging,live}` names
+(`shared-managed-r2-staging`). **Update every row here when a bucket / token /
+env-var is created, rotated, or removed. Rows flip to ✅ only on a verified
+observation** (dashboard listing from Dan, or a successful `aws s3 ls` with
+that env's token) — never on inference.
 
 ### 3.1 dev
 
-| Required item                                                                         | Done? | Date / Operator     |
-|---------------------------------------------------------------------------------------|-------|---------------------|
-| R2 bucket `baseout-backups-dev` exists in Cloudflare account `f094d60e8a09…`         | ❌ MISSING | —              |
-| R2 API token `baseout-backups-dev-rw` (Object Read+Write, scoped to that bucket)      | ❌ MISSING | —              |
-| Trigger.dev **Development** env: `R2_ACCOUNT_ID` set                                  | ❌ MISSING | —              |
-| Trigger.dev **Development** env: `R2_ACCESS_KEY_ID` set                               | ❌ MISSING | —              |
-| Trigger.dev **Development** env: `R2_SECRET_ACCESS_KEY` set                           | ❌ MISSING | —              |
-| Trigger.dev **Development** env: `R2_BUCKET=baseout-backups-dev`                      | ❌ MISSING | —              |
-| `apps/workflows/.env` (local) mirrors the four values above                           | ❌ MISSING | —              |
+| Required item                                                                          | Done? | Date / Operator     |
+|-----------------------------------------------------------------------------------------|-------|---------------------|
+| R2 bucket `baseout-dev` exists in staging account `33857e356899…`                      | ❓ UNVERIFIED — likely auto-provisioned by the `env.dev` `BACKUPS_R2` binding on deploy; Dan to confirm in dashboard | — |
+| R2 API token `baseout-dev-rw` (Object Read+Write, scoped to that bucket)               | ❌ MISSING | —              |
+| Trigger.dev **Development** env: `R2_ACCOUNT_ID` set                                   | ❌ MISSING | —              |
+| Trigger.dev **Development** env: `R2_ACCESS_KEY_ID` set                                | ❌ MISSING | —              |
+| Trigger.dev **Development** env: `R2_SECRET_ACCESS_KEY` set                            | ❌ MISSING | —              |
+| Trigger.dev **Development** env: `R2_BUCKET=baseout-dev`                               | ❌ MISSING | —              |
+| `apps/workflows/.env` (local) mirrors the four values above                            | ❌ MISSING | —              |
 
 ### 3.2 staging
 
+Active rollout — `openspec/changes/shared-managed-r2-staging/`.
+
 | Required item                                                                          | Done? | Date / Operator     |
-|----------------------------------------------------------------------------------------|-------|---------------------|
-| R2 bucket `baseout-backups-staging` exists                                            | ❌ MISSING | —              |
-| R2 API token `baseout-backups-staging-rw` (Object Read+Write, bucket-scoped)          | ❌ MISSING | —              |
-| Trigger.dev **Staging** env: all four `R2_*` vars set                                 | ❌ MISSING | —              |
+|-----------------------------------------------------------------------------------------|-------|---------------------|
+| R2 bucket `baseout-staging` exists in staging account `33857e356899…`                  | ❓ UNVERIFIED — likely auto-provisioned by the `env.staging` binding via Workers Builds; Dan to confirm | — |
+| R2 API token `baseout-staging-rw` (Object Read+Write, bucket-scoped)                   | ❌ MISSING — Dan ask filed per shared-managed-r2-staging Phase 3 | — |
+| Trigger.dev **Staging** env: all four `R2_*` vars set (`R2_BUCKET=baseout-staging`)    | ❌ MISSING — blocked on the token above | — |
 
 ### 3.3 prod
 
 | Required item                                                                          | Done? | Date / Operator     |
-|----------------------------------------------------------------------------------------|-------|---------------------|
-| R2 bucket `baseout-backups-prod` exists                                               | ❌ MISSING | —              |
-| R2 API token `baseout-backups-prod-rw` (Object Read+Write, bucket-scoped)             | ❌ MISSING | —              |
-| Trigger.dev **Production** env: all four `R2_*` vars set                              | ❌ MISSING | —              |
+|-----------------------------------------------------------------------------------------|-------|---------------------|
+| R2 bucket `baseout-live` exists in the production account                              | ❓ UNVERIFIED — Dan owns the prod account | — |
+| R2 API token `baseout-live-rw` (Object Read+Write, bucket-scoped)                      | ❌ MISSING | —              |
+| Trigger.dev **Production** env: all four `R2_*` vars set (`R2_BUCKET=baseout-live`)    | ❌ MISSING | —              |
 
 ---
 
@@ -177,24 +193,24 @@ env-var is created, rotated, or removed.**
 
 Each item below is a single dashboard action. Tick the box and update [§3](#3-per-env-provisioning-status) when done.
 
-### 4.1 Cloudflare (boss / Cloudflare-admin owned)
+### 4.1 Cloudflare (Dan-owned — account-level access)
 
-- [ ] Create bucket `baseout-backups-dev` in Cloudflare account `f094d60e8a09…`.
-- [ ] Create bucket `baseout-backups-staging`.
-- [ ] Create bucket `baseout-backups-prod`.
-- [ ] Generate API token `baseout-backups-dev-rw`, Object Read+Write, scoped to `baseout-backups-dev`. Capture Access Key ID + Secret immediately.
-- [ ] Generate API token `baseout-backups-staging-rw`, Object Read+Write, scoped to `baseout-backups-staging`. Capture credentials.
-- [ ] Generate API token `baseout-backups-prod-rw`, Object Read+Write, scoped to `baseout-backups-prod`. Capture credentials.
+- [ ] Confirm bucket `baseout-dev` exists in staging account `33857e356899…` (auto-provision expected from the `env.dev` deploy).
+- [ ] Confirm bucket `baseout-staging` exists in staging account `33857e356899…` (auto-provision expected from Workers Builds `--env staging`); create it if missing.
+- [ ] Confirm bucket `baseout-live` exists in the production account; create it if missing.
+- [ ] Generate API token `baseout-staging-rw`, Object Read+Write, scoped to `baseout-staging`. Capture Access Key ID + Secret immediately (Secret shown ONCE). **← the active ask (`shared-managed-r2-staging`)**
+- [ ] Generate API token `baseout-dev-rw`, Object Read+Write, scoped to `baseout-dev`. Capture credentials.
+- [ ] Generate API token `baseout-live-rw`, Object Read+Write, scoped to `baseout-live` (prod account). Capture credentials.
 
 ### 4.2 Trigger.dev (dev-owned)
 
-- [ ] Trigger.dev → project `proj_lklmptmrmrkeaszrmhcs` → Development → Env Vars → set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
-- [ ] Same for **Staging** environment.
-- [ ] Same for **Production** environment.
+- [ ] Trigger.dev → project `proj_lklmptmrmrkeaszrmhcs` → **Staging** → Env Vars → set `R2_ACCOUNT_ID=33857e356899b7369fb01c18ace8d780`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET=baseout-staging`. **← active**
+- [ ] Same for **Development** (`R2_BUCKET=baseout-dev`).
+- [ ] Same for **Production** (`R2_BUCKET=baseout-live`, prod account ID).
 
 ### 4.3 Local dev (engineer's machine)
 
-- [ ] Edit `apps/workflows/.env` — set the four `R2_*` values to the dev-env token. Restart `npx trigger.dev dev` so the runner picks them up.
+- [ ] Edit `apps/workflows/.env` — set the four `R2_*` values to the dev-env token (`R2_BUCKET=baseout-dev`). Restart `npx trigger.dev dev` so the runner picks them up.
 
 ### 4.4 Engine redeploy (per environment, after the corresponding env's §4.1 + §4.2 are done)
 
@@ -215,8 +231,10 @@ Pre-Trigger.dev sanity check using `aws` CLI (or a one-shot Node script with
 `aws4fetch`):
 
 ```bash
-aws s3 ls s3://baseout-backups-<env> \
-  --endpoint-url https://f094d60e8a0996752eb1efd971bda45a.r2.cloudflarestorage.com \
+# Bucket = baseout-dev | baseout-staging | baseout-live (§1); endpoint uses
+# that env's account ID (dev/staging: 33857e356899b7369fb01c18ace8d780).
+aws s3 ls s3://<bucket> \
+  --endpoint-url https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com \
   --profile baseout-r2-<env>
 ```
 
@@ -231,7 +249,7 @@ from `/backups`. Expected:
 
 - `npx trigger.dev dev` terminal: three `backup-base` runs complete, no errors.
 - `backup_runs.status` flips to `succeeded`; `record_count > 0`.
-- `aws s3 ls s3://baseout-backups-<env>/<orgSlug>/<spaceName>/<baseName>/<runStartedAt>/`
+- `aws s3 ls s3://<bucket>/<orgSlug>/<spaceName>/<baseName>/<runStartedAt>/`
   returns one CSV per included table.
 - CSV byte-equality vs the reference local_fs run for the same Space.
 
@@ -241,7 +259,7 @@ Same Space, ensuring at least one base has a non-empty `multipleAttachments`
 field. Expected:
 
 - `attachment_count` on the run row is > 0.
-- `aws s3 ls s3://baseout-backups-<env>/<orgSlug>/<spaceName>/<baseName>/attachments/<compositeId>/`
+- `aws s3 ls s3://<bucket>/<orgSlug>/<spaceName>/<baseName>/attachments/<compositeId>/`
   returns the attachment file.
 - `SELECT COUNT(*) FROM baseout.attachment_dedup WHERE space_id = '<spaceId>'`
   equals the expected attachment count.

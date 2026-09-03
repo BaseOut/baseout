@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   push:
-    branches: [main]
+    branches: [main, staging]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -31,6 +31,14 @@ jobs:
 
       - name: Validate lat.md graphs
         run: scripts/lat-check-all.sh
+
+      # The wrangler configs' secrets.required lists and the cron→dispatch map
+      # both claim CI enforcement — these two steps make that claim true.
+      - name: Check wrangler secrets parity
+        run: pnpm secrets:check
+
+      - name: Check cron triggers match dispatch map
+        run: pnpm cron:check
 
       - name: Render wrangler.jsonc (apps/web)
         working-directory: apps/web

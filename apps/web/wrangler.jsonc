@@ -6,7 +6,7 @@
 //   Script names are DERIVED, not declared: `name` lives only at the top level
 //   and wrangler appends the env (appendEnvName in its source), so:
 //     env.dev        -> baseout-web-dev         (staging account)
-//     env.staging    -> baseout-web-staging     (staging account, `staging` branch)
+//     env.staging    -> baseout-web (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //     env.production -> baseout-web-production  (SEPARATE production account)
 //   Never set `name` inside an env block — it would override the derivation and
 //   silently decouple these from the service bindings that reference them.
@@ -130,7 +130,8 @@
       "services": [
         {
           "binding": "BACKUP_ENGINE",
-          "service": "baseout-server-dev"
+          "service": "baseout-server-dev",
+          "remote": true
         }
       ]
     },
@@ -163,7 +164,14 @@
         // Playwright targets staging.
         "E2E_TEST_MODE": "true",
         "BASEOUT_ENV": "staging",
-        "ENTITLEMENT_ENFORCEMENT": "0"
+        "ENTITLEMENT_ENFORCEMENT": "0",
+        // Airtable Connect OAuth app for staging (rotated 2026-09-01, Dan).
+        // The client id is PUBLIC (it rides in the authorize URL) and lives
+        // here as a committed var because dashboard-entered vars are WIPED on
+        // every `wrangler deploy` (keep_vars defaults false) — that wipe is
+        // what kept resurrecting the retired 1ae05093… app. Only the client
+        // SECRET stays in Cloudflare Secrets (secrets survive deploys).
+        "AIRTABLE_OAUTH_CLIENT_ID": "8a326784-9556-4272-b42c-2c8d474c8519"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
@@ -177,7 +185,9 @@
           "ADMIN_HANDOFF_SECRET",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_ID",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET",
-          "AIRTABLE_OAUTH_CLIENT_ID",
+          // AIRTABLE_OAUTH_CLIENT_ID intentionally absent: it is a committed
+          // var above (public value), not a secret. Only the SECRET half is
+          // secret-managed.
           "AIRTABLE_OAUTH_CLIENT_SECRET",
           "BACKUP_ENGINE_INTERNAL_TOKEN",
           "BASEOUT_ENCRYPTION_KEY",
@@ -186,6 +196,11 @@
           "BOX_OAUTH_CLIENT_SECRET",
           "DROPBOX_OAUTH_CLIENT_ID",
           "DROPBOX_OAUTH_CLIENT_SECRET",
+          // Gates the /api/internal/test/* Playwright bypass endpoints that
+          // E2E_TEST_MODE=true (vars above) exposes on this env — without it
+          // they 401 with no deploy-time warning. Staging-only; production
+          // carries neither the var nor this secret.
+          "E2E_TEST_TOKEN",
           "GOOGLE_DRIVE_OAUTH_CLIENT_ID",
           "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
           "MICROSOFT_OAUTH_CLIENT_ID",
@@ -250,6 +265,10 @@
       // production account. Never pin it: this file is read by both accounts.
       "vars": {
         "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
+        // PROVISION: production Airtable Connect OAuth app id (public value —
+        // same committed-var model as env.staging; empty = Connect disabled
+        // with a clean "not configured" error until provisioned).
+        "AIRTABLE_OAUTH_CLIENT_ID": "",
         "PUBLIC_AUTH_BASE_URL": "https://console.baseout.com",
         "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
         "ADMIN_APP_URL": "https://admin.baseout.com",
@@ -269,7 +288,8 @@
           "ADMIN_HANDOFF_SECRET",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_ID",
           "AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET",
-          "AIRTABLE_OAUTH_CLIENT_ID",
+          // AIRTABLE_OAUTH_CLIENT_ID intentionally absent: committed var in
+          // this env's vars block (public value), not a secret.
           "AIRTABLE_OAUTH_CLIENT_SECRET",
           "BACKUP_ENGINE_INTERNAL_TOKEN",
           "BASEOUT_ENCRYPTION_KEY",

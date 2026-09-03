@@ -2,7 +2,7 @@
 //
 //   Top level      = shared config only; always deploy with --env.
 //   env.dev        = baseout-api-dev     (staging account)
-//   env.staging    = baseout-api-staging (staging account, `staging` branch)
+//   env.staging    = baseout-api (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-api         (SEPARATE production account)
 //
 // CHANGED vs the old file:

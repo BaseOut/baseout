@@ -8,3 +8,4 @@
 # Will be replaced by managed R2 once baseout-server-byos-destinations Phase 0
 # lands per baseout-r2-stance.
 .backups/
+wrangler.local.jsonc

@@ -41,7 +41,9 @@
     "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev",
     "db:seed": "pnpm --filter @baseout/db run db:seed",
     "db:seed:entitlements": "pnpm --filter @baseout/db run db:seed:entitlements",
-    "db:migrate:tunnel": "pnpm --filter @baseout/db run db:migrate:tunnel"
+    "db:migrate:tunnel": "pnpm --filter @baseout/db run db:migrate:tunnel",
+    "secrets:check": "node scripts/check-wrangler-secrets.mjs",
+    "cron:check": "node apps/server/scripts/check-cron-config.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

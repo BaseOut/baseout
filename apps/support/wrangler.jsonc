@@ -2,7 +2,7 @@
 //
 //   Top level      = shared config only; always deploy with --env.
 //   env.dev        = baseout-support-dev     (staging account)
-//   env.staging    = baseout-support-staging (staging account, `staging` branch)
+//   env.staging    = baseout-support (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-support         (SEPARATE production account)
 //
 // Static-assets Worker (no `main`, no runtime secrets — docs-index.ts gates
