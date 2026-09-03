@@ -10,7 +10,7 @@
 
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { createMasterDb } from "../../db/worker";
-import { airtableWebhooks } from "../../db/schema";
+import { airtableWebhooks, connections, organizations } from "../../db/schema";
 import { getConnectionTokenViaDO } from "../connections/token-via-do";
 import {
   refreshAirtableWebhook,
@@ -21,6 +21,7 @@ import {
   type WebhookRenewalPassResult,
 } from "./webhook-renewal";
 import type { Env } from "../../env";
+import { workerOrgScope } from "../runtime-env";
 
 // Refresh webhooks whose 7-day expiry lands within this window. Hourly cadence
 // against a 24h lookahead gives ~24 attempts before an expiry can lapse.
@@ -51,6 +52,8 @@ export async function runScheduledWebhookRenewal(
         db
           .select(WEBHOOK_ROW_COLUMNS)
           .from(airtableWebhooks)
+          .innerJoin(connections, eq(connections.id, airtableWebhooks.connectionId))
+          .innerJoin(organizations, eq(organizations.id, connections.organizationId))
           .where(
             and(
               eq(airtableWebhooks.status, "active"),
@@ -59,13 +62,21 @@ export async function runScheduledWebhookRenewal(
                 airtableWebhooks.expiresAt,
                 new Date(Date.now() + RENEWAL_LOOKAHEAD_MS),
               ),
+              eq(organizations.runtimeEnv, workerOrgScope(env)),
             ),
           ),
       listNotificationsDisabled: () =>
         db
           .select(WEBHOOK_ROW_COLUMNS)
           .from(airtableWebhooks)
-          .where(eq(airtableWebhooks.status, "notifications_disabled")),
+          .innerJoin(connections, eq(connections.id, airtableWebhooks.connectionId))
+          .innerJoin(organizations, eq(organizations.id, connections.organizationId))
+          .where(
+            and(
+              eq(airtableWebhooks.status, "notifications_disabled"),
+              eq(organizations.runtimeEnv, workerOrgScope(env)),
+            ),
+          ),
       getConnectionToken: (connectionId) =>
         getConnectionTokenViaDO(env, db, connectionId),
       refresh: (baseId, webhookId, token) =>

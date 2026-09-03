@@ -30,6 +30,8 @@ export const usersWithTwoFactor = baseout.table('users', {
   emailVerified: boolean('email_verified').notNull(),
   image: text('image'),
   role: text('role').notNull().default('customer'),
+  // Mirror of @baseout/db-schema users.runtime_env (migration 0041).
+  runtimeEnv: text('runtime_env').notNull().default('staging'),
   termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
   marketingOptInAt: timestamp('marketing_opt_in_at', { withTimezone: true }),
   // web-auth-2fa: the twoFactor plugin's user flag (migration 0032).

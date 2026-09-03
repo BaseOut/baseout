@@ -2,7 +2,7 @@
 //
 //   Top level      = shared config only; always deploy with --env.
 //   env.dev        = baseout-admin-dev     (staging account)
-//   env.staging    = baseout-admin-staging (staging account, `staging` branch)
+//   env.staging    = baseout-admin (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-admin         (SEPARATE production account)
 //
 // `astro dev` runs SSR inside workerd, where a direct postgres-js TCP
@@ -41,7 +41,8 @@
       // Where the customer app (and its /login + /api/admin/handoff) lives;
       // the staff gate routes unauthenticated visitors there.
       "vars": {
-        "WEB_APP_URL": "https://console.baseout.local"
+        "WEB_APP_URL": "https://console.baseout.local",
+        "BASEOUT_ENV": "dev"
       },
       // REUSES the shared dev Hyperdrive (baseout-dev-pg) that baseout-dev and
       // baseout-server-dev point at — Workers on the same config share one
@@ -95,7 +96,8 @@
       // mismatch, since production builds read this same file in a
       // different account. env.dev keeps its pin for local wrangler use.
       "vars": {
-        "WEB_APP_URL": "https://console.baseout.dev"
+        "WEB_APP_URL": "https://console.baseout.dev",
+        "BASEOUT_ENV": "staging"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
@@ -172,7 +174,8 @@
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.
       "vars": {
-        "WEB_APP_URL": "https://console.baseout.com"
+        "WEB_APP_URL": "https://console.baseout.com",
+        "BASEOUT_ENV": "production"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like

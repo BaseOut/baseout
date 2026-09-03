@@ -15,6 +15,8 @@ import {
 } from "../../db/schema";
 import { buildRunPrefixes } from "./build-run-prefixes";
 import type { ProcessRunDeleteDeps } from "./delete";
+import { connectionMatchesWorkerEnv } from "../assert-organization-runtime-env";
+import type { Env } from "../../env";
 
 type MasterDb = ReturnType<typeof import("../../db/worker").createMasterDb>["db"];
 
@@ -26,7 +28,7 @@ const TERMINAL_STATUSES = [
   "trial_truncated",
 ] as const;
 
-export function buildRunDeleteDeps(db: MasterDb): ProcessRunDeleteDeps {
+export function buildRunDeleteDeps(db: MasterDb, env?: Env): ProcessRunDeleteDeps {
   return {
     fetchRunForDelete: async (id) => {
       const rows = await db
@@ -125,5 +127,17 @@ export function buildRunDeleteDeps(db: MasterDb): ProcessRunDeleteDeps {
         .returning({ id: backupRuns.id });
       return rows.length > 0;
     },
+    assertOrganizationRuntimeEnv: env
+      ? async (runId) => {
+          const runRows = await db
+            .select({ connectionId: backupRuns.connectionId })
+            .from(backupRuns)
+            .where(eq(backupRuns.id, runId))
+            .limit(1);
+          const connectionId = runRows[0]?.connectionId;
+          if (!connectionId) return false;
+          return connectionMatchesWorkerEnv(db, env, connectionId);
+        }
+      : undefined,
   };
 }

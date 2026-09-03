@@ -62,13 +62,17 @@ export interface ProcessRunDeleteDeps {
    * otherwise (concurrent delete won OR a status change snuck in).
    */
   markRunDeleting: (runId: string) => Promise<boolean>;
+  /**
+   * shared-org-runtime-env: refuse to enqueue delete-run-files for another env.
+   */
+  assertOrganizationRuntimeEnv?: (runId: string) => Promise<boolean>;
 }
 
 export type ProcessRunDeleteResult =
   | { ok: true; prefixes: string[]; storageType: string }
   | {
       ok: false;
-      error: "run_not_found" | "run_not_terminal" | "delete_in_progress";
+      error: "run_not_found" | "run_not_terminal" | "delete_in_progress" | "env_mismatch";
     };
 
 const TERMINAL_STATUSES = new Set([
@@ -97,6 +101,11 @@ export async function processRunDelete(
   //    'not_terminal' — the user must Cancel first if applicable.
   if (!TERMINAL_STATUSES.has(run.status)) {
     return { ok: false, error: "run_not_terminal" };
+  }
+
+  if (deps.assertOrganizationRuntimeEnv) {
+    const allowed = await deps.assertOrganizationRuntimeEnv(run.id);
+    if (!allowed) return { ok: false, error: "env_mismatch" };
   }
 
   // 4. Compute prefixes BEFORE the CAS so a DB failure here leaves the

@@ -110,6 +110,7 @@ export async function seedOrgWithMembership(
     id: organizationId,
     name: 'Test Org',
     slug,
+    runtimeEnv: 'dev',
   })
   await db.insert(organizationMembers).values({
     organizationId,

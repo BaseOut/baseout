@@ -1009,7 +1009,7 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
     }));
     $('[data-dest-back]')?.addEventListener('click', () => { destPick.hidden = false; destConfig.hidden = true; destCreateBtn.hidden = true; pendingDest = null; });
 
-    function injectDestOption(kind: string, name: string, label: string, detail: string) {
+    function injectDestOption(kind: string, name: string, label: string, detail: string, value?: string) {
       const groupSel = kind === 'database' ? '[data-dest-db]' : '[data-dest-file]';
       const list = $<HTMLElement>(groupSel)!;
       const radioName = kind === 'database' ? 'wz-dest-db' : 'wz-dest-file';
@@ -1018,7 +1018,7 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
       $$(`input[name="${radioName}"]`, list).forEach((r) => ((r as HTMLInputElement).checked = false));
       const el = document.createElement('label');
       el.className = 'opt-opt';
-      el.innerHTML = `<input type="radio" name="${radioName}" value="dest-new-${kind}" checked class="radio radio-sm radio-primary" ${dataAttr} />
+      el.innerHTML = `<input type="radio" name="${radioName}" value="${value ?? `dest-new-${kind}`}" checked class="radio radio-sm radio-primary" ${dataAttr} />
         <span class="opt-ic ${kind === 'database' ? 'opt-ic-db' : ''}"><span class="iconify ${kind === 'database' ? 'lucide--database' : 'lucide--hard-drive'}"></span></span>
         <span class="min-w-0 flex-1"><span class="opt-name">${name} <span class="opt-chip is-ok">Connected</span></span>
         <span class="opt-sub">${label} · ${detail}</span></span>`;
@@ -1045,7 +1045,9 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
         saveManaged.then((res) => {
           setButtonLoading(destCreateBtn, false);
           if (!res.ok) { toast('Could not save the destination. Please try again.'); return; }
-          injectDestOption('file', name, pendingDest!.label, 'managed');
+          // The radio's value feeds chosenStorageType at Review — it must be a real
+          // storage type, or the final PATCH 422s (unsupported_storage_type).
+          injectDestOption('file', name, pendingDest!.label, 'managed', pendingDest!.type === 'local_fs' ? 'local_fs' : 'r2_managed');
           const d = $<HTMLElement>('.drawer-shell[data-drawer="dest"]'); if (d) closeDrawer(d);
           destPick.hidden = false; destConfig.hidden = true; destCreateBtn.hidden = true; pendingDest = null;
           toast('Managed storage selected.');

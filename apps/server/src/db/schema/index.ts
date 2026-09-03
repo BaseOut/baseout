@@ -5,6 +5,7 @@
 // backup_configuration_bases) with header comments naming the canonical
 // migration source. Per CLAUDE.md §5.3.
 
+export * from "./organizations";
 export * from "./connections";
 export * from "./backup-runs";
 export * from "./backup-configurations";

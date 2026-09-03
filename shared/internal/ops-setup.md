@@ -6,6 +6,33 @@ DigitalOcean, GitHub repo settings, and Stripe.
 
 Owner: the engineer provisioning the environment.
 
+> **⚠ Re-based 2026-09-01 (`system-staging-readiness`).** Dan's Aug-31→Sep-1
+> refactor (`539318a7`→`4f1c8e46`) changed the deploy model this doc was
+> written for:
+>
+> - `wrangler.jsonc` is **committed and authoritative** per app — there is no
+>   `wrangler.jsonc.example` and no placeholder-substitution step.
+> - Each app has `env.dev` / `env.staging` / `env.production` blocks. The
+>   staging/production **worker names are pinned bare** (`baseout-web`,
+>   `baseout-server`, …) so Cloudflare Workers Builds' name override matches —
+>   there are NO `baseout-<app>-staging` workers.
+> - **Deploys are Cloudflare Workers Builds (GitHub → dashboard), not GitHub
+>   Actions.** The build command lives in the dashboard, which we cannot see.
+>   For apps/web it must be the `build:staging` recipe (i.e.
+>   `CLOUDFLARE_ENV=staging`), ideally preceded by `pnpm db:migrate:tunnel` —
+>   the adapter flattens exactly ONE env block into the deploy artifact at
+>   BUILD time, so a wrong `CLOUDFLARE_ENV` silently ships the dev flavor.
+> - **Master-DB migrations live in root `db/migrations/`** and run through a
+>   cloudflared tunnel at build time (`pnpm db:migrate:tunnel`), not in CI.
+> - Staging + production sit on **separate Cloudflare accounts** (dev/staging
+>   share `33857e356899b7369fb01c18ace8d780`).
+>
+> Sections below that describe `.example` placeholders, `baseout-<app>-staging`
+> worker names, or `deploy-staging`/`promote-prod` GitHub Actions jobs are
+> historical. Dashboard state we cannot verify from the repo is marked ❓.
+> Current asks live in `openspec/changes/system-staging-readiness/tasks.md`
+> Phase 3.
+
 Related: [oauth-setup.md](./oauth-setup.md) — per-provider, per-env OAuth
 app registration matrix + workarounds when URIs are missing.
 
@@ -13,29 +40,39 @@ app registration matrix + workarounds when URIs are missing.
 
 ## 1. Cloudflare — Workers + Hyperdrive + Email
 
-### Staging
+### Staging (re-based 2026-09-01 — see banner)
 
-- [ ] In the Cloudflare dashboard, create a Hyperdrive config pointing at the
-      staging DigitalOcean Postgres (see §2). Copy the Hyperdrive **id**.
-- [ ] Edit `wrangler.jsonc.example` → `env.staging.hyperdrive[0].id` — replace
-      `STAGING_HYPERDRIVE_ID_PLACEHOLDER` with the real id. Commit.
-- [ ] Create a KV namespace for staging sessions:
-      ```
-      wrangler kv namespace create SESSION-staging
-      ```
-      Replace `STAGING_KV_PLACEHOLDER` in `env.staging.kv_namespaces[0].id`
-      with the returned id. Commit.
-- [ ] DNS (deferred): the staging Worker defaults to
-      `baseout-staging.openside.workers.dev`, which the deploy-staging CI
-      smoke step targets directly — no DNS work needed for v1. When a
-      custom domain is desired, point `staging.baseout.dev` at the
-      `baseout-staging` Worker via Workers Route or CNAME, then update
-      `env.staging.vars.PUBLIC_AUTH_BASE_URL` and the smoke URL in
-      `.github/workflows/ci.yml`'s `deploy-staging` job.
-- [ ] Email: configure Cloudflare Email Routing (or SES, or MailChannels)
-      so outbound mail from `login@mail.staging.baseout.dev` is deliverable.
-      The Worker uses the `send_email` binding, which maps to whichever
-      sender is configured for the Worker.
+- [x] Hyperdrive: the committed `env.staging.hyperdrive[0].id` is
+      `ec6bd3583c3441569eff3a4b0d11ef30` in ALL six Workers (web, server,
+      admin, api, hooks, sql) — one shared pool (~15 conns) against the
+      staging PG. ❓ Which DO cluster it points at is dashboard-side (Dan).
+- [ ] ❓ Workers Builds build command per app — the load-bearing setting.
+      apps/web staging must run the `build:staging` recipe
+      (`CLOUDFLARE_ENV=staging`), ideally `pnpm db:migrate:tunnel &&
+      pnpm --filter @baseout/web build:staging`; watch paths must include
+      `db/**`. apps/server staging must build with `CLOUDFLARE_ENV=staging`.
+      A default `pnpm build` ships the DEV flavor: `BASEOUT_DEV=true`
+      (magic-link emails silently logged, never sent), dummy Hyperdrive,
+      `baseout-server-dev` service binding. Unverifiable from the repo.
+- [ ] ❓ KV: `env.staging.kv_namespaces` (`SESSION`) declares no `id` —
+      Workers Builds auto-provisions on first deploy. Confirm it exists.
+- [x] DNS/routes: committed as custom domains — web `console.baseout.dev`,
+      admin `admin.baseout.dev`, api `api.baseout.dev`, hooks
+      `hooks.baseout.dev/webhooks/airtable/*`, sql `sql.baseout.dev/v1/*`.
+      `console.baseout.dev` verified live 2026-09-01 (behind Cloudflare
+      Access, team `staging-338`).
+- [ ] ❓ Email: configure Cloudflare Email Routing so outbound mail from
+      `login@mail.baseout.dev` (the committed `env.staging.vars.EMAIL_FROM` —
+      note: same sending domain as prod, NOT `mail.staging.baseout.dev`) is
+      deliverable, and destination addresses for test inboxes are verified
+      (or the `send_email` binding is unrestricted). An unverified
+      destination makes `env.EMAIL.send()` throw → 500 on
+      `/api/auth/sign-in/magic-link`.
+- [ ] ❓ Cloudflare Access: `console.baseout.dev` 302s ALL paths to Access
+      login (verified 2026-09-01). Testers need Access grants; hosts that
+      machines must reach unauthenticated (`hooks.baseout.dev`, the engine
+      URL Trigger.dev tasks call back to) must be EXCLUDED from the policy,
+      and Playwright needs a service-token bypass.
 
 ### Production
 
@@ -51,6 +88,23 @@ app registration matrix + workarounds when URIs are missing.
       with the returned id. Commit.
 - [ ] DNS: `baseout.dev` → `baseout` Worker.
 - [ ] Email: `login@mail.baseout.dev` deliverable.
+
+- [ ] **`runtime_env` production backfill (shared-org-runtime-env D7 — BLOCKS
+      merge toward main).** Migrations `0040_org_runtime_env` and
+      `0041_user_runtime_env` use `DEFAULT 'staging'`. On the **separate
+      production** Postgres they would tag every real Organization and user
+      `staging`, and the production Worker would lock everyone out. Immediately
+      after those migrations apply on prod, run:
+
+      ```sql
+      UPDATE baseout.organizations SET runtime_env = 'production';
+      UPDATE baseout.users SET runtime_env = 'production';
+      ```
+
+      Confirm: `SELECT runtime_env, count(*) FROM baseout.organizations GROUP BY 1;`
+      shows only `production`. The production Workers log a structured
+      `production_runtime_env_lockout` error if the organizations table is
+      non-empty and zero rows are tagged `production`.
 
 ### Secrets (per Cloudflare env)
 
@@ -80,18 +134,17 @@ binding's `service` field must match the engine's deployed worker name,
 and a few secrets must be set per env before any request to
 `/api/internal/*` returns a useful response.
 
-**Worker names (the binding is name-matched):**
+**Worker names (the binding is name-matched; re-based 2026-09-01):**
 
-| apps/web env | Web binding's `service` field | apps/server worker name (set in `apps/server/wrangler.jsonc.example`) |
+| apps/web env | Web binding's `service` field | apps/server worker name (committed `apps/server/wrangler.jsonc`) |
 |---|---|---|
-| dev        | `baseout-server-dev`     | `env.dev.name = baseout-server-dev`         |
-| staging    | `baseout-server-staging` | `env.staging.name = baseout-server-staging` |
-| production | `baseout-server`         | `env.production.name = baseout-server`      |
+| dev        | `baseout-server-dev` | `env.dev.name = baseout-server-dev`     |
+| staging    | `baseout-server`     | `env.staging.name = baseout-server` (bare — Workers Builds name override; staging is a separate account from prod) |
+| production | `baseout-server`     | `env.production.name = baseout-server`  |
 
-The dev binding lands first per openspec change `baseout-web-server-service-binding`.
-Staging + production bindings are deferred to a follow-up openspec change
-(those Workers aren't deployed yet — declaring the binding now would
-fail-resolve at deploy).
+All three bindings are committed. `pnpm secrets:check`
+(`scripts/check-wrangler-secrets.mjs`, in CI) asserts every service link
+resolves to a matching sibling env name.
 
 ### Local engine binding (align with live Openside Workers)
 
@@ -314,36 +367,40 @@ cannot scope per-database) — accepted risk recorded in
 
 ---
 
-## 3. GitHub Actions — secrets
+## 3. Deploy pipeline — Cloudflare Workers Builds (re-based 2026-09-01)
 
-Under **Settings → Secrets and variables → Actions** on the repo:
+> The GitHub-Actions deploy model this section used to describe
+> (`deploy-staging` job, `promote-prod.yml`, `STAGING_DATABASE_URL` /
+> `PROD_DATABASE_URL` repo secrets) **was never built**. `.github/workflows/`
+> contains CI validation only (typecheck/lint/test + `secrets:check` +
+> `cron:check`) — no deploy jobs. Deploys run in Cloudflare Workers Builds,
+> configured per-app in the dashboard (❓ Dan-only).
 
-### Repository secrets (available to every workflow)
+Per Workers Builds project (all ❓ until Dan confirms):
 
-- [ ] `CLOUDFLARE_API_TOKEN` — scope: Edit Cloudflare Workers + Hyperdrive read/write
-- [ ] `CLOUDFLARE_ACCOUNT_ID`
-- [ ] `NPM_TOKEN` — already set; verify present
-- [ ] `FONTAWESOME_TOKEN` — already set; verify present
-- [ ] `STAGING_DATABASE_URL` — from DO staging cluster. Used by the
-      `deploy-staging` job in `ci.yml` for the migrate step. Repo-level
-      (not env-scoped) because the deploy-staging job has no environment
-      gate.
-- [ ] `PROD_DATABASE_URL` — from DO prod cluster. Used when the prod
-      promotion path adds a migrate step (currently `promote-prod.yml`
-      only runs `wrangler versions deploy` — migrations land
-      out-of-band until that gap is closed).
+- [ ] ❓ Build command: apps/web staging = `pnpm db:migrate:tunnel &&
+      pnpm --filter @baseout/web build:staging`; every other app builds with
+      `CLOUDFLARE_ENV=<env>`. See the banner — a wrong/default build command
+      ships the dev flavor silently.
+- [ ] ❓ Watch paths: apps/web must include `db/**`, or a migration-only push
+      deploys nothing and the schema silently lags the code.
+- [ ] ❓ Build variables (web staging pipeline; consumed by
+      `db/scripts/migrate.mjs`): `DB_TUNNEL_HOSTNAME`, `CF_CLIENT_ID`,
+      `CF_CLIENT_SECRET`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` (optionally
+      `DB_TUNNEL_LOCAL_PORT`). Missing values fail fast with a clear error.
+- [ ] ❓ Zero Trust service token + tunnel hostname exist for the staging DB.
+- [ ] One-time on a fresh cluster: `CREATE SCHEMA IF NOT EXISTS baseout;`
+      (drizzle's `schemaFilter: ['baseout']` will not create it — migration
+      0000 fails on a bare DB), then confirm
+      `drizzle.__drizzle_migrations` has 40 rows after the first build.
 
-### Environments
+### GitHub repo secrets that still matter
 
-The `production` environment already exists (used by `promote-prod.yml`
-for human approval gating).
-
-- [ ] Verify the `production` environment's reviewer list is correct.
-      Every manual run of the `promote-prod` workflow waits on an
-      approver before `wrangler versions deploy` fires.
-- [ ] No `staging` environment is required — `deploy-staging` runs on
-      every push to the `staging` branch with no approval gate
-      (CI-first enforcement; see §4).
+- [ ] `NPM_TOKEN`, `FONTAWESOME_TOKEN` — used by CI installs; verify present.
+- Trigger.dev task deploys (`npx trigger.dev deploy`) have **no pipeline at
+  all** — Workers Builds can only run wrangler, and no GitHub Actions job
+  exists. Until one is added, workflows deploys are manual (owner: ❓ Dan
+  decision — see `system-staging-readiness` tasks 3.1 item 5).
 
 ---
 

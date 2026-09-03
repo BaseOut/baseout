@@ -162,6 +162,11 @@ export interface ProcessRunStartDeps {
    */
   resolveCommentsEnabled: (organizationId: string) => Promise<boolean>;
   /**
+   * shared-org-runtime-env: Organization must belong to this Worker env.
+   * Optional so existing unit stubs stay valid; production wiring always sets it.
+   */
+  assertOrganizationRuntimeEnv?: (organizationId: string) => Promise<boolean>;
+  /**
    * Workspace auto-enroll pre-step (server-mcp-workspaces): runs BEFORE
    * fetchIncludedBases so freshly-added bases join THIS run. Optional +
    * failure-isolated — any rejection/throw is swallowed and the run proceeds
@@ -198,7 +203,8 @@ export type ProcessRunStartResult =
         | "invalid_connection"
         | "config_not_found"
         | "unsupported_storage_type"
-        | "no_bases_selected";
+        | "no_bases_selected"
+        | "env_mismatch";
     };
 
 export async function processRunStart(
@@ -221,6 +227,12 @@ export async function processRunStart(
   if (!connection) return { ok: false, error: "connection_not_found" };
   if (connection.status !== "active") {
     return { ok: false, error: "invalid_connection" };
+  }
+  if (deps.assertOrganizationRuntimeEnv) {
+    const allowed = await deps.assertOrganizationRuntimeEnv(
+      connection.organizationId,
+    );
+    if (!allowed) return { ok: false, error: "env_mismatch" };
   }
 
   // 3. Config must exist for this Space. apps/web INSERTs the config row

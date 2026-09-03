@@ -72,9 +72,15 @@ export const organizations = baseout.table('organizations', {
   // one of: 'google' | 'twitter_x' | 'friend' | 'podcast' | 'other'
   referralCode: text('referral_code'),
   // placeholder for dub.co attribution; persisted if supplied at signup
+  // Which Worker env owns this Organization (shared-org-runtime-env).
+  // Existing rows backfill to 'staging'. Spaces inherit via organization_id.
+  runtimeEnv: text('runtime_env').notNull().default('staging'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (table) => [
+  // Expression byte-identical to migration 0040 / snapshot — don't reformat.
+  check('organizations_runtime_env_check', sql`"runtime_env" IN ('dev', 'staging', 'production')`),
+])
 
 // ———————————————————————————————————————————————————————————————————————————
 // ORGANIZATION MEMBERS

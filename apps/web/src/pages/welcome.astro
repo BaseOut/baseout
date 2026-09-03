@@ -4,6 +4,8 @@ import WelcomeView from '../views/WelcomeView.astro';
 import AuthAssociationView from '../views/AuthAssociationView.astro';
 import { getProductName } from '../lib/config';
 import { resolveOrganizationsForEmail } from '../lib/signup/domain-association';
+import { resolveRuntimeEnv } from '../lib/runtime-env';
+import { env } from 'cloudflare:workers';
 
 const productName = getProductName();
 const user = Astro.locals.user;
@@ -29,7 +31,14 @@ let matchedOrg: { id: string; name: string } | null = null;
 let matchedDomain: string | null = null;
 if (step !== 'own' && !joined && Astro.locals.db && user?.email) {
   try {
-    const result = await resolveOrganizationsForEmail(Astro.locals.db, user.email);
+    const result = await resolveOrganizationsForEmail(
+      Astro.locals.db,
+      user.email,
+      resolveRuntimeEnv({
+        BASEOUT_ENV: (env as { BASEOUT_ENV?: string }).BASEOUT_ENV,
+        BASEOUT_DEV: (env as { BASEOUT_DEV?: string }).BASEOUT_DEV,
+      }),
+    );
     if (result.organizations.length > 0) {
       matchedOrg = { id: result.organizations[0].id, name: result.organizations[0].name };
       matchedDomain = result.domain;

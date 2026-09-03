@@ -8,9 +8,9 @@
 // in exactly one terminal transition. scheduled() has no request locals, so
 // the master DB client is created + torn down per firing (CLAUDE.md §5.1).
 
-import { and, asc, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import { createMasterDb } from "../../db/worker";
-import { backupRuns, restoreRuns } from "../../db/schema";
+import { backupRuns, restoreRuns, spaces, organizations } from "../../db/schema";
 import {
   runReconcileSweep,
   type ReconcileKind,
@@ -18,6 +18,7 @@ import {
 } from "./reconcile-sweep";
 import type { ReconcileRun } from "./reconcile";
 import type { Env } from "../../env";
+import { workerOrgScope } from "../runtime-env";
 
 const TRIGGER_API = "https://api.trigger.dev/api/v3/runs";
 /** SELECT prefilter only — the real windows live in decideReconciliation. */
@@ -43,7 +44,15 @@ export async function runScheduledRunReconciliation(
               triggerRunIds: backupRuns.triggerRunIds,
             })
             .from(backupRuns)
-            .where(and(inArray(backupRuns.status, [...NON_TERMINAL]), lt(backupRuns.createdAt, cutoff)))
+            .innerJoin(spaces, eq(spaces.id, backupRuns.spaceId))
+            .innerJoin(organizations, eq(organizations.id, spaces.organizationId))
+            .where(
+              and(
+                inArray(backupRuns.status, [...NON_TERMINAL]),
+                lt(backupRuns.createdAt, cutoff),
+                eq(organizations.runtimeEnv, workerOrgScope(env)),
+              ),
+            )
             .orderBy(asc(backupRuns.createdAt))
             .limit(limit);
           return rows.map((r) => ({ ...r, createdAt: r.createdAt ?? new Date(0) }));
@@ -58,7 +67,15 @@ export async function runScheduledRunReconciliation(
             triggerRunIds: restoreRuns.triggerRunIds,
           })
           .from(restoreRuns)
-          .where(and(inArray(restoreRuns.status, [...NON_TERMINAL]), lt(restoreRuns.createdAt, cutoff)))
+          .innerJoin(spaces, eq(spaces.id, restoreRuns.spaceId))
+          .innerJoin(organizations, eq(organizations.id, spaces.organizationId))
+          .where(
+            and(
+              inArray(restoreRuns.status, [...NON_TERMINAL]),
+              lt(restoreRuns.createdAt, cutoff),
+              eq(organizations.runtimeEnv, workerOrgScope(env)),
+            ),
+          )
           .orderBy(asc(restoreRuns.createdAt))
           .limit(limit);
         return rows.map(

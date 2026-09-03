@@ -12,13 +12,14 @@ import { productionGenerateDeps } from "./deps";
 import { computeNextRunAt } from "./cadence";
 import { listDueClockDefinitions, setNextRunAt } from "./store";
 import type { ReportCadence } from "./types";
+import { workerOrgScope } from "../runtime-env";
 
 export async function runScheduledReportSweep(
   env: Env,
   db: AppDb,
   now: Date = new Date(),
 ): Promise<{ counts: Record<string, number> }> {
-  const due = await listDueClockDefinitions(db, now);
+  const due = await listDueClockDefinitions(db, now, workerOrgScope(env));
   const deps = productionGenerateDeps(env, db);
   let fired = 0;
   let skipped = 0;

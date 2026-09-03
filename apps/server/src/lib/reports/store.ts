@@ -5,13 +5,14 @@
 // written by apps/web but the engine also creates/updates them on behalf of the
 // web proxy (which forwards user actions through the INTERNAL_TOKEN gate).
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import type { AppDb } from "../../db/worker";
 import {
   reportDefinitions,
   reportRuns,
   reportDeliveries,
   spaces,
+  organizations,
   type ReportDefinitionRow,
   type ReportRunRow,
   type ReportRecipient,
@@ -273,15 +274,19 @@ export async function listEnabledDefinitionsByCadence(
 export async function listDueClockDefinitions(
   db: AppDb,
   now: Date,
+  runtimeEnv: string,
 ): Promise<ReportDefinitionRow[]> {
   return await db
-    .select()
+    .select(getTableColumns(reportDefinitions))
     .from(reportDefinitions)
+    .innerJoin(spaces, eq(spaces.id, reportDefinitions.spaceId))
+    .innerJoin(organizations, eq(organizations.id, spaces.organizationId))
     .where(
       and(
         eq(reportDefinitions.scheduleEnabled, true),
         inArray(reportDefinitions.scheduleCadence, ["weekly", "monthly"]),
         sql`${reportDefinitions.nextRunAt} IS NOT NULL AND ${reportDefinitions.nextRunAt} <= ${now}`,
+        eq(organizations.runtimeEnv, runtimeEnv),
       ),
     );
 }

@@ -43,6 +43,9 @@
 # oauth-setup.md §5). Don't point OAuth redirect overrides at localhost —
 # session + handoff cookies are scoped to baseout.local and Connect will bounce
 # to /login on localhost.
+#
+# BASEOUT_ENV is a wrangler `vars` value (`dev` / `staging` / `production`),
+# not a secret. Local `pnpm dev` uses env.dev (`BASEOUT_ENV=dev`).
 
 # ─── Required for the dev server to boot ──────────────────────────────────────
 

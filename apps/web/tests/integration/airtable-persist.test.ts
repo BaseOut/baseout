@@ -73,6 +73,7 @@ async function seedFixture(): Promise<Fixture> {
     id: organizationId,
     name: 'Test Org',
     slug,
+    runtimeEnv: 'dev',
   })
   await db.insert(organizationMembers).values({
     organizationId,
@@ -107,6 +108,7 @@ describe('persistAirtableConnection (integration)', () => {
       userId,
       organizationId,
       spaceId,
+      runtimeEnv: 'dev',
       tokens: {
         accessToken: 'airtable_at_plaintext',
         refreshToken: 'airtable_rt_plaintext',
@@ -174,6 +176,7 @@ describe('persistAirtableConnection (integration)', () => {
       userId,
       organizationId,
       spaceId,
+      runtimeEnv: 'dev',
       tokens: {
         accessToken: 'old_at',
         refreshToken: 'old_rt',
@@ -189,6 +192,7 @@ describe('persistAirtableConnection (integration)', () => {
       userId,
       organizationId,
       spaceId,
+      runtimeEnv: 'dev',
       tokens: {
         accessToken: 'new_at',
         refreshToken: 'new_rt',
@@ -232,6 +236,7 @@ describe('persistAirtableConnection (integration)', () => {
         userId,
         organizationId,
         spaceId,
+      runtimeEnv: 'dev',
         tokens: {
           accessToken: 'x',
           refreshToken: null,
@@ -281,6 +286,7 @@ describe('getIntegrationsState (integration)', () => {
       userId,
       organizationId,
       spaceId,
+      runtimeEnv: 'dev',
       tokens: {
         accessToken: 'at',
         refreshToken: 'rt',
@@ -317,6 +323,7 @@ describe('getIntegrationsState (integration)', () => {
       userId,
       organizationId,
       spaceId,
+      runtimeEnv: 'dev',
       tokens: {
         accessToken: 'at',
         refreshToken: 'rt',
@@ -351,5 +358,31 @@ describe('getIntegrationsState (integration)', () => {
     expect(state.tierBasesPerSpace).toBe(5)        // no subscription → starter fallback
     expect(state.hasBackupConfig).toBe(false)
     state.bases.forEach((b) => expect(b.isIncluded).toBe(false))
+  })
+
+  it('refuses to persist tokens onto an Organization in another env', async () => {
+    const { userId, organizationId, spaceId } = await seedFixture()
+    await db
+      .update(organizations)
+      .set({ runtimeEnv: 'staging' })
+      .where(eq(organizations.id, organizationId))
+
+    await expect(
+      persistAirtableConnection(db, KEY, {
+        userId,
+        organizationId,
+        spaceId,
+        runtimeEnv: 'dev',
+        tokens: {
+          accessToken: 'at',
+          refreshToken: 'rt',
+          expiresIn: 3600,
+          refreshExpiresIn: 5_184_000,
+          scope: 'data.records:read',
+        },
+        whoami: { id: 'usrABC', scopes: ['data.records:read'] },
+        bases: [{ id: 'appOne', name: 'Base One', permissionLevel: 'create' }],
+      }),
+    ).rejects.toThrow(/env_mismatch/)
   })
 })

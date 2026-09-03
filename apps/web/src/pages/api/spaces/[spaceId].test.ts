@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('cloudflare:workers', () => ({ env: {} }))
+
 import { handlePatch } from './[spaceId]'
 import { SpaceError } from '../../../lib/spaces'
 import type { AccountContext } from '../../../lib/account'

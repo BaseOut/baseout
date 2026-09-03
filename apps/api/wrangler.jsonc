@@ -2,7 +2,7 @@
 //
 //   Top level      = shared config only; always deploy with --env.
 //   env.dev        = baseout-api-dev     (staging account)
-//   env.staging    = baseout-api-staging (staging account, `staging` branch)
+//   env.staging    = baseout-api (pinned bare — Workers Builds name override; staging account, `staging` branch)
 //   env.production = baseout-api         (SEPARATE production account)
 //
 // CHANGED vs the old file:
@@ -27,7 +27,8 @@
       "account_id": "33857e356899b7369fb01c18ace8d780",
       "vars": {
         // Launch state: shadow-only. "true" enforces 429 — config, not code.
-        "RATE_LIMIT_ENFORCE": "false"
+        "RATE_LIMIT_ENFORCE": "false",
+        "BASEOUT_ENV": "dev"
       },
       // Direct postgres-js TLS from workerd HANGS (~3 min, then fails) under
       // `wrangler dev` — the same trap apps/server documents. Local dev must go
@@ -79,7 +80,8 @@
       // mismatch, since production builds read this same file in a
       // different account. env.dev keeps its pin for local wrangler use.
       "vars": {
-        "RATE_LIMIT_ENFORCE": "false"
+        "RATE_LIMIT_ENFORCE": "false",
+        "BASEOUT_ENV": "staging"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like
@@ -140,7 +142,8 @@
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.
       "vars": {
-        "RATE_LIMIT_ENFORCE": "false"
+        "RATE_LIMIT_ENFORCE": "false",
+        "BASEOUT_ENV": "production"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like

@@ -74,19 +74,45 @@ So the **required URI for env `X` on provider `P`** is `<X origin> + <P callback
 
 As of 2026-06-03. **Update every row here when a URI is registered or removed.**
 
+> **2026-09-01 re-basing (`system-staging-readiness`):** `console.baseout.dev`
+> is now the **staging** environment's custom domain (committed
+> `apps/web/wrangler.jsonc` `env.staging.routes`), on the shared dev/staging
+> Cloudflare account — it is no longer a "preview". Every provider needs its
+> callback registered for that origin before staging Connect flows can work.
+> Any `https://baseout-staging.openside.workers.dev/...` row is obsolete (that
+> worker never existed under the current model — don't register it). Staging
+> is behind Cloudflare Access (team `staging-338`, verified 2026-09-01), so
+> browser flows require an Access session first.
+
 `localhost:4331` is no longer a supported origin (see §5.5). Any
 `localhost:4331/...` URI registered in a provider console should be **removed**
 in the same pass that adds the `baseout.local:4331/...` replacement — the
 gap checklist in §4 lists the removals.
 
-### 3.1 Airtable OAuth app (`client_id=1ae05093-12f2-48f0-b451-6d2ce3f2530a`)
+### 3.1 Airtable Connect OAuth apps — one app PER ENV since 2026-09-01
+
+**Rotation (2026-09-01, Dan):** staging Connect moved to its own OAuth app
+`client_id=8a326784-9556-4272-b42c-2c8d474c8519` (Dan's Airtable account).
+The legacy app `1ae05093-12f2-48f0-b451-6d2ce3f2530a` stays for local + dev
+only. **Client ids are committed wrangler `vars`** (public values) in
+apps/web + apps/server `env.staging`/`env.production`; only the client
+SECRET is a Cloudflare Secret. Rationale: dashboard-entered *vars* are wiped
+by every `wrangler deploy` (keep_vars=false default) — that wipe silently
+resurrected the legacy app on staging after each push (2026-09-02/03
+incident); committed vars survive, secrets always survive.
+
+Legacy app `1ae05093…` (local + dev):
 
 | Required URI                                                                       | Registered? | Owner of registration |
 |------------------------------------------------------------------------------------|-------------|-----------------------|
 | `https://baseout.local:4331/api/connections/airtable/callback`                     | ✅ done     | Airtable account that owns the integration (currently unclear — no company account) |
 | `https://baseout-dev.openside.workers.dev/api/connections/airtable/callback`       | ✅ done     | same                  |
-| `https://baseout-staging.openside.workers.dev/api/connections/airtable/callback`   | ❌ MISSING  | same                  |
-| `https://console.baseout.dev/api/connections/airtable/callback`                    | ❌ MISSING  | same                  |
+
+Staging app `8a326784…` (Dan's Airtable account):
+
+| Required URI                                                     | Registered? | Owner |
+|------------------------------------------------------------------|-------------|-------|
+| `https://console.baseout.dev/api/connections/airtable/callback`  | ❓ UNVERIFIED — Dan says set up; first Reconnect after the committed-var deploy is the test | Dan |
 
 > **Scope set changed 2026-07-28** (Features §17 Q20 resolved): the code
 > grant in `apps/web/src/lib/airtable/config.ts` now requests
@@ -157,8 +183,9 @@ gap checklist in §4 lists the removals.
 | `https://localhost:4331/api/connections/storage/dropbox/callback`                         | ⚠️ remove   | boss (Dropbox App Console) — unsupported origin, replace with baseout.local |
 | `https://baseout.local:4331/api/connections/storage/dropbox/callback`                     | ❌ MISSING  | boss                  |
 | `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`       | ❌ MISSING  | boss                  |
-| `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`   | ✅ done     | boss                  |
+| `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`   | ✅ done (obsolete origin — see §3 note) | boss |
 | `https://baseout.dev/api/connections/storage/dropbox/callback`                            | ✅ done     | boss                  |
+| `https://console.baseout.dev/api/connections/storage/dropbox/callback`                    | ❌ MISSING  | boss (Dropbox App Console) |
 
 > The `baseout-dev` URI is the one that actually blocks local-dev smoke
 > testing: the `wrangler dev --remote` script makes the local worker code
@@ -199,8 +226,9 @@ gap checklist in §4 lists the removals.
 |---------------------------------------------------------------------------------------------|-------------|-----------------------|
 | `https://baseout.local:4331/api/connections/storage/onedrive/callback`                      | ❌ MISSING  | boss (Azure Portal). Confirmed missing 2026-06-04: `login.live.com` returned `invalid_request: redirect_uri ... is not valid` for `client_id=72f34ac4…`. |
 | `https://baseout-dev.openside.workers.dev/api/connections/storage/onedrive/callback`        | ❓ unknown  | boss                  |
-| `https://baseout-staging.openside.workers.dev/api/connections/storage/onedrive/callback`    | ❓ unknown  | boss                  |
+| `https://baseout-staging.openside.workers.dev/api/connections/storage/onedrive/callback`    | ❓ unknown (obsolete origin — see §3 note) | boss |
 | `https://baseout.dev/api/connections/storage/onedrive/callback`                             | ❓ unknown  | boss                  |
+| `https://console.baseout.dev/api/connections/storage/onedrive/callback`                     | ❌ MISSING  | boss (Azure Portal)   |
 
 > Any pre-existing `https://localhost:4331/api/connections/storage/onedrive/callback`
 > registration is unsupported (§5.5) and should be removed if found.
@@ -248,6 +276,7 @@ present; absent vars ⇒ the SSO button is hidden and nothing changes.
 |----------------------------------------------------------------------------------|-------------|-----------------------|
 | `https://baseout.local:4331/api/auth/oauth2/callback/airtable`                    | ❌ app not created | team Airtable account (registration recipe: §4.6) |
 | `https://baseout-dev.openside.workers.dev/api/auth/oauth2/callback/airtable`      | ❌ app not created | same                  |
+| `https://console.baseout.dev/api/auth/oauth2/callback/airtable`                   | ❌ app not created (staging — required alongside the §3.1 Connect URI; two different Airtable apps) | same |
 
 Rollout once creds exist: paste both values into `apps/web/.dev.vars`
 (house rule — never `wrangler secret put` by hand) and deploy; that is the
@@ -260,6 +289,12 @@ entire rollout (`web-auth-airtable-sso` task 0.2).
 Each item below is a single URI to register in a single OAuth app. Tick the
 box and update [§3](#3-current-registration-status) when done.
 
+> **⚠ 2026-09-01: the note below is partially superseded** — under the
+> committed 3-env model, `https://console.baseout.dev` rows mean the
+> **staging** environment (custom domain, `env.staging.routes`), not a
+> preview. The obsolete-`baseout-staging.openside.workers.dev` guidance
+> still stands. See the §3 re-basing note.
+>
 > **2026-08-25 origin remap (`shared-worker-previews`):** any
 > `https://baseout-staging.openside.workers.dev/...` item below is **obsolete**
 > (that worker never existed and never will — skip it, don't register it), and

@@ -34,6 +34,7 @@ import {
 } from "../lib/connections/resolve-airtable-token";
 import { refreshAirtableAccessToken } from "../lib/airtable-refresh";
 import { encryptToken } from "../lib/crypto";
+import { connectionMatchesWorkerEnv } from "../lib/assert-organization-runtime-env";
 
 const LOCK_TTL_MS = 60_000;
 const TOKEN_CACHE_TTL_MS = 5 * 60_000;
@@ -52,6 +53,8 @@ export class ConnectionDO {
   private decryptImpl: typeof decryptToken = decryptToken;
   private resolveAirtableTokenImpl: ResolveAirtableTokenForDO | null = null;
   private onDemandRefreshEnabledForTests: boolean | null = null;
+  private connectionEnvCheckForTests: ((connectionId: string) => Promise<boolean>) | null =
+    null;
   private tokenCache = new Map<string, TokenCacheEntry>();
 
   constructor(
@@ -91,6 +94,12 @@ export class ConnectionDO {
 
   setOnDemandRefreshEnabledForTests(enabled: boolean): void {
     this.onDemandRefreshEnabledForTests = enabled;
+  }
+
+  setConnectionEnvCheckForTests(
+    fn: (connectionId: string) => Promise<boolean>,
+  ): void {
+    this.connectionEnvCheckForTests = fn;
   }
 
   private async resolveAirtableTokenFromDb(input: {
@@ -290,6 +299,34 @@ export class ConnectionDO {
         status: 400,
         headers: { "content-type": "application/json" },
       });
+    }
+
+    const connectionId =
+      typeof body.connectionId === "string" && body.connectionId.length > 0
+        ? body.connectionId
+        : null;
+    if (connectionId) {
+      let allowed = false;
+      if (this.connectionEnvCheckForTests) {
+        allowed = await this.connectionEnvCheckForTests(connectionId);
+      } else {
+        const master = createMasterDb(this.env);
+        try {
+          allowed = await connectionMatchesWorkerEnv(
+            master.db,
+            this.env,
+            connectionId,
+          );
+        } finally {
+          await master.sql.end({ timeout: 5 }).catch(() => {});
+        }
+      }
+      if (!allowed) {
+        return new Response(JSON.stringify({ error: "refresh_env_mismatch" }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
 
     if (this.isOnDemandRefreshEnabled()) {
