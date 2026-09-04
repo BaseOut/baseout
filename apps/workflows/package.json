@@ -11,15 +11,18 @@
     "./tasks/backup-base.task": "./trigger/tasks/backup-base.task.ts"
   },
   "scripts": {
-    "dev": "npx trigger.dev@4.5.7 dev start --env-file .dev.vars",
-    "build:deps": "pnpm --filter \"@baseout/workflows^...\" run build",
     "build": "pnpm run build:deps && pnpm run typecheck",
+    "build:deps": "pnpm --filter \"@baseout/workflows^...\" run build",
+    "build:dev": "pnpm run build",
+    "build:production": "pnpm run build",
+    "build:staging": "pnpm run build",
     "deploy": "npx trigger.dev@4.5.7 deploy",
-    "deploy:staging": "npx trigger.dev@4.5.7 deploy --env staging",
     "deploy:production": "npx trigger.dev@4.5.7 deploy --env prod",
+    "deploy:staging": "npx trigger.dev@4.5.7 deploy --env staging",
+    "dev": "npx trigger.dev@4.5.7 dev start --env-file .dev.vars",
+    "lint": "eslint .",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
