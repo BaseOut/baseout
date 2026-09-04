@@ -1,7 +1,8 @@
 # architecture/diagram
 
-Interactive ReactFlow view of [`../systems-overview.md`](../systems-overview.md).
-Seven tabs; `Overview` is the landing tab.
+Interactive ReactFlow view of [`../systems-overview.md`](../systems-overview.md)
+and [`../code-lifecycle.md`](../code-lifecycle.md).
+Eight tabs; `Overview` is the landing tab.
 
 **`systems-overview.md` is the source of truth.** This app has no runtime data
 source — every node and edge is committed TypeScript. When the doc changes, edit
@@ -57,6 +58,7 @@ src/
     data-network.ts     §9 drawn — the tunnel path, two consumers one door
     storage.ts          Snapshot destinations — 5 live writers, 3 accepted-but-not
     background-cicd.ts  Runtime job flow + Workers Builds pipelines
+    code-deployment.ts  code-lifecycle.md — branches, PR gate, where secrets live
 ```
 
 ### Adding a node

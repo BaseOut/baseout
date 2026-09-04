@@ -10,10 +10,11 @@ import { workers } from './diagrams/workers'
 import { dataNetwork } from './diagrams/data-network'
 import { storage } from './diagrams/storage'
 import { auth } from './diagrams/auth'
+import { codeDeployment } from './diagrams/code-deployment'
 import { backgroundCicd } from './diagrams/background-cicd'
 
 // Overview first — it is the tab the URL lands on.
-const DIAGRAMS = [overview, environments, workers, auth, dataNetwork, storage, backgroundCicd]
+const DIAGRAMS = [overview, environments, workers, auth, dataNetwork, storage, backgroundCicd, codeDeployment]
 
 const LEGEND: Status[] = ['live', 'built', 'proposed', 'external', 'infra']
 

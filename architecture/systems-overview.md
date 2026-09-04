@@ -21,7 +21,9 @@ each piece is *used*, not just that it exists.
 | **Built** | Code merged, not yet deployed to a real environment |
 | **Proposed** | Designed in `openspec/changes/` or `architecture/`, not implemented |
 
-Related: [lat.md/tech-stack.md](../lat.md/tech-stack.md) (partially stale — see
+Related: [code-lifecycle.md](code-lifecycle.md) (how code REACHES these systems —
+branches, PR gate, Workers Builds, where secrets live),
+[lat.md/tech-stack.md](../lat.md/tech-stack.md) (partially stale — see
 *Known doc drift* at the end), [shared/internal/cloudflare-env-separation.md](../shared/internal/cloudflare-env-separation.md),
 [shared/internal/oauth-setup.md](../shared/internal/oauth-setup.md),
 [shared/internal/r2-setup.md](../shared/internal/r2-setup.md).
@@ -577,6 +579,10 @@ window exhausts and notifications are disabled.
 ---
 
 ## 12. CI/CD
+
+> Summary only. The full picture — branch roles, `main`'s live protection rule,
+> what CI does and does not gate, and the known gaps — is in
+> [code-lifecycle.md](code-lifecycle.md).
 
 | What | How |
 |---|---|
