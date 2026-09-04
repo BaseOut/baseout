@@ -3,7 +3,7 @@
  * (openspec/changes/shared-schema-docs §4). Each `/api/spaces/[spaceId]/*`
  * Schema Docs route runs this guard — authenticate, IDOR-check the Space
  * against the session org, and enforce the tier gate — BEFORE forwarding to
- * the engine via the BACKUP_ENGINE binding. The browser never reaches the
+ * the engine via the SERVER binding. The browser never reaches the
  * per-Space DB directly.
  *
  * Pure (takes deps as args) so vitest runs it in plain Node with vi.fn() stubs,

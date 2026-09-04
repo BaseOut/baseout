@@ -8,7 +8,7 @@ declare namespace Cloudflare {
 	}
 	interface DevEnv {
 		HYPERDRIVE: Hyperdrive;
-		INTERNAL_TOKEN: string;
+		SERVER_INTERNAL_TOKEN: string;
 		TRIGGER_SECRET_KEY: string;
 		TRIGGER_PROJECT_REF: string;
 		BASEOUT_ENCRYPTION_KEY: string;
@@ -19,7 +19,7 @@ declare namespace Cloudflare {
 		SPACE_DO: DurableObjectNamespace<import("./src/index").SpaceDO>;
 	}
 	interface ProductionEnv {
-		INTERNAL_TOKEN: string;
+		SERVER_INTERNAL_TOKEN: string;
 		TRIGGER_SECRET_KEY: string;
 		TRIGGER_PROJECT_REF: string;
 		BASEOUT_ENCRYPTION_KEY: string;
@@ -28,7 +28,7 @@ declare namespace Cloudflare {
 		AIRTABLE_OAUTH_CLIENT_SECRET: string;
 	}
 	interface StagingEnv {
-		INTERNAL_TOKEN: string;
+		SERVER_INTERNAL_TOKEN: string;
 		TRIGGER_SECRET_KEY: string;
 		TRIGGER_PROJECT_REF: string;
 		BASEOUT_ENCRYPTION_KEY: string;
@@ -38,7 +38,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		HYPERDRIVE?: Hyperdrive;
-		INTERNAL_TOKEN: string;
+		SERVER_INTERNAL_TOKEN: string;
 		TRIGGER_SECRET_KEY: string;
 		TRIGGER_PROJECT_REF: string;
 		BASEOUT_ENCRYPTION_KEY: string;
@@ -54,7 +54,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "INTERNAL_TOKEN" | "TRIGGER_SECRET_KEY" | "TRIGGER_PROJECT_REF" | "BASEOUT_ENCRYPTION_KEY" | "DATABASE_URL" | "AIRTABLE_OAUTH_CLIENT_ID" | "AIRTABLE_OAUTH_CLIENT_SECRET">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SERVER_INTERNAL_TOKEN" | "TRIGGER_SECRET_KEY" | "TRIGGER_PROJECT_REF" | "BASEOUT_ENCRYPTION_KEY" | "DATABASE_URL" | "AIRTABLE_OAUTH_CLIENT_ID" | "AIRTABLE_OAUTH_CLIENT_SECRET">> {}
 }
 
 // Begin runtime types

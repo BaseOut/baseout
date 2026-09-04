@@ -1,5 +1,5 @@
 /**
- * shared-ai-byok task 3.3 — the INTERNAL_TOKEN-gated AI credential endpoint.
+ * shared-ai-byok task 3.3 — the SERVER_INTERNAL_TOKEN-gated AI credential endpoint.
  *
  * The workflows chat task (task 4.1) runs on the Node runner and can't decrypt
  * `ai_provider_keys.key_enc` itself (the master key never leaves the Worker), so

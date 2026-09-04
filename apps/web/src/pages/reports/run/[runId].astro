@@ -31,10 +31,10 @@ let parentBaseScope: string[] | null = null;
 
 if (spaceId && db && runId) {
   try {
-    const engine = env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+    const engine = env.SERVER && env.SERVER_INTERNAL_TOKEN
       ? createBackupEngine({
-          binding: env.BACKUP_ENGINE,
-          internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+          binding: env.SERVER,
+          internalToken: env.SERVER_INTERNAL_TOKEN,
         })
       : null;
     const page = await getReportRunForPage({

@@ -30,10 +30,10 @@ const { account } = Astro.locals;
 let items: InboxItem[] = [];
 try {
   const accountSpaces = account?.organization ? (account.spaces ?? []) : [];
-  if (accountSpaces.length > 0 && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  if (accountSpaces.length > 0 && env.SERVER && env.SERVER_INTERNAL_TOKEN) {
     const engine = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      binding: env.SERVER,
+      internalToken: env.SERVER_INTERNAL_TOKEN,
     });
     items = await fetchInboxItems(
       engine,

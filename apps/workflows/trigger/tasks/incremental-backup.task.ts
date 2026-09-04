@@ -5,7 +5,7 @@
 // without pulling the Trigger.dev SDK. This file is what the runner picks up
 // via trigger.config.ts `dirs`; it adapts the JSON payload (enqueued by the
 // SpaceDO poll tick — server-instant-webhook Phase C) into the pure module's
-// deps and reads BACKUP_ENGINE_URL + INTERNAL_TOKEN from process.env.
+// deps and reads SERVER_URL + SERVER_INTERNAL_TOKEN from process.env.
 //
 // WIRED (contractually fixed engine routes):
 //   - POST /api/internal/webhook-subscriptions/:id/context  (payloads auth:
@@ -133,13 +133,13 @@ async function postCompletion(
 export const incrementalBackupTask = task({
   id: "incremental-backup",
   run: async (payload: IncrementalBackupTaskPayload, { ctx }) => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
     if (!engineUrl) {
-      throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
+      throw new Error("SERVER_URL is not set in the Trigger.dev env");
     }
     if (!internalToken) {
-      throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+      throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
     const engine = createEngineCallbacks({

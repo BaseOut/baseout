@@ -2,7 +2,7 @@
 //
 // Workspace rediscovery — the engine path that picks up Airtable bases
 // added to a workspace after OAuth. apps/web's POST
-// /api/spaces/:spaceId/rescan-bases proxies here via the BACKUP_ENGINE
+// /api/spaces/:spaceId/rescan-bases proxies here via the SERVER
 // service binding; SpaceDO.alarm() also routes through the same pure
 // orchestrator (Phase 4) so the policy is shared.
 //

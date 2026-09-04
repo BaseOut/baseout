@@ -68,11 +68,11 @@
         }
       ],
       // Staff actions (force backup, invalidate connection) call the engine's
-      // INTERNAL_TOKEN-gated routes. `remote: true` lets local `astro dev`
+      // SERVER_INTERNAL_TOKEN-gated routes. `remote: true` lets local `astro dev`
       // proxy to the deployed sibling.
       "services": [
         {
-          "binding": "BACKUP_ENGINE",
+          "binding": "SERVER",
           "service": "baseout-server-dev",
           "remote": true
         }
@@ -109,7 +109,7 @@
       "secrets": {
         "required": [
           "ADMIN_HANDOFF_SECRET",
-          "BACKUP_ENGINE_INTERNAL_TOKEN"
+          "SERVER_INTERNAL_TOKEN"
         ]
       },
       // PROVISION: baseout-staging-pg (same config apps/web + apps/server
@@ -136,24 +136,30 @@
       ],
       "services": [
         {
-          "binding": "BACKUP_ENGINE",
+          "binding": "SERVER",
           "service": "baseout-server"
         }
       ],
+// Full observability for staging: every request logged AND traced, nothing
+      // sampled away. `observability` is INHERITABLE, so this env block overrides
+      // the top-level default and leaves dev/production on their own settings.
+      // Fields verified against wrangler 4.124's config-schema.json, which sets
+      // additionalProperties:false — `redact_query_string` is NOT valid and is
+      // silently dropped with a warning. `destinations` is omitted: no Logpush
+      // destination exists yet (systems-overview §13).
       "observability": {
         "enabled": true,
         "head_sampling_rate": 1,
-        "redact_query_string": true,
         "logs": {
           "enabled": true,
           "head_sampling_rate": 1,
-          "persist": true,
-          "invocation_logs": true
+          "invocation_logs": true,
+          "persist": true
         },
         "traces": {
           "enabled": true,
-          "persist": true,
-          "head_sampling_rate": 1
+          "head_sampling_rate": 1,
+          "persist": true
         }
       }
     },
@@ -164,6 +170,34 @@
       // deploy silently lands on a different Worker than the config describes.
       // Production lives in its own account, so the two cannot collide.
       "name": "baseout-admin",
+      // Full observability for production: every request logged AND traced.
+      // `observability` is INHERITABLE, so this block overrides the top level —
+      // which matters for web/admin, whose top-level `enabled: false` would
+      // otherwise leave production logging NOTHING.
+      //
+      // head_sampling_rate is the cost/volume lever. 1 = keep everything, which is
+      // the right posture at launch (low traffic, maximum diagnosability) and the
+      // first thing to dial back if ingest volume becomes a bill. Lower it here
+      // only — staging should stay at 1.
+      //
+      // Fields validated against wrangler 4.124's config-schema.json
+      // (additionalProperties:false). `destinations` omitted: no Logpush
+      // destination exists yet (systems-overview §13).
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        }
+      },
       "routes": [
         {
           "pattern": "admin.baseout.com",
@@ -187,7 +221,7 @@
       "secrets": {
         "required": [
           "ADMIN_HANDOFF_SECRET",
-          "BACKUP_ENGINE_INTERNAL_TOKEN"
+          "SERVER_INTERNAL_TOKEN"
         ]
       },
       // PROVISION in the production account: baseout-live-pg.
@@ -213,7 +247,7 @@
       ],
       "services": [
         {
-          "binding": "BACKUP_ENGINE",
+          "binding": "SERVER",
           "service": "baseout-server"
         }
       ]

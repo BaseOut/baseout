@@ -4,7 +4,7 @@
 // without pulling the Trigger.dev SDK into the workerd test isolate. This
 // file is what Trigger.dev's runner picks up via the trigger.config.ts dirs
 // scan; it converts the JSON-shaped payload back into the strongly-typed
-// inputs runBackupBase expects, and reads engine URL + INTERNAL_TOKEN from
+// inputs runBackupBase expects, and reads engine URL + SERVER_INTERNAL_TOKEN from
 // process.env (the Trigger.dev runner is in Node, not workerd, so process.env
 // is the canonical source).
 //
@@ -492,13 +492,13 @@ export const backupBaseTask = task({
   queue: { name: "backup-base-per-connection", concurrencyLimit: 1 },
   maxDuration: 600,
   run: async (payload: BackupBaseTaskPayload, { ctx }) => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
     if (!engineUrl) {
-      throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
+      throw new Error("SERVER_URL is not set in the Trigger.dev env");
     }
     if (!internalToken) {
-      throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+      throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
     // Managed R2 requires app-level S3-API creds in the runner env. The

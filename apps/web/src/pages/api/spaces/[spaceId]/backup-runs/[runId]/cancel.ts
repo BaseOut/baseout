@@ -5,7 +5,7 @@
  * Cancel button (BackupHistoryWidget) POSTs here; this route IDOR-guards
  * the (space, run) pair against the authenticated org, then forwards to
  * the engine's POST /api/internal/runs/:runId/cancel via the
- * BACKUP_ENGINE service binding.
+ * SERVER service binding.
  *
  * Pattern matches backup-runs.ts: a testable inner handlePost(input, deps)
  * pure function + a thin Astro APIRoute wrapper that wires real Drizzle +
@@ -125,10 +125,10 @@ export async function handlePost(input: HandlePostInput): Promise<Response> {
 // ── Astro APIRoute wrapper ──────────────────────────────────────────────
 
 function buildEngine(): BackupEngineClient | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   return createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
 }
 

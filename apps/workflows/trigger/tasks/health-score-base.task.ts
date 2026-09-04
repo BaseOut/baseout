@@ -121,11 +121,11 @@ export const healthScoreBaseTask = task({
   id: "health-score-base",
   maxDuration: 600,
   run: async (payload: HealthScoreBasePayload): Promise<HealthScoreBaseResult> => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!engineUrl) throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
-    if (!internalToken) throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+    if (!engineUrl) throw new Error("SERVER_URL is not set in the Trigger.dev env");
+    if (!internalToken) throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set in the Trigger.dev env");
 
     const client = new Anthropic({ apiKey });

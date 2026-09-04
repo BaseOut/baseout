@@ -5,7 +5,7 @@ Knowledge graph for `@baseout/server` — the headless backup/restore engine. Cr
 The internals of `apps/server`. Each file documents one slice; navigate by `lat locate` or `lat section`.
 
 - [[architecture]] — Worker entry, middleware, per-request masterDb, scheduled handler
-- [[surface-contract]] — `/api/health` + `/api/internal/*` only. INTERNAL_TOKEN gate semantics.
+- [[surface-contract]] — `/api/health` + `/api/internal/*` only. SERVER_INTERNAL_TOKEN gate semantics.
 - [[durable-objects]] — `ConnectionDO` (per-Connection rate-limit gateway), `SpaceDO` (per-Space scheduler)
 - [[db-mirror]] — Mirrored Drizzle tables, canonical migration sources, sync rules
 - [[trigger-tasks]] — Trigger.dev v3 task topology (planned)

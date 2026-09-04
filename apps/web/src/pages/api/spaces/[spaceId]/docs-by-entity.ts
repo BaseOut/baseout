@@ -77,10 +77,10 @@ export const GET: APIRoute = async ({ locals, params, request }) => {
   if (!db) return jsonResponse({ error: 'Database not initialized' }, 500)
   const url = new URL(request.url)
   let engine: DocsByEntityRouteInput['engine'] = null
-  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  if (env.SERVER && env.SERVER_INTERNAL_TOKEN) {
     const e = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      binding: env.SERVER,
+      internalToken: env.SERVER_INTERNAL_TOKEN,
     })
     engine = (spaceId, t, id) => e.docsByEntity(spaceId, t, id)
   }

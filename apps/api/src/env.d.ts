@@ -15,12 +15,12 @@ export interface Env {
   /** Service binding to baseout-server (internal schema read/search/versions/changelog). */
   SERVER?: Fetcher;
   /**
-   * Shared secret gating apps/server's /api/internal/* (its INTERNAL_TOKEN).
+   * Shared secret gating apps/server's /api/internal/* (its SERVER_INTERNAL_TOKEN).
    * apps/api sends it as `x-internal-token` over the SERVER binding. (The design
    * names an HMAC service token; the deployed server gate is the header token —
    * matched here, HMAC can supersede uniformly later.)
    */
-  INTERNAL_TOKEN?: string;
+  SERVER_INTERNAL_TOKEN?: string;
 
   /** Workers Analytics Engine dataset for per-request usage metering (baseout_api_requests). */
   API_USAGE?: AnalyticsEngineDataset;

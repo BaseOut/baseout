@@ -63,7 +63,7 @@ Deliberately **not** needed:
 - `NPM_TOKEN` / `FONTAWESOME_TOKEN` — root `.npmrc` has both registry redirects commented out; `@opensided` packages are vendored via `file:`.
 - Any `CLOUDFLARE_API_TOKEN` — wrangler never runs in this app's builds.
 
-Task *runtime* config (`BACKUP_ENGINE_URL`, `INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS keys) is not a build variable — it lives in Trigger.dev's own environment-variables UI, per Trigger.dev environment. See **Runtime** below.
+Task *runtime* config (`SERVER_URL`, `SERVER_INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS keys) is not a build variable — it lives in Trigger.dev's own environment-variables UI, per Trigger.dev environment. See **Runtime** below.
 
 ### The anchor Worker
 
@@ -109,8 +109,8 @@ The Worker enqueues via `tasks.trigger<typeof X>("X-id", payload)`. Type definit
 
 Node only. The tasks read configuration from `process.env`:
 
-- `BACKUP_ENGINE_URL` — the apps/server hostname. For the local loop (the default for `pnpm dev`), point at the local engine over loopback: `http://localhost:8787` (see `shared/internal/ops-setup.md` §7.4). Deployed engine: `https://baseout-server.openside.workers.dev` (run web with `pnpm dev:remote`).
-- `INTERNAL_TOKEN` — service-token; byte-equal to apps/server's value (a throwaway local value in the local loop, never the deployed token)
+- `SERVER_URL` — the apps/server hostname. For the local loop (the default for `pnpm dev`), point at the local engine over loopback: `http://localhost:8787` (see `shared/internal/ops-setup.md` §7.4). Deployed engine: `https://baseout-server.openside.workers.dev` (run web with `pnpm dev:remote`).
+- `SERVER_INTERNAL_TOKEN` — service-token; byte-equal to apps/server's value (a throwaway local value in the local loop, never the deployed token)
 - `AIRTABLE_*`, R2 / BYOS provider secrets — set in Trigger.dev's environment variables UI per env (R2 left blank locally → backups write to `apps/workflows/.backups/`)
 
 ## Why this is its own app

@@ -4,7 +4,7 @@
  * User-driven hard-delete of a terminal backup run. The browser-side Delete
  * button (BackupHistoryWidget) POSTs here; this route IDOR-guards the
  * (space, run) pair against the authenticated org, then forwards to the
- * engine's POST /api/internal/runs/:runId/delete via the BACKUP_ENGINE
+ * engine's POST /api/internal/runs/:runId/delete via the SERVER
  * service binding.
  *
  * Pattern matches cancel.ts: a testable inner handlePost(input, deps) pure
@@ -121,10 +121,10 @@ export async function handlePost(input: HandlePostInput): Promise<Response> {
 // ── Astro APIRoute wrapper ──────────────────────────────────────────────
 
 function buildEngine(): BackupEngineClient | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   return createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
 }
 

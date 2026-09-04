@@ -53,14 +53,14 @@ const row = rows[0];
 if (!row) return Astro.redirect('/backups');
 
 // Fetch per-base detail from the engine.
-if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) {
   // Engine binding not configured (local dev without engine) → back to run page.
   return Astro.redirect(`/backups/run?id=${runId}`);
 }
 
 const engine = createBackupEngine({
-  binding: env.BACKUP_ENGINE,
-  internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+  binding: env.SERVER,
+  internalToken: env.SERVER_INTERNAL_TOKEN,
 });
 
 const detailRes = await engine.getRunDetail(runId);

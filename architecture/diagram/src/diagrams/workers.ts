@@ -76,8 +76,8 @@ export const workers: Diagram = {
     ),
   ],
   edges: [
-    edge('w1', 'web', 'server', { label: 'BACKUP_ENGINE', kind: 'thick' }),
-    edge('w2', 'admin', 'server', { label: 'BACKUP_ENGINE', kind: 'thick' }),
+    edge('w1', 'web', 'server', { label: 'SERVER', kind: 'thick' }),
+    edge('w2', 'admin', 'server', { label: 'SERVER', kind: 'thick' }),
     edge('w3', 'api', 'server', { label: 'SERVER', kind: 'thick' }),
     edge('w4', 'server', 'connection-do', { from: 'sb', to: 'tt' }),
     edge('w5', 'server', 'space-do', { from: 'sb', to: 'tl' }),

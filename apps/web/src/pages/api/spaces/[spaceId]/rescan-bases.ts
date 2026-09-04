@@ -4,7 +4,7 @@
  * Triggers a manual workspace rediscovery for the given Space. The web
  * route is the authenticated, IDOR-checked entry point; it forwards to
  * @baseout/server's POST /api/internal/spaces/:spaceId/rescan-bases via
- * the BACKUP_ENGINE service binding. The engine is the single writer for
+ * the SERVER service binding. The engine is the single writer for
  * rediscovery so the alarm and manual paths share the same policy
  * (auto-add toggle, tier-cap split, space_events insert).
  *
@@ -51,7 +51,7 @@ export interface HandlePostInput {
   spaceId: string | undefined
   fetchSpaceById: (spaceId: string) => Promise<SpaceRowSlim | null>
   /**
-   * Engine proxy. When null, the BACKUP_ENGINE binding or INTERNAL_TOKEN
+   * Engine proxy. When null, the SERVER binding or SERVER_INTERNAL_TOKEN
    * is not configured — the route returns 503. Otherwise calls the engine
    * and surfaces the typed result.
    */
@@ -189,10 +189,10 @@ export const POST: APIRoute = async ({ locals, params }) => {
 function buildEngineRescan():
   | ((spaceId: string) => Promise<EngineRescanBasesResult>)
   | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const engine = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return (spaceId) => engine.rescanBases(spaceId)
 }
@@ -201,10 +201,10 @@ function buildListWorkspaces(
   db: AppDb,
   organizationId: string,
 ): (() => Promise<EngineListWorkspacesResult>) | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const engine = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return async () => {
     const rows = await db

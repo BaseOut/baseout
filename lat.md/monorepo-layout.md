@@ -44,7 +44,7 @@ Per [CLAUDE.md](../CLAUDE.md) §2, Baseout is conceptually two Workers + one sha
 - **Frontend (`apps/web`)** owns: customer auth (better-auth, magic-link), OAuth Connect, settings, `/ops` console, **master-DB schema** ownership.
 - **Backend (`apps/server`)** owns: backup/restore execution, Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), Trigger.dev tasks, R2/BYOS streaming.
 
-The backend has **no** UI, **no** `/login`, **no** `/api/auth/*`, **no** better-auth, **no** per-engine user identity. It sees only `INTERNAL_TOKEN` from the frontend.
+The backend has **no** UI, **no** `/login`, **no** `/api/auth/*`, **no** better-auth, **no** per-engine user identity. It sees only `SERVER_INTERNAL_TOKEN` from the frontend.
 
 Mirrored DB tables in `apps/server` carry header comments naming the canonical migration source in the frontend. Anchor: [apps/server lat graph](../apps/server/lat.md/) `db-mirror.md`.
 

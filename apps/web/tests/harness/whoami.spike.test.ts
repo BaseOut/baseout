@@ -2,8 +2,8 @@
  * system-test-harness-spike — the one scenario no existing test can express:
  *
  *   Node test ──fetch──▶ spike-consumer Worker (real createBackupEngine client)
- *                         └─BACKUP_ENGINE service binding (harness-wired)──▶
- *                           apps/server Worker (INTERNAL_TOKEN middleware,
+ *                         └─SERVER service binding (harness-wired)──▶
+ *                           apps/server Worker (SERVER_INTERNAL_TOKEN middleware,
  *                           real Postgres read, ConnectionDO /token decrypt)
  *                             └─outbound fetch api.airtable.com──▶ MSW mock
  *
@@ -32,8 +32,8 @@ import { eq } from 'drizzle-orm'
 const DB_URL =
   process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/baseout_test'
 
-// Must match spike-consumer.wrangler.jsonc's BACKUP_ENGINE_INTERNAL_TOKEN.
-const INTERNAL_TOKEN = 'test-only-internal-token-min-32-chars-aaaa'
+// Must match spike-consumer.wrangler.jsonc's SERVER_INTERNAL_TOKEN.
+const SERVER_INTERNAL_TOKEN = 'test-only-internal-token-min-32-chars-aaaa'
 
 // Test-only 32-byte AES key, base64 (0x07 repeated). The server Worker gets
 // the same key, so ciphertext seeded here decrypts in ConnectionDO.
@@ -89,7 +89,7 @@ const server = createTestHarness({
       // loaded from apps/server/.dev.vars, so a developer's real local
       // secrets can never leak into (or break) this test.
       vars: {
-        INTERNAL_TOKEN,
+        SERVER_INTERNAL_TOKEN,
         DATABASE_URL: DB_URL,
         BASEOUT_ENCRYPTION_KEY: ENC_KEY,
         TRIGGER_SECRET_KEY: 'tr_dev_test_unused',
@@ -100,7 +100,7 @@ const server = createTestHarness({
         AIRTABLE_ON_DEMAND_REFRESH_ENABLED: '0',
       },
       secrets: {
-        INTERNAL_TOKEN,
+        SERVER_INTERNAL_TOKEN,
         DATABASE_URL: DB_URL,
         BASEOUT_ENCRYPTION_KEY: ENC_KEY,
         AIRTABLE_ON_DEMAND_REFRESH_ENABLED: '0',
@@ -195,7 +195,7 @@ afterAll(async () => {
   await sql.end({ timeout: 5 })
 })
 
-describe('createTestHarness spike: web client → BACKUP_ENGINE binding → server → MSW Airtable', () => {
+describe('createTestHarness spike: web client → SERVER binding → server → MSW Airtable', () => {
   it('resolves whoami end-to-end through the real service binding', async () => {
     const { connectionId } = await seedActiveConnection()
 

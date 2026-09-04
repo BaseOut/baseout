@@ -10,7 +10,7 @@ The data plane fans into `apps/server` from three external entry points (`hooks`
          Customer browser
                 │
                 ▼
-            apps/web ──── INTERNAL_TOKEN ──→ apps/server ──┬──→ Trigger.dev tasks
+            apps/web ──── SERVER_INTERNAL_TOKEN ──→ apps/server ──┬──→ Trigger.dev tasks
                                                 ▲          ├──→ R2 / BYOS
                                                 │          └──→ customer DBs
         Airtable webhooks ──→ apps/hooks ───────┤              ▲
@@ -26,8 +26,8 @@ The contract for who can call whom and with what credential. New cross-app route
 
 | From → To | Credential | Header | Notes |
 |---|---|---|---|
-| `apps/web` → `apps/server` | `INTERNAL_TOKEN` (Cloudflare Secret) | `x-internal-token` | Triggers backup/restore runs; reads progress via WebSocket on the per-Space DO |
-| `apps/admin` → `apps/server` | `INTERNAL_TOKEN` | `x-internal-token` | Super-admin operations |
+| `apps/web` → `apps/server` | `SERVER_INTERNAL_TOKEN` (Cloudflare Secret) | `x-internal-token` | Triggers backup/restore runs; reads progress via WebSocket on the per-Space DO |
+| `apps/admin` → `apps/server` | `SERVER_INTERNAL_TOKEN` | `x-internal-token` | Super-admin operations |
 | `apps/hooks` → `apps/server` | HMAC service token (`@baseout/shared`) | `x-baseout-signature` | Forwards verified Airtable webhook payloads |
 | `apps/api` → `apps/server` | HMAC service token | `x-baseout-signature` | Forwards validated inbound API payloads |
 | `apps/sql` → customer DB | Hyperdrive connection string | n/a | Read-only by default; provisioned by `apps/server` |
@@ -40,7 +40,7 @@ Frontend ↔ backend secrets must agree on the **same encryption key** for OAuth
 Each app exposes the smallest possible public footprint. Anything not listed here should not exist.
 
 - `apps/web` — full customer UI + `/api/*` for browser interactions; auth-gated by `apps/web/src/middleware.ts`.
-- `apps/server` — `/api/health` only (liveness probe). Everything else is `/api/internal/*` and `INTERNAL_TOKEN`-gated.
+- `apps/server` — `/api/health` only (liveness probe). Everything else is `/api/internal/*` and `SERVER_INTERNAL_TOKEN`-gated.
 - `apps/admin` — internal staff UI; Google SSO required.
 - `apps/api` — public versioned inbound API at `api.baseout.com`; per-customer API keys.
 - `apps/sql` — public read-only PG REST at `sql.baseout.com`; per-customer API keys, Pro+ only.
@@ -52,7 +52,7 @@ Adding a new public route requires updating this table and the [[security-model]
 
 `apps/web` reads backup-run progress over WebSocket from the per-Space Durable Object in `apps/server`. The DO is the single source of truth for run state — neither side polls the DB.
 
-WebSocket auth uses a short-lived token issued by `apps/web` against `INTERNAL_TOKEN`.
+WebSocket auth uses a short-lived token issued by `apps/web` against `SERVER_INTERNAL_TOKEN`.
 
 ## Where to Look
 

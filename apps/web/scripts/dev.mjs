@@ -122,7 +122,7 @@ function stabilizeClientAssets() {
   if (!cfg.assets) cfg.assets = {};
   cfg.assets.directory = '../client-stable';
 
-  // LOCAL mode (the default): drop `remote: true` from BACKUP_ENGINE so
+  // LOCAL mode (the default): drop `remote: true` from SERVER so
   // apps/web talks to a LOCAL `wrangler dev` engine over the dev registry instead
   // of the deployed sibling. This used to be a regex on the RENDERED wrangler.jsonc;
   // that file is now committed and authoritative, so the tweak belongs here — on
@@ -131,15 +131,44 @@ function stabilizeClientAssets() {
   // for them and can never leak into a deploy.
   if (process.env.BACKUP_LOCAL_ENGINE === '1') {
     for (const svc of cfg.services ?? []) delete svc.remote;
-    console.log('  ✓ BACKUP_ENGINE bound to the LOCAL engine (remote flag dropped).');
+    console.log('  ✓ SERVER bound to the LOCAL engine (remote flag dropped).');
   }
 
   writeFileSync(wranglerConfig, JSON.stringify(cfg));
   console.log('  ✓ Assets snapshotted to dist/client-stable (wrangler ENOENT guard).');
 }
 
+/**
+ * Bring up the Cloudflare Tunnel to the master database.
+ *
+ * The DigitalOcean cluster has no public ingress (systems-overview §9), so local
+ * dev reaches Postgres only through `cloudflared` on a loopback port. Without it
+ * every DB-backed page 500s and the migration-drift check silently skips, which
+ * reads as "no drift" rather than "could not look".
+ *
+ * `db:up` is idempotent and cheap on a warm start: it probes the port with a real
+ * Postgres handshake and returns immediately if a working tunnel is already
+ * there, so running this on every `pnpm dev` costs nothing.
+ *
+ * It runs BEFORE launch.mjs so the drift check has a database to talk to.
+ *
+ * SKIP_DB_TUNNEL=1 opts out — for UI-only work where no DB page is involved.
+ * Everything schema-backed will fail in that mode; that is the trade.
+ */
+async function ensureTunnel() {
+  if (process.env.SKIP_DB_TUNNEL === '1') {
+    console.log('  ! SKIP_DB_TUNNEL=1 — no DB tunnel; schema-backed pages will fail.');
+    return;
+  }
+  // run() exits the process on a non-zero code, matching how the migration gate
+  // behaves: a dev server that cannot reach its database is worse than no dev
+  // server, because the failure surfaces as opaque 500s much later.
+  await run('node', ['../../db/tunnel/up.mjs']);
+}
+
 async function main() {
   await ensureHostsEntry();
+  await ensureTunnel();
 
   // `pnpm dev` is LOCAL by default: Miniflare simulates KV, Hyperdrive and the
   // rest, so no Cloudflare auth is needed and nothing touches real resources.
@@ -204,8 +233,8 @@ async function main() {
     console.log('    \u26a0 magic-link LOGIN EMAIL is NOT delivered here — Miniflare cannot send.');
     console.log('    For login email, use: pnpm --filter @baseout/web run dev:remote');
     console.log('    `pnpm dev` (repo root) also starts the engine + trigger.dev runner.');
-    console.log('    Runner env must point BACKUP_ENGINE_URL at http://localhost:8787 with a');
-    console.log('    matching INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md §7.4.');
+    console.log('    Runner env must point SERVER_URL at http://localhost:8787 with a');
+    console.log('    matching SERVER_INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md §7.4.');
   }
 
   const hasTrustedCert = existsSync(CERT) && existsSync(KEY);

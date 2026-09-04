@@ -1,7 +1,7 @@
 // POST /api/internal/runs/:runId/cancel
 //
 // Internal route the apps/web cancel button forwards to via the
-// BACKUP_ENGINE service binding. Atomically transitions the row from
+// SERVER service binding. Atomically transitions the row from
 // {queued | running} → 'cancelling' → 'cancelled' and asks Trigger.dev
 // to cancel each fanned-out task. See src/lib/runs/cancel.ts for the
 // state machine + idempotency rules.

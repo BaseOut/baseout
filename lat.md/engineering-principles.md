@@ -26,7 +26,7 @@ Security is a gate on every change, not an afterthought — see [[security-model
 - API tokens stored as hashes (`api_tokens.token_hash`), never plaintext.
 - Server-side validation on every mutating route. Client validation is UX.
 - Parameterised SQL via Drizzle only. Never string-concatenate.
-- `INTERNAL_TOKEN` gates `apps/server`'s `/api/internal/*`. Public surface is `/api/health`.
+- `SERVER_INTERNAL_TOKEN` gates `apps/server`'s `/api/internal/*`. Public surface is `/api/health`.
 
 Any change introducing a new secret, auth path, SQL surface, internal-API surface, or external integration must explicitly call out security review points before approval.
 

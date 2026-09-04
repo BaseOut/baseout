@@ -106,11 +106,11 @@ export const auth: Diagram = {
     }),
     svc('sibling', 24, 840, {
       label: 'web · admin · api',
-      sub: 'BACKUP_ENGINE_INTERNAL_TOKEN',
+      sub: 'SERVER_INTERNAL_TOKEN',
     }),
     svc('gate', 234, 840, {
       label: 'x-internal-token',
-      sub: 'constant-time vs INTERNAL_TOKEN',
+      sub: 'constant-time vs SERVER_INTERNAL_TOKEN',
       status: 'infra',
     }),
 
@@ -141,13 +141,13 @@ export const auth: Diagram = {
     note(
       'n-sql',
       0, 1000,
-      'apps/sql declares BASEOUT_ENCRYPTION_KEY + SERVICE_HMAC_TO_BACKUP in secrets.required but has ONE source file and no auth code at all — no bearer parse, no HMAC verify, no internal gate. Its route is path-scoped (sql.baseout.dev/v1/*) precisely to limit what an unfinished Worker exposes. SERVICE_HMAC_TO_BACKUP also has no counterpart in server’s secrets.required.',
+      'apps/sql has ONE source file and no auth code at all — no bearer parse, no HMAC verify, no internal gate. Its route is path-scoped (sql.baseout.dev/v1/*) precisely to limit what an unfinished Worker exposes. SERVICE_HMAC_TO_SERVER — the planned HMAC successor to the bearer SERVER_INTERNAL_TOKEN — was removed from secrets.required on 2026-09-04: no code signs or verifies with it, so gating a deploy on it only failed builds. Reserved in .dev.vars.example; re-add on BOTH sides when the signing code lands.',
       440,
     ),
     note(
       'n-match',
       470, 1000,
-      'Three values must be byte-identical across Workers or things break SILENTLY: BASEOUT_ENCRYPTION_KEY (web writes, server reads — drift forces customer reconnects), server INTERNAL_TOKEN = the three BACKUP_ENGINE_INTERNAL_TOKENs, and ADMIN_HANDOFF_SECRET (web mints, admin opens).',
+      'Three values must be byte-identical across Workers or things break SILENTLY: BASEOUT_ENCRYPTION_KEY (web writes, server reads — drift forces customer reconnects), server SERVER_INTERNAL_TOKEN = the three SERVER_INTERNAL_TOKENs, and ADMIN_HANDOFF_SECRET (web mints, admin opens).',
       430,
     ),
   ],

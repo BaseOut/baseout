@@ -8,7 +8,7 @@
  *
  * Both apps/web (initial code exchange) and apps/server (refresh on backup
  * start) hold the secret. Workflows MUST NOT — it asks the engine for fresh
- * tokens via the INTERNAL_TOKEN-gated route.
+ * tokens via the SERVER_INTERNAL_TOKEN-gated route.
  */
 
 export const GOOGLE_DRIVE_AUTHORIZE_URL =

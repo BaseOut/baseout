@@ -1,3 +1,16 @@
 DATABASE_URL=postgres://localhost:5432/baseout_dev
 BASEOUT_ENCRYPTION_KEY=
-SERVICE_HMAC_TO_BACKUP=
+
+# RESERVED, not yet used — deliberately NOT in secrets.required.
+#
+# HMAC service tokens are the planned replacement for the bearer
+# SERVER_INTERNAL_TOKEN, adding request signing + replay protection
+# (apps/server/docs/superpowers/plans/2026-05-05-server-phase-1-roadmap.md §6).
+# Nothing signs or verifies with this yet, so gating a deploy on it would fail
+# builds for a value no code reads. Add it back to secrets.required in the same
+# change that lands the signing + verifying code — on BOTH sides, or a producer
+# signs with a key no consumer checks.
+#
+# Named for its DESTINATION (…_TO_SERVER), matching the binding standardization
+# of 2026-09-04. It was SERVICE_HMAC_TO_BACKUP.
+# SERVICE_HMAC_TO_SERVER=

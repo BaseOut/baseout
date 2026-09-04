@@ -87,7 +87,42 @@ function waitForPort(port, timeoutMs) {
  * token authenticates to the Access application in front of the database, so
  * no interactive browser login is possible or needed in CI.
  */
+/** True if something is already serving the loopback port. */
+function probePort(port, timeoutMs = 600) {
+  return new Promise((res) => {
+    const s = new net.Socket()
+    const done = (v) => {
+      s.destroy()
+      res(v)
+    }
+    s.setTimeout(timeoutMs)
+    s.once('connect', () => done(true))
+    s.once('timeout', () => done(false))
+    s.once('error', () => done(false))
+    s.connect(port, '127.0.0.1')
+  })
+}
+
 async function openTunnel() {
+  // Reuse a tunnel that `pnpm db:up` already opened on this port rather than
+  // racing a second cloudflared against it. Local dev keeps one long-lived
+  // tunnel up; CI has none, so it falls through and spawns its own.
+  if (await probePort(TUNNEL_PORT)) {
+    process.stdout.write(`  reusing the tunnel already on 127.0.0.1:${TUNNEL_PORT} (pnpm db:up)\n`)
+    if (!process.env.DB_USER || !process.env.DB_PASSWORD || !process.env.DB_NAME) {
+      fail(
+        `a tunnel is already up on ${TUNNEL_PORT}, but DB_USER / DB_PASSWORD / DB_NAME\n` +
+          '    are not set, so no connection string can be built. Either export them, or\n' +
+          '    drop TUNNEL=1 and let DATABASE_URL point at 127.0.0.1 directly.',
+      )
+    }
+    const u = encodeURIComponent(process.env.DB_USER)
+    const p = encodeURIComponent(process.env.DB_PASSWORD)
+    const n = encodeURIComponent(process.env.DB_NAME)
+    process.env.DATABASE_URL = `postgres://${u}:${p}@127.0.0.1:${TUNNEL_PORT}/${n}?sslmode=require`
+    return null // nothing of ours to tear down
+  }
+
   const required = [
     'DB_TUNNEL_HOSTNAME',
     'CF_CLIENT_ID',

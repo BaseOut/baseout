@@ -93,7 +93,7 @@ const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
 // degrades to a quiet note, never a broken page).
 let tokenHealth: EngineTokenHealthResult | null = null;
 try {
-  const engine = createAdminEngine({ binding: env.BACKUP_ENGINE, internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN });
+  const engine = createAdminEngine({ binding: env.SERVER, internalToken: env.SERVER_INTERNAL_TOKEN });
   tokenHealth = engine ? await engine.tokenHealth() : null;
 } catch {
   tokenHealth = null;

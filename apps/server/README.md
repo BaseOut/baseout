@@ -1,15 +1,15 @@
 # @baseout/server
 
-Headless backup/restore engine. Cloudflare Worker. Public surface: `/api/health`. Internal surface: `/api/internal/*` gated by `INTERNAL_TOKEN`. See [CLAUDE.md §5](../../CLAUDE.md) for backend conventions and runtime constraints.
+Headless backup/restore engine. Cloudflare Worker. Public surface: `/api/health`. Internal surface: `/api/internal/*` gated by `SERVER_INTERNAL_TOKEN`. See [CLAUDE.md §5](../../CLAUDE.md) for backend conventions and runtime constraints.
 
 ## Local dev
 
 ```bash
 cp .dev.vars.example .dev.vars
-# Fill in: INTERNAL_TOKEN, DATABASE_URL, BASEOUT_ENCRYPTION_KEY,
+# Fill in: SERVER_INTERNAL_TOKEN, DATABASE_URL, BASEOUT_ENCRYPTION_KEY,
 #          TRIGGER_SECRET_KEY, TRIGGER_PROJECT_REF.
 # DATABASE_URL + BASEOUT_ENCRYPTION_KEY MUST match apps/web's values.
-# INTERNAL_TOKEN MUST match apps/web's BACKUP_ENGINE_INTERNAL_TOKEN.
+# SERVER_INTERNAL_TOKEN MUST match apps/web's SERVER_INTERNAL_TOKEN.
 
 pnpm install
 pnpm --filter @baseout/server dev   # → http://localhost:8787
@@ -23,7 +23,7 @@ pnpm dev:all
 # → apps/server on http://localhost:8787
 ```
 
-Both `.dev.vars` files must share the same `INTERNAL_TOKEN` value (the web side calls it `BACKUP_ENGINE_INTERNAL_TOKEN`). Mismatch → engine returns 401 → web returns 502 with `error: "unauthorized"`. See `shared/internal/ops-setup.md` §1 (Engine subsection) for the full parity rules.
+Both `.dev.vars` files must share the same `SERVER_INTERNAL_TOKEN` value (the web side calls it `SERVER_INTERNAL_TOKEN`). Mismatch → engine returns 401 → web returns 502 with `error: "unauthorized"`. See `shared/internal/ops-setup.md` §1 (Engine subsection) for the full parity rules.
 
 ## Manual smoke: prove the Connection scaffold
 
@@ -40,9 +40,9 @@ psql "$DATABASE_URL" -c "select id, status, scopes from baseout.connections orde
 pnpm --filter @baseout/server dev
 
 # In a third (or same after the above is up):
-INTERNAL_TOKEN=$(grep ^INTERNAL_TOKEN apps/server/.dev.vars | cut -d= -f2-)
+SERVER_INTERNAL_TOKEN=$(grep ^SERVER_INTERNAL_TOKEN apps/server/.dev.vars | cut -d= -f2-)
 curl -X POST \
-  -H "x-internal-token: $INTERNAL_TOKEN" \
+  -H "x-internal-token: $SERVER_INTERNAL_TOKEN" \
   http://localhost:8787/api/internal/connections/<connection-id>/whoami
 ```
 
@@ -74,7 +74,7 @@ The vitest pool (`@cloudflare/vitest-pool-workers`) runs everything inside worke
 ## Architecture
 
 - `src/index.ts` — Worker entry. Constructs per-request `masterDb`, dispatches routes, schedules `sql.end` teardown via `ctx.waitUntil` in a `finally`.
-- `src/middleware.ts` — `INTERNAL_TOKEN` constant-time gate on `/api/internal/*`. No DB work.
+- `src/middleware.ts` — `SERVER_INTERNAL_TOKEN` constant-time gate on `/api/internal/*`. No DB work.
 - `src/db/worker.ts` — `createMasterDb(env)` factory: postgres-js + drizzle, `max: 1`, `prepare: false`, `search_path: 'baseout,public'`. Hyperdrive in deployed envs, `DATABASE_URL` in `wrangler dev`.
 - `src/db/schema/` — read-only mirrors of apps/web's canonical Drizzle schema. Header comments cite the canonical source. Migrations are owned by apps/web.
 - `src/lib/crypto.ts` — AES-256-GCM decrypt-only helper. Encrypted writes are not in scope here (apps/web's OAuth callback is the canonical writer).

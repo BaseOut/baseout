@@ -10,22 +10,22 @@
 //
 // Usage:
 //   ENGINE_URL=https://baseout-server.openside.workers.dev \
-//   INTERNAL_TOKEN=... SPACE_ID=<existing Space uuid> \
+//   SERVER_INTERNAL_TOKEN=... SPACE_ID=<existing Space uuid> \
 //   node apps/server/scripts/smoke-d1.mjs [--keep]
 //
 // --keep skips the deprovision so the database stays visible in the dashboard.
 
 const ENGINE_URL = process.env.ENGINE_URL?.replace(/\/$/, "");
-const INTERNAL_TOKEN = process.env.INTERNAL_TOKEN;
+const SERVER_INTERNAL_TOKEN = process.env.SERVER_INTERNAL_TOKEN;
 const SPACE_ID = process.env.SPACE_ID;
 const KEEP = process.argv.includes("--keep");
 
-if (!ENGINE_URL || !INTERNAL_TOKEN || !SPACE_ID) {
-  console.error("Set ENGINE_URL, INTERNAL_TOKEN, SPACE_ID env vars.");
+if (!ENGINE_URL || !SERVER_INTERNAL_TOKEN || !SPACE_ID) {
+  console.error("Set ENGINE_URL, SERVER_INTERNAL_TOKEN, SPACE_ID env vars.");
   process.exit(2);
 }
 
-const headers = { "x-internal-token": INTERNAL_TOKEN, "content-type": "application/json" };
+const headers = { "x-internal-token": SERVER_INTERNAL_TOKEN, "content-type": "application/json" };
 
 async function step(name, method, path, body) {
   const res = await fetch(`${ENGINE_URL}${path}`, {

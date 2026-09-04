@@ -1,7 +1,7 @@
 // Spike fixture Worker for openspec/changes/system-test-harness-spike.
 //
 // A minimal stand-in for apps/web's SSR Worker: it imports the REAL
-// `createBackupEngine` client and calls it over a REAL `BACKUP_ENGINE`
+// `createBackupEngine` client and calls it over a REAL `SERVER`
 // service binding (wired by `createTestHarness()` to the apps/server
 // Worker running in the same harness). This proves the cross-Worker
 // contract with the production client code, without booting the full
@@ -12,8 +12,8 @@
 import { createBackupEngine } from "../../../src/lib/backup-engine";
 
 interface SpikeEnv {
-  BACKUP_ENGINE: Fetcher;
-  BACKUP_ENGINE_INTERNAL_TOKEN: string;
+  SERVER: Fetcher;
+  SERVER_INTERNAL_TOKEN: string;
 }
 
 export default {
@@ -27,8 +27,8 @@ export default {
       });
     }
     const engine = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      binding: env.SERVER,
+      internalToken: env.SERVER_INTERNAL_TOKEN,
     });
     const result = await engine.whoami(match[1] as string);
     return new Response(JSON.stringify(result), {

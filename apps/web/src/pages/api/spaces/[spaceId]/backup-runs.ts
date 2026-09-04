@@ -3,7 +3,7 @@
  *
  * POST kicks off a manual backup run:
  *   1. Authenticate via locals.account.
- *   2. INSERT backup_runs in 'queued' state, fan out via the BACKUP_ENGINE
+ *   2. INSERT backup_runs in 'queued' state, fan out via the SERVER
  *      service binding (delegates to startBackupRun in lib/backup-runs/start).
  *   3. On engine 4xx, the helper rolls back the orphaned row.
  *
@@ -196,10 +196,10 @@ export async function handleGet(input: HandleGetInput): Promise<Response> {
 // handlePost / handleGet directly and never touch this layer.
 
 function buildEngine(): BackupEngineClient | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   return createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
 }
 

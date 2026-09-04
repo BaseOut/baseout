@@ -11,9 +11,11 @@
 //   - binding renamed MASTER_DB → HYPERDRIVE to match every other app. No code
 //     reads it yet (apps/sql/src has zero env references), so this is free —
 //     if you prefer MASTER_DB, change it here before the first handler lands.
-//   - the secret list in the old comment said SERVICE_HMAC_TO_SERVER while
-//     .dev.vars.example says SERVICE_HMAC_TO_BACKUP. Using the .dev.vars name;
-//     see the note in my message — one of the two is wrong.
+//   - RESOLVED 2026-09-04: the two spellings (SERVICE_HMAC_TO_SERVER vs
+//     SERVICE_HMAC_TO_BACKUP) are now one name, SERVICE_HMAC_TO_SERVER, and it
+//     is OUT of secrets.required — nothing signs or verifies with it yet, so a
+//     deploy gate on it only failed builds for an unread value. Reserved and
+//     documented in .dev.vars.example; re-add on both sides when HMAC lands.
 //   - compatibility_date bumped 2025-01-01 → 2026-04-22 (not yet deployed).
 //
 // Direct SQL access is Business+ and READ-ONLY by default (PRD §10 /
@@ -46,6 +48,28 @@
       // deploy silently lands on a different Worker than the config describes.
       // Production lives in its own account, so the two cannot collide.
       "name": "baseout-sql",
+      // Full observability for staging: every request logged AND traced, nothing
+      // sampled away. `observability` is INHERITABLE, so this env block overrides
+      // the top-level default and leaves dev/production on their own settings.
+      // Fields verified against wrangler 4.124's config-schema.json, which sets
+      // additionalProperties:false — `redact_query_string` is NOT valid and is
+      // silently dropped with a warning. `destinations` is omitted: no Logpush
+      // destination exists yet (systems-overview §13).
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        }
+      },
       // account_id intentionally omitted — Workers Builds runs inside the
       // owning account and supplies it. Pinning it here can only create a
       // mismatch, since production builds read this same file in a
@@ -62,8 +86,7 @@
       // and are not deploy-gated.
       "secrets": {
         "required": [
-          "BASEOUT_ENCRYPTION_KEY",
-          "SERVICE_HMAC_TO_BACKUP"
+          "BASEOUT_ENCRYPTION_KEY"
         ]
       },
       // PROVISION: baseout-staging-pg
@@ -90,6 +113,34 @@
       // deploy silently lands on a different Worker than the config describes.
       // Production lives in its own account, so the two cannot collide.
       "name": "baseout-sql",
+      // Full observability for production: every request logged AND traced.
+      // `observability` is INHERITABLE, so this block overrides the top level —
+      // which matters for web/admin, whose top-level `enabled: false` would
+      // otherwise leave production logging NOTHING.
+      //
+      // head_sampling_rate is the cost/volume lever. 1 = keep everything, which is
+      // the right posture at launch (low traffic, maximum diagnosability) and the
+      // first thing to dial back if ingest volume becomes a bill. Lower it here
+      // only — staging should stay at 1.
+      //
+      // Fields validated against wrangler 4.124's config-schema.json
+      // (additionalProperties:false). `destinations` omitted: no Logpush
+      // destination exists yet (systems-overview §13).
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        }
+      },
       // PROVISION: production account id.
       // account_id intentionally omitted — supplied by Workers Builds in the
       // production account. Never pin it: this file is read by both accounts.
@@ -105,8 +156,7 @@
       // and are not deploy-gated.
       "secrets": {
         "required": [
-          "BASEOUT_ENCRYPTION_KEY",
-          "SERVICE_HMAC_TO_BACKUP"
+          "BASEOUT_ENCRYPTION_KEY"
         ]
       },
       // PROVISION in the production account: baseout-live-pg

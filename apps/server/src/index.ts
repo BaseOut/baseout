@@ -1,5 +1,5 @@
 // @baseout/server — backup/restore engine. Cloudflare Worker entry point.
-// Headless API only: /api/health (public) + /api/internal/* (INTERNAL_TOKEN-gated).
+// Headless API only: /api/health (public) + /api/internal/* (SERVER_INTERNAL_TOKEN-gated).
 // Per CLAUDE.md §5.2.
 
 import type { AppLocals, Env } from "./env";

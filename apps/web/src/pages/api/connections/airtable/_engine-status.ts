@@ -42,7 +42,7 @@ export function mapEngineCodeToStatus(code: EngineErrorCode): number {
     // between writer (apps/web at OAuth time) and reader (apps/server now).
     case 'decrypt_failed':
       return 500
-    // Engine missing INTERNAL_TOKEN or BASEOUT_ENCRYPTION_KEY.
+    // Engine missing SERVER_INTERNAL_TOKEN or BASEOUT_ENCRYPTION_KEY.
     case 'server_misconfigured':
       return 503
     // apps/server isn't reachable — start `pnpm --filter @baseout/server dev`.

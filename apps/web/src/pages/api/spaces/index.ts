@@ -108,10 +108,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     // schema-only bootstrap posture. Best-effort: the Space row is committed.
     let provisioning = 'skipped'
     const engine =
-      env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+      env.SERVER && env.SERVER_INTERNAL_TOKEN
         ? createBackupEngine({
-            binding: env.BACKUP_ENGINE,
-            internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+            binding: env.SERVER,
+            internalToken: env.SERVER_INTERNAL_TOKEN,
           })
         : null
     if (engine) {

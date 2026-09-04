@@ -153,8 +153,8 @@ Service bindings, not public HTTP — they bypass the RFC1918/loopback fetch ban
 stay on Cloudflare's internal network:
 
 ```
-web   ──BACKUP_ENGINE──▶ server
-admin ──BACKUP_ENGINE──▶ server
+web   ──SERVER──▶ server
+admin ──SERVER──▶ server
 api   ──SERVER────────▶ server
 ```
 
@@ -162,7 +162,7 @@ api   ──SERVER────────▶ server
 design means the webhook receiver keeps working during an engine outage.
 
 All internal calls carry an `x-internal-token` header matched against the server's
-`INTERNAL_TOKEN`, as defence-in-depth behind the binding's network isolation.
+`SERVER_INTERNAL_TOKEN`, as defence-in-depth behind the binding's network isolation.
 
 ---
 
@@ -308,7 +308,7 @@ Nine tasks:
 serving `dev` + `staging`, and a **separate production account**. Within each,
 Trigger.dev's own environments (`dev` / `staging` / `prod`) are selected with
 `--env` at deploy. Env vars are set **per environment** in the Trigger.dev
-dashboard — staging's `BACKUP_ENGINE_URL` + `INTERNAL_TOKEN` must point at the
+dashboard — staging's `SERVER_URL` + `SERVER_INTERNAL_TOKEN` must point at the
 staging engine. The account split means a misconfigured staging variable can no
 longer reach production at all, which is what the single-project setup risked.
 
@@ -414,7 +414,7 @@ Which one applies is decided by *who is calling*, not by which route is hit.
 | Human customer | web | better-auth session (magic link) | `sessions` table + `SESSION` KV |
 | Staff | admin | web's session, re-verified + `role='super'` | `baseout_admin_session` cookie |
 | Machine / AI client | api | `Bearer bo_live_…` API token | `api_tokens.token_hash` |
-| Sibling Worker | server | `x-internal-token` header | `INTERNAL_TOKEN` secret |
+| Sibling Worker | server | `x-internal-token` header | `SERVER_INTERNAL_TOKEN` secret |
 | Airtable | hooks | `X-Airtable-Content-MAC` signature | `mac_secret_base64_enc` |
 
 ### 10.1 Customer auth — better-auth, passwordless
@@ -484,11 +484,11 @@ scopes constrain its MCP tools identically.
 Worker-to-Worker calls ride **service bindings**, so they never touch the public
 internet. On top of that network isolation, `server` gates every
 `/api/internal/*` request on an `x-internal-token` header compared against
-`INTERNAL_TOKEN` **in constant time**. Defence in depth: the binding is the
+`SERVER_INTERNAL_TOKEN` **in constant time**. Defence in depth: the binding is the
 network control, the token is the authorization.
 
 `web`, `admin`, and `api` each hold that value as
-`BACKUP_ENGINE_INTERNAL_TOKEN`. `/api/health` is the only ungated public route.
+`SERVER_INTERNAL_TOKEN`. `/api/health` is the only ungated public route.
 
 ### 10.5 Inbound webhooks — Airtable signs, hooks verifies
 
@@ -510,7 +510,7 @@ verifying and dirty-marking through an engine outage.
 1. `BASEOUT_ENCRYPTION_KEY` — web *writes* encrypted tokens, server *reads* them.
    Drift flips Airtable connections to `status='invalid'` and forces customer
    reconnects. This is the single most consequential config value in the system.
-2. server's `INTERNAL_TOKEN` = web's + admin's + api's `BACKUP_ENGINE_INTERNAL_TOKEN`
+2. server's `SERVER_INTERNAL_TOKEN` = web's + admin's + api's `SERVER_INTERNAL_TOKEN`
 3. `ADMIN_HANDOFF_SECRET` — web mints, admin opens
 
 Secrets are declared per environment via `secrets.required` in `wrangler.jsonc`, so
@@ -522,19 +522,28 @@ that surface must never exist in production.
 
 ### 10.7 `sql` declares auth secrets it does not yet use
 
-`apps/sql` lists `BASEOUT_ENCRYPTION_KEY` and `SERVICE_HMAC_TO_BACKUP` in
-`secrets.required`, but its source is a **single `index.ts` with no
-authentication code at all** — no bearer parse, no HMAC verify, no internal-token
-gate. It is a scaffold whose route (`sql.baseout.dev/v1/*`) is path-scoped
-precisely to limit what an unfinished Worker exposes.
+`apps/sql`'s source is a **single `index.ts` with no authentication code at all**
+— no bearer parse, no HMAC verify, no internal-token gate. It is a scaffold whose
+route (`sql.baseout.dev/v1/*`) is path-scoped precisely to limit what an
+unfinished Worker exposes. It now requires only `BASEOUT_ENCRYPTION_KEY`.
 
-Two things follow, and both are deploy-blocking for that app:
+Direct SQL is Business+ and **read-only by default** (PRD §10 / Features §14.2);
+write access is an explicit opt-in. Neither is enforced by code yet, so the app
+stays undeployed.
 
-- **`SERVICE_HMAC_TO_BACKUP` has no counterpart in `server`'s
-  `secrets.required`.** Either a producer will sign with a key no consumer
-  verifies, or the name is dead. This is open decision #1 in §13.
-- Direct SQL is Business+ and **read-only by default** (PRD §10 / Features §14.2);
-  write access is an explicit opt-in. Neither is enforced by code yet.
+**HMAC service tokens (resolved 2026-09-04).** `SERVICE_HMAC_TO_BACKUP` /
+`SERVICE_HMAC_TO_SERVER` were the same intended secret under two spellings. It is
+now one name — **`SERVICE_HMAC_TO_SERVER`**, after the destination, matching the
+`SERVER` binding standardization — and it is **out of `secrets.required` in both
+`api` and `sql`**. Nothing signs or verifies with it: it appeared in no source
+file, only in config, `.dev.vars.example`, and these docs. A deploy gate on a
+value no code reads only fails builds and dilutes what the gate means.
+
+It stays documented as reserved in both `.dev.vars.example` files. HMAC signing
+with replay protection is the planned successor to the bearer
+`SERVER_INTERNAL_TOKEN` (`apps/server/docs/.../2026-05-05-server-phase-1-roadmap.md`
+§6); re-add the secret **on both sides in the same change** that lands the signing
+and verifying code, or a producer signs with a key no consumer checks.
 
 ---
 
@@ -545,7 +554,7 @@ PostHog, or Google Analytics anywhere in the source.
 
 | Signal | Tool | Notes |
 |---|---|---|
-| Worker logs / traces | Workers Observability | **`admin` staging now has it on** — logs + traces, `persist: true`, `invocation_logs`, sampling 1. The rest are still `enabled: false`. (`redact_query_string` is set but wrangler 4.124 rejects it as an unknown field and ignores it — it may land in ≥4.129) |
+| Worker logs / traces | Workers Observability | **Full on `env.staging` AND `env.production` for all 8 Workers** (2026-09-04): `enabled`, logs *and* traces, `persist: true`, `invocation_logs: true`, `head_sampling_rate: 1` — nothing sampled away. `observability` is inheritable, so these blocks override the top level; that override is what stops web/admin's top-level `enabled: false` from leaving **production** silent. `dev` still inherits it and stays quiet. `head_sampling_rate` is the cost lever — dial production down if ingest volume becomes a bill, staging stays at 1. Fields validated against wrangler 4.124's `config-schema.json` (`additionalProperties: false`); `redact_query_string` is **not** valid and was removed |
 | Live tail | `wrangler tail` | Ad-hoc debugging |
 | API usage metering | Analytics Engine (`API_USAGE` → `baseout_api_requests`) | Queried via the AE SQL API |
 | Background job runs | Trigger.dev dashboard | Per-run logs, retries, durations |
@@ -553,9 +562,11 @@ PostHog, or Google Analytics anywhere in the source.
 | Auth + billing changes | DB audit tables | Required by the security model |
 | Logpush + alerting | **Proposed** | Named as deploy-blocking for `api` and `hooks`; a sustained 503 on hooks must page before Airtable's ~1-day retry exhaustion disables notifications |
 
-**Gap to decide:** observability is disabled in the configs and Logpush isn't set
-up, so today there is no alerting path outside the Trigger.dev dashboard and the
-product's own run tables.
+**Gap to decide:** staging now emits full logs and traces to the Cloudflare
+observability platform, queryable in the dashboard — but **Logpush is still not set
+up**, so there is no *alerting* path, only a place to look after the fact. That
+matters most for `hooks`: a sustained 503 must page before Airtable's ~1-day retry
+window exhausts and notifications are disabled.
 
 ---
 
@@ -587,22 +598,18 @@ silently.
 | Workers VPC vs direct Hyperdrive | **Tunnel via DO droplet**, `verify-full` through an uploaded mTLS CA — §9 |
 | `MASTER_ENCRYPTION_KEY` vs `BASEOUT_ENCRYPTION_KEY` | Renamed to **`BASEOUT_ENCRYPTION_KEY`** everywhere in runtime config. They were provably the same key (hooks decrypts what server encrypts). Stale mentions survive in 10 docs/openspec files only |
 | One Trigger.dev project, or one per account | **Separate accounts**, mirroring Cloudflare — §7 |
+| `SERVICE_HMAC_TO_BACKUP` vs `SERVICE_HMAC_TO_SERVER` | One name, **`SERVICE_HMAC_TO_SERVER`**, and **out of `secrets.required`** — no code signs or verifies with it. Reserved in `.dev.vars.example` — §10.7 |
 
 ### Still open
 
-1. **`SERVICE_HMAC_TO_*` naming is genuinely inconsistent** — three names in the
-   tree (`SERVICE_HMAC_TO_BACKUP` ×9, `SERVICE_HMAC_TO_SERVER` ×2,
-   `SERVICE_HMAC_TO_WEB` ×1), and `SERVICE_HMAC_TO_BACKUP` has **no counterpart in
-   `server`'s `secrets.required`**. Either a producer signs with a key no consumer
-   verifies, or the name is dead. Worth settling before `sql` deploys.
-2. **Observability is `enabled: false`** in the configs and no Logpush destination
-   exists, so there is no alerting path outside the Trigger.dev dashboard and the
-   product's own run tables. Named as deploy-blocking for `api` and `hooks`.
-3. **`apps/design` adapter swap** — Node → Cloudflare, if it should deploy at all.
+1. **Logpush destination + alerting.** Staging now captures full logs and traces
+   (§11), but capture is not alerting — there is still no path that pages anyone.
+   Named as deploy-blocking for `api` and `hooks`.
+2. **`apps/design` adapter swap** — Node → Cloudflare, if it should deploy at all.
    Its `new.wrangler.jsonc` is a placeholder that documents the blocker.
-4. **Tunnel droplet uptime.** It is now a deploy dependency (§9) with no monitoring
+3. **Tunnel droplet uptime.** It is now a deploy dependency (§9) with no monitoring
    and no second instance. A single droplet reboot blocks every web deploy.
-5. **Customer app subdomain.** `console.baseout.com` collides with the codebase's
+4. **Customer app subdomain.** `console.baseout.com` collides with the codebase's
    own use of "console" for the *staff* tool (76 references). Evaluated 2026-09-03;
    `app.baseout.com` recommended, not yet decided.
 

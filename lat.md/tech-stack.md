@@ -56,7 +56,7 @@ Customer auth is passwordless magic-link via better-auth. Service-to-service aut
 |---|---|
 | Customer auth | better-auth (magic link, email+password, 2FA TOTP, Enterprise SAML) |
 | Connection auth | Airtable OAuth (per-Organization) |
-| Service-to-service | HMAC tokens (`@baseout/shared`) + INTERNAL_TOKEN gate on `apps/server` |
+| Service-to-service | HMAC tokens (`@baseout/shared`) + SERVER_INTERNAL_TOKEN gate on `apps/server` |
 | Billing | Stripe (subscriptions, add-ons, one-time credit packs); webhook idempotency table |
 
 ## Email and Testing

@@ -63,12 +63,12 @@ Package manager pinned at `pnpm@11.1.1` (`packageManager` in the root `package.j
 Baseout is conceptually two Workers + one Trigger.dev task project + one shared Postgres, regardless of where the code currently lives:
 
 - **Frontend (eventual `apps/web/`)** — Astro SSR app, auth + magic-link, OAuth Connect flows, integrations dashboard, settings, marketing pages, middleware, `/ops` staff console, master-DB schema ownership.
-- **Backend / backup engine (`apps/server/`)** — Headless Cloudflare Worker. Exposes only `/api/health` (public probe) and `/api/internal/*` (`INTERNAL_TOKEN`-gated). Hosts Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), enqueues Trigger.dev tasks via `@trigger.dev/sdk`. Cron-only background work that fits inside Worker wall-clock budget runs here too.
+- **Backend / backup engine (`apps/server/`)** — Headless Cloudflare Worker. Exposes only `/api/health` (public probe) and `/api/internal/*` (`SERVER_INTERNAL_TOKEN`-gated). Hosts Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), enqueues Trigger.dev tasks via `@trigger.dev/sdk`. Cron-only background work that fits inside Worker wall-clock budget runs here too.
 - **Workflows (`apps/workflows/`)** — Trigger.dev v3 task project. Tasks run on Trigger.dev's **Node** runner (unlimited concurrency, no Worker time limit) and are enqueued from the Backend Worker. Houses the per-base backup task and any future long-running async work. Writes backup output to local disk (R2 was removed) — eventually BYOS.
 
 **Rules:**
 
-- The backend has no UI, no `/login`, no `/api/auth/*`, no better-auth, no per-engine user identity. Auth, login, settings, and `/ops` UI all live in the frontend. The backend sees only `INTERNAL_TOKEN` from the frontend.
+- The backend has no UI, no `/login`, no `/api/auth/*`, no better-auth, no per-engine user identity. Auth, login, settings, and `/ops` UI all live in the frontend. The backend sees only `SERVER_INTERNAL_TOKEN` from the frontend.
 - Backend reads OAuth tokens written by the frontend; both must agree on the master encryption key.
 - If you find yourself adding a UI component, an `/ops` page, or a `better-auth` instance to the backend, you're proposing the wrong split — surface it before coding.
 - Master-DB schema migrations are owned by the frontend. The backend mirrors specific tables (e.g. `backup_runs`, `backup_configuration_bases`) with header comments naming the canonical migration source.
@@ -113,7 +113,7 @@ Security is a gate on every change, not an afterthought.
 - **Input validation:** Server-side on every API route and form handler. Client validation is UX, not security.
 - **Auth enforcement:** Frontend route protection lives in middleware. Every protected page and API route passes through it — no ad-hoc checks.
 - **CSRF:** Use `better-auth` CSRF helpers on mutating frontend forms. No raw POST handlers without a token.
-- **Service-to-service auth (backend):** `/api/internal/*` is gated by the `x-internal-token` header (`INTERNAL_TOKEN`). Match the value the frontend holds in `BACKUP_ENGINE_INTERNAL_TOKEN`. Never widen to public.
+- **Service-to-service auth (backend):** `/api/internal/*` is gated by the `x-internal-token` header (`SERVER_INTERNAL_TOKEN`). Match the value the frontend holds in `SERVER_INTERNAL_TOKEN`. Never widen to public.
 - **SQL:** Parameterized queries via Drizzle only. Never string-concatenate SQL.
 - **Direct SQL API (Business+):** Read-only by default (PRD §10 / Features §14.2). Write access is an explicit opt-in.
 - **Output:** Rely on Astro auto-escaping. Never `set:html` on user-supplied data.
@@ -434,14 +434,14 @@ src/
 ## 5.2 Backend Surface Contract
 
 - Public: `/api/health` (liveness probe).
-- Internal: `/api/internal/*` gated by `x-internal-token` header. Frontend reaches these via the `BACKUP_ENGINE` Cloudflare Worker service binding (declared in `apps/web/wrangler.jsonc.example`), not over public HTTP. The token gate stays as defense-in-depth alongside the binding's network-level isolation.
+- Internal: `/api/internal/*` gated by `x-internal-token` header. Frontend reaches these via the `SERVER` Cloudflare Worker service binding (declared in `apps/web/wrangler.jsonc.example`), not over public HTTP. The token gate stays as defense-in-depth alongside the binding's network-level isolation.
 - No other public surface. No customer auth. No UI.
 
 ## 5.3 Backend File Organization
 
 ```
 src/
-  middleware.ts           INTERNAL_TOKEN gate + per-request masterDb on context.locals
+  middleware.ts           SERVER_INTERNAL_TOKEN gate + per-request masterDb on context.locals
   env.d.ts                App.Locals = { masterDb }; ProvidedEnv from worker-configuration.d.ts
   db/
     worker.ts             createMasterDb() — per-request postgres-js + drizzle
@@ -458,7 +458,7 @@ src/
   pages/
     api/
       health.ts           Public liveness probe
-      internal/           INTERNAL_TOKEN-gated routes
+      internal/           SERVER_INTERNAL_TOKEN-gated routes
 drizzle/                  Engine-owned migrations (none yet — backup_runs migration lives in frontend)
 scripts/
   launch.mjs              Renders wrangler.jsonc + .dev.vars from .env, then runs astro
@@ -473,7 +473,7 @@ There is intentionally no `src/components/`, `src/layouts/`, `src/pages/login.as
 
 Trigger.dev v3 task project. Runs on the Trigger.dev cloud's **Node** runner — NOT inside workerd. The Backend Worker enqueues via `@trigger.dev/sdk`.
 
-- **Runtime: Node only.** Never import `cloudflare:workers`. `process.env` is the source of truth for runtime config (`BACKUP_ENGINE_URL`, `INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS provider keys), populated from the Trigger.dev env-vars UI per environment.
+- **Runtime: Node only.** Never import `cloudflare:workers`. `process.env` is the source of truth for runtime config (`SERVER_URL`, `SERVER_INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS provider keys), populated from the Trigger.dev env-vars UI per environment.
 - **Pure orchestration is separated from the task wrapper.** Each task has a pure-async-function module (`backup-base.ts`) that takes injected deps, and a thin wrapper (`backup-base.task.ts`) that adapts the JSON payload, reads env vars, and calls the pure function. Tests target the pure module.
 - **Type-only exports.** `trigger/tasks/index.ts` re-exports task references as `export type` so the Backend Worker can `tasks.trigger<typeof X>(...)` without bundling the task body.
 - **Engine callback contract.** Tasks POST per-table progress and a final completion to `/api/internal/runs/:runId/{progress,complete}`. Transport errors are fire-and-forget — the run-row state machine + DO lock alarm are the safety nets.
@@ -539,7 +539,7 @@ Before requesting review:
 - [ ] Change reconciled against the relevant PRD/Features section
 - [ ] Naming uses the canonical dictionary (Features §1)
 - [ ] Server-side validation on every mutating route
-- [ ] Auth enforcement via middleware (frontend) or `INTERNAL_TOKEN` gate (backend) — no ad-hoc checks
+- [ ] Auth enforcement via middleware (frontend) or `SERVER_INTERNAL_TOKEN` gate (backend) — no ad-hoc checks
 - [ ] Tests written first for non-trivial logic; CI green
 - [ ] No stray `console.*` or `debugger` in the diff (§3.5)
 - [ ] `npm run typecheck` passes

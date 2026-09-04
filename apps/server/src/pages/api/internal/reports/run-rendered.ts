@@ -4,7 +4,7 @@
 //   (or failed), then delivers to the definition's recipients. A delivery
 //   failure never fails the callback (best-effort; failed rows are re-sendable).
 //
-// server-reports task 3.4 / 5. INTERNAL_TOKEN gate applied by middleware.
+// server-reports task 3.4 / 5. SERVER_INTERNAL_TOKEN gate applied by middleware.
 
 import type { AppLocals, Env } from "../../../../env";
 import {

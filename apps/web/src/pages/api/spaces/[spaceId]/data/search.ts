@@ -69,8 +69,8 @@ export async function handleDataSearch(input: DataSearchRouteInput): Promise<Res
 export const GET: APIRoute = async ({ locals, params, url }) => {
   const db = locals.db
   if (!db) return jsonResponse({ error: 'Database not initialized' }, 500)
-  const engineBinding = env.BACKUP_ENGINE
-  const engineToken = env.BACKUP_ENGINE_INTERNAL_TOKEN
+  const engineBinding = env.SERVER
+  const engineToken = env.SERVER_INTERNAL_TOKEN
   const engine =
     engineBinding && engineToken
       ? (() => {

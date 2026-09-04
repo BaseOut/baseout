@@ -3,7 +3,7 @@
 # CI gets these from GitHub secrets / wrangler secret put at deploy time.
 #
 # DO NOT wrap values in quotes (KEY="value"). Wrangler's .dev.vars loader
-# treats the surrounding quotes as part of the value, so `INTERNAL_TOKEN="abc"`
+# treats the surrounding quotes as part of the value, so `SERVER_INTERNAL_TOKEN="abc"`
 # becomes the literal string `"abc"` (with quotes) at runtime. Mismatched
 # against any caller that sent the bare token. Write `KEY=value` exactly.
 #
@@ -36,8 +36,8 @@ TRIGGER_PROJECT_REF=proj_xxxxxxxxxxxxxxxxxxxx
 # Shared secret between apps/web (which calls the engine to enqueue
 # backups) and the engine for /api/internal/* routes. 32+ random bytes, base64.
 # apps/web must hold the same value in its .env / .dev.vars as
-# BACKUP_ENGINE_INTERNAL_TOKEN.
-INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
+# SERVER_INTERNAL_TOKEN.
+SERVER_INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 
 # === Master encryption key (decrypt-only at the engine) ===
 # AES-256-GCM key for the *_enc columns in baseout.connections (and other

@@ -1,0 +1,3 @@
+# Runtime state — a pid and a log, both machine-local.
+.tunnel.pid
+.tunnel.log

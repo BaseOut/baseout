@@ -112,8 +112,8 @@ export const overview: Diagram = {
     edge('e2', 'aiclient', 'api'),
     edge('e3', 'staff', 'admin'),
 
-    edge('e4', 'web', 'server', { label: 'BACKUP_ENGINE' }),
-    edge('e5', 'admin', 'server', { label: 'BACKUP_ENGINE' }),
+    edge('e4', 'web', 'server', { label: 'SERVER' }),
+    edge('e5', 'admin', 'server', { label: 'SERVER' }),
     edge('e6', 'api', 'server', { label: 'SERVER' }),
 
     edge('e7', 'server', 'dos', { from: 'sb', to: 'tt' }),

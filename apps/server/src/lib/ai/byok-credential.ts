@@ -4,7 +4,7 @@
  *
  * The two engine AI adapters (describe-schema-io, health-score-run) run INSIDE
  * the Worker, so — unlike the workflows chat task (task 4.1, which fetches the
- * plaintext over the INTERNAL_TOKEN-gated credential endpoint, task 3.3) —
+ * plaintext over the SERVER_INTERNAL_TOKEN-gated credential endpoint, task 3.3) —
  * they can decrypt the stored `ai_provider_keys.key_enc` ciphertext directly
  * with the master encryption key already in the Worker's env. This reuses the
  * EXACT AES-256-GCM decrypt path used for OAuth / storage tokens

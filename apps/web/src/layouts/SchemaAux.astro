@@ -33,12 +33,12 @@ let clBaseWorkspace: Record<string, { workspaceId?: string; workspaceName?: stri
 let healthOverrideTargets: { id: string; label: string; kind: string }[] = [];
 let aiState: 'ready' | 'locked' | 'no-credits' = 'locked';
 
-if (spaceId && orgId && db && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+if (spaceId && orgId && db && env.SERVER && env.SERVER_INTERNAL_TOKEN) {
   const level = await resolveSchemaDocsLevel(db, orgId);
   if (level !== 'none') {
     const engine = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      binding: env.SERVER,
+      internalToken: env.SERVER_INTERNAL_TOKEN,
     });
     const wsRows = await db
       .select({

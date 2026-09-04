@@ -103,9 +103,9 @@ GA docs quoted later in this file for anything previews-related:
 - **Solutions explored for the regroup (2026-08-25 evening — details in
   `openspec/changes/shared-worker-previews/design.md` D5–D7):**
   - *Service-binding→prod gap (D5):* recommend **token partition** now (preview
-    `BACKUP_ENGINE_INTERNAL_TOKEN` ≠ prod `INTERNAL_TOKEN` → engine calls from previews fail
+    `SERVER_INTERNAL_TOKEN` ≠ prod `SERVER_INTERNAL_TOKEN` → engine calls from previews fail
     cleanly instead of cross-writing DBs; zero code). Full engine-in-previews is a small,
-    scoped refactor (one `getEngineBinding(env)` helper + `BACKUP_ENGINE_URL` shim pointing at
+    scoped refactor (one `getEngineBinding(env)` helper + `SERVER_URL` shim pointing at
     the server's stable staging preview URL). Preview-to-preview bindings are not in the API
     today (probed; it stores but ignores extra fields) — roadmap question for the beta channel.
   - *Public previews (D6):* account has ZERO Access apps today (verified). Ready plan: Zero
@@ -236,10 +236,10 @@ Per-environment overrides go under `env.<name>`. Anything not overridden inherit
 ```jsonc
 {
   "name": "baseout-web",
-  "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server" }],
+  "services": [{ "binding": "SERVER", "service": "baseout-server" }],
   "env": {
     "staging": {
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-staging" }]
+      "services": [{ "binding": "SERVER", "service": "baseout-server-staging" }]
     }
   }
 }
@@ -254,7 +254,7 @@ npx wrangler deploy --env production
 
 ### This also fixes our currently-broken build
 
-`apps/web/wrangler.jsonc` still binds `BACKUP_ENGINE` → `baseout-server-dev`, a Worker that was
+`apps/web/wrangler.jsonc` still binds `SERVER` → `baseout-server-dev`, a Worker that was
 deleted. That is why `pnpm --filter @baseout/web typecheck` / `build` die during remote-proxy setup
 before typechecking anything. The fix is the pattern above, pointed at whatever the new Worker names
 end up being — **the names are Dan's call**, so confirm them before editing.
@@ -333,7 +333,7 @@ there a beta guide, a Cloudflare contact, or a support channel that came with th
 feature had just come back from being broken?
 
 1. **Worker names.** Is it `baseout-web` + `env.staging`, or separate `baseout-web-staging` Workers?
-   Every binding in every app depends on this answer, and it's the thing blocking the `BACKUP_ENGINE`
+   Every binding in every app depends on this answer, and it's the thing blocking the `SERVER`
    fix.
 2. **Is `staging` the branch?** It doesn't exist yet. Today's work happens on `web-ui-sync-promotion`.
 3. **Does staging get its own database**, or point at the existing dev DB? Note the dev Postgres
@@ -404,7 +404,7 @@ Not needed: `TRIGGER_PROJECT_REF` (in `trigger.config.ts`), `TRIGGER_API_URL` (s
 `NPM_TOKEN` / `FONTAWESOME_TOKEN` (root `.npmrc` redirects are commented out; `@opensided` is vendored
 via `file:`), any `CLOUDFLARE_API_TOKEN`.
 
-Task **runtime** config (`BACKUP_ENGINE_URL`, `INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS keys) is not a
+Task **runtime** config (`SERVER_URL`, `SERVER_INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS keys) is not a
 Cloudflare concern in either direction — it lives in Trigger.dev's own environment-variables UI, per
 Trigger.dev environment.
 

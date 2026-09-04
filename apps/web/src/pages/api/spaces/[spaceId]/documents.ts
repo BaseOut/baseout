@@ -4,7 +4,7 @@
  *   POST → create a document
  *
  * Authenticated + IDOR- and tier-gated (guardSchemaDocsRequest), then forwards
- * to @baseout/server via the BACKUP_ENGINE service binding. The browser never
+ * to @baseout/server via the SERVER service binding. The browser never
  * touches the per-Space DB. Testable inner handler takes deps as args.
  */
 
@@ -93,10 +93,10 @@ export async function handleDocuments(input: DocumentsRouteInput): Promise<Respo
 // ── Astro APIRoute wrappers ──────────────────────────────────────────────
 
 function buildEngine() {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const e = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return {
     listDocuments: (spaceId: string) => e.listDocuments(spaceId),

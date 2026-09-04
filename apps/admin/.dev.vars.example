@@ -15,8 +15,8 @@
 ADMIN_HANDOFF_SECRET=
 
 # Backup-engine internal token for staff actions (force backup / run cancel).
-# MUST equal apps/web's BACKUP_ENGINE_INTERNAL_TOKEN (== the server's
-# INTERNAL_TOKEN) — copy the value from apps/web/.dev.vars. Pairs with the
-# BACKUP_ENGINE service binding in wrangler.jsonc.example. Leave empty to run
+# MUST equal apps/web's SERVER_INTERNAL_TOKEN (== the server's
+# SERVER_INTERNAL_TOKEN) — copy the value from apps/web/.dev.vars. Pairs with the
+# SERVER service binding in wrangler.jsonc.example. Leave empty to run
 # without engine access: force-backup 503s, invalidate skips run cancels.
-BACKUP_ENGINE_INTERNAL_TOKEN=
+SERVER_INTERNAL_TOKEN=

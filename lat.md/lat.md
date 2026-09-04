@@ -7,8 +7,8 @@ The files in this graph. Each is one logical concern; cross-link via `[[file]]` 
 - [[domain-model]] — Canonical entity model and naming dictionary (Organization, Space, Platform, Connection, Base, Capability, etc.)
 - [[monorepo-layout]] — pnpm workspace layout, frontend/backend split, toolchain
 - [[tech-stack]] — Languages, runtimes, frameworks, deployment targets
-- [[security-model]] — Secrets, encryption-at-rest, magic-link auth, INTERNAL_TOKEN gate, parameterized SQL
-- [[cross-app-comm]] — How apps/* talk to each other (HMAC service tokens, INTERNAL_TOKEN, WebSocket DOs)
+- [[security-model]] — Secrets, encryption-at-rest, magic-link auth, SERVER_INTERNAL_TOKEN gate, parameterized SQL
+- [[cross-app-comm]] — How apps/* talk to each other (HMAC service tokens, SERVER_INTERNAL_TOKEN, WebSocket DOs)
 - [[pricing-tiers]] — Tier ladder + capability gating from Stripe metadata
 - [[db-schema-overview]] — Drizzle conventions, encrypted columns, mirrored vs canonical tables
 - [[engineering-principles]] — TDD discipline, no drive-by refactor, no console logs, OpenSpec change flow

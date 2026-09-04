@@ -50,7 +50,7 @@ credentials. All three env blocks now carry the binding (2026-08-27 env model).
 
 ## 1. Environments
 
-| Env     | R2 bucket name    | Cloudflare account                          | Trigger.dev env | Engine Worker (writes via `INTERNAL_TOKEN`) |
+| Env     | R2 bucket name    | Cloudflare account                          | Trigger.dev env | Engine Worker (writes via `SERVER_INTERNAL_TOKEN`) |
 |---------|-------------------|---------------------------------------------|-----------------|---------------------------------------------|
 | dev     | `baseout-dev`     | staging acct `33857e356899b7369fb01c18ace8d780` | Development     | `baseout-server-dev` (`--env dev`)          |
 | staging | `baseout-staging` | staging acct `33857e356899b7369fb01c18ace8d780` | Staging         | `baseout-server-staging` (`--env staging`; deploys via Workers Builds from the `staging` branch) |

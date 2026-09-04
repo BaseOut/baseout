@@ -61,11 +61,11 @@ BETTER_AUTH_SECRET=
 BASEOUT_ENCRYPTION_KEY=
 
 # Defense-in-depth token sent to @baseout/server on every service-binding fetch.
-# MUST equal apps/server's INTERNAL_TOKEN. Generate: `openssl rand -base64 32`
-# (There is no engine URL to set — env.BACKUP_ENGINE is a Worker service binding
+# MUST equal apps/server's SERVER_INTERNAL_TOKEN. Generate: `openssl rand -base64 32`
+# (There is no engine URL to set — env.SERVER is a Worker service binding
 # declared in wrangler.jsonc.example; deploy the engine once with
 # `pnpm --filter @baseout/server deploy:dev` so the binding resolves.)
-BACKUP_ENGINE_INTERNAL_TOKEN=
+SERVER_INTERNAL_TOKEN=
 
 # "From" header for transactional mail (verified sender on the Cloudflare Email
 # Sending domain). Example: "Baseout <login@mail.baseout.dev>". In local dev,

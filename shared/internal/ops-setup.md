@@ -151,7 +151,7 @@ resolves to a matching sibling env name.
 **Account reality (2026-08-20):** Production Workers are named **`baseout-web`**
 and **`baseout-server`**. Env separation on the account is Cloudflare
 **Production vs Previews** on those scripts — not a parallel
-`baseout-server-dev` Worker. Web’s `BACKUP_ENGINE` service binding must target
+`baseout-server-dev` Worker. Web’s `SERVER` service binding must target
 **`baseout-server`**.
 
 apps/web runs `wrangler dev --remote` to keep real R2/KV/Hyperdrive/email
@@ -176,10 +176,10 @@ pnpm dev   # or pnpm dev:web (+ local server if you want :8787 too)
 **Avoid `deploy:dev` for smoke.** `wrangler deploy --env dev` publishes
 `baseout-server-dev`, which hits Durable Object namespace conflicts
 (`baseout-server-dev_ConnectionDO` already in use — CF 10065) and is not the
-Worker Production’s `BACKUP_ENGINE` binding uses.
+Worker Production’s `SERVER` binding uses.
 
-**Secrets:** `INTERNAL_TOKEN` on `baseout-server` must match web’s
-`BACKUP_ENGINE_INTERNAL_TOKEN`; `BASEOUT_ENCRYPTION_KEY` must match web’s.
+**Secrets:** `SERVER_INTERNAL_TOKEN` on `baseout-server` must match web’s
+`SERVER_INTERNAL_TOKEN`; `BASEOUT_ENCRYPTION_KEY` must match web’s.
 Prefer `.dev.vars` + the server’s secrets sync for the script you actually
 deploy (`pnpm --filter @baseout/server deploy`), not `--env dev`.
 
@@ -206,8 +206,8 @@ Workers always resolve the binding to the named sibling regardless. See
    `airtable_token_rejected` (token expired — reconnect Airtable to verify).
 4. If you see `engine_unreachable` / 503, redeploy the live engine via
    `pnpm --filter @baseout/server deploy` (not `deploy:dev`).
-5. If you see `unauthorized` / 502, the `INTERNAL_TOKEN` on `baseout-server`
-   doesn't match `BACKUP_ENGINE_INTERNAL_TOKEN` on apps/web — sync secrets
+5. If you see `unauthorized` / 502, the `SERVER_INTERNAL_TOKEN` on `baseout-server`
+   doesn't match `SERVER_INTERNAL_TOKEN` on apps/web — sync secrets
    from `.dev.vars` onto the script you actually deploy.
 
 **Hyperdrive (apps/server only):** the binding is currently commented out
@@ -226,7 +226,7 @@ swap the `<hyperdrive-id>` for the real id (per env), and re-deploy.
 
 ```
 # apps/server
-wrangler secret put --env staging    --name baseout-server INTERNAL_TOKEN
+wrangler secret put --env staging    --name baseout-server SERVER_INTERNAL_TOKEN
 wrangler secret put --env staging    --name baseout-server BASEOUT_ENCRYPTION_KEY
 wrangler secret put --env staging    --name baseout-server DATABASE_URL          # while Hyperdrive is commented
 wrangler secret put --env staging    --name baseout-server TRIGGER_SECRET_KEY
@@ -235,8 +235,8 @@ wrangler secret put --env staging    --name baseout-server TRIGGER_PROJECT_REF
 # is also named "baseout-server" — see env.production.name above)
 
 # apps/web
-wrangler secret put --env staging    BACKUP_ENGINE_INTERNAL_TOKEN              # MUST equal apps/server's INTERNAL_TOKEN
-wrangler secret put --env production BACKUP_ENGINE_INTERNAL_TOKEN
+wrangler secret put --env staging    SERVER_INTERNAL_TOKEN              # MUST equal apps/server's SERVER_INTERNAL_TOKEN
+wrangler secret put --env production SERVER_INTERNAL_TOKEN
 # BASEOUT_ENCRYPTION_KEY is presumably already set on apps/web (the OAuth
 # callback writes encrypted tokens with it). The same value MUST be
 # available to apps/server — set the engine's BASEOUT_ENCRYPTION_KEY to
@@ -245,7 +245,7 @@ wrangler secret put --env production BACKUP_ENGINE_INTERNAL_TOKEN
 
 **Parity rules (the most common deploy break):**
 
-- `apps/server.INTERNAL_TOKEN` ≡ `apps/web.BACKUP_ENGINE_INTERNAL_TOKEN`
+- `apps/server.SERVER_INTERNAL_TOKEN` ≡ `apps/web.SERVER_INTERNAL_TOKEN`
   (per env). A mismatch yields 401 unauthorized at the engine middleware,
   surfaced to apps/web's route as a 502.
 - `apps/server.BASEOUT_ENCRYPTION_KEY` ≡ `apps/web.BASEOUT_ENCRYPTION_KEY`
@@ -270,7 +270,7 @@ wrangler secret put --env production BACKUP_ENGINE_INTERNAL_TOKEN
    `Connected. Airtable user: <email or id> · N scopes.`
    Or curl directly (proves the engine without the IDOR-guard layer):
    ```
-   curl -X POST -H "x-internal-token: $INTERNAL_TOKEN" \
+   curl -X POST -H "x-internal-token: $SERVER_INTERNAL_TOKEN" \
      https://baseout-server-staging.openside.workers.dev/api/internal/connections/<id>/whoami
    ```
 4. If the response is non-200, the body's `error` field names the failed
@@ -307,12 +307,12 @@ curl -sI https://baseout-admin-dev.openside.workers.dev | head -1   # → HTTP/2
 a sign-in loop on the deployed console; see `oauth-setup.md` §8). Both deploy
 scripts bulk-sync their app's `.dev.vars` — never `wrangler secret put` by hand.
 
-**Staff actions (shared-admin-actions):** admin also carries a `BACKUP_ENGINE`
+**Staff actions (shared-admin-actions):** admin also carries a `SERVER`
 service binding to `baseout-server-dev` (declared in `wrangler.jsonc.example`,
 `remote: true` so local `astro dev` proxies to the deployed dev engine) plus a
 second secret in `apps/admin/.dev.vars`:
-`BACKUP_ENGINE_INTERNAL_TOKEN` — MUST equal apps/web's value (== the server's
-`INTERNAL_TOKEN`); copy it from `apps/web/.dev.vars`. Parity rule matches the
+`SERVER_INTERNAL_TOKEN` — MUST equal apps/web's value (== the server's
+`SERVER_INTERNAL_TOKEN`); copy it from `apps/web/.dev.vars`. Parity rule matches the
 handoff secret: bulk-synced on deploy, never `wrangler secret put`. Without
 binding+token the console still runs — force-backup returns 503
 `server_misconfigured` and invalidate-connection skips run cancels
@@ -573,7 +573,7 @@ runs end-to-end with no developer machine involved.
 ### 7.4 Fully-local backup loop (the default for `pnpm dev`)
 
 The §7.2 click-through depended on the **deployed** `baseout-server-dev` engine
-and on the Trigger.dev runner finding `BACKUP_ENGINE_URL`/`INTERNAL_TOKEN` in the
+and on the Trigger.dev runner finding `SERVER_URL`/`SERVER_INTERNAL_TOKEN` in the
 dashboard — two drift-prone wires whose silent breakage is the recurring "backups
 stopped working" failure. The local loop removes both: web → engine → runner →
 disk all run locally, with config sourced from local files. **This is now the
@@ -598,8 +598,8 @@ Postgres, so `schema-sync`/`records-sync` resolve exactly as they do in prod.
 
 ```sh
 # apps/workflows/.env  — point the Node runner at the LOCAL engine (loopback):
-#   BACKUP_ENGINE_URL=http://localhost:8787
-#   INTERNAL_TOKEN=<same value as apps/server/.dev.vars INTERNAL_TOKEN>
+#   SERVER_URL=http://localhost:8787
+#   SERVER_INTERNAL_TOKEN=<same value as apps/server/.dev.vars SERVER_INTERNAL_TOKEN>
 #   R2_* left blank → backups write to apps/workflows/.backups/ via LocalFsWriter
 # apps/web/.dev.vars + apps/server/.dev.vars must share BASEOUT_ENCRYPTION_KEY
 #   (same as today) so the runner can decrypt the Airtable OAuth token.
@@ -624,7 +624,7 @@ the engine terminal logs `schema-sync`/`records-sync` 200s (not 409/501);
 - **Airtable OAuth works at `baseout.local`; Google Drive / BYOS does NOT** (their
   redirect URIs aren't registered for `.local` — see `oauth-setup.md`). This loop
   exercises the engine → per-Space → local-disk path, not BYOS destinations.
-- The `INTERNAL_TOKEN` travels over loopback `http://localhost:8787` in cleartext —
+- The `SERVER_INTERNAL_TOKEN` travels over loopback `http://localhost:8787` in cleartext —
   use a throwaway local value, **never** the deployed token.
 - If the web↔engine service binding shows `not connected`, the two `wrangler dev`
   sessions aren't sharing the dev registry — fall back to a single session:

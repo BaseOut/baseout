@@ -1,6 +1,6 @@
 # Service Auth
 
-Two auth boundaries: **inbound** customer bearer tokens (per-Org, hashed in DB) and **outbound** calls to `apps/server` via the `SERVER` service binding gated by `INTERNAL_TOKEN`. There is no HMAC scheme in this app.
+Two auth boundaries: **inbound** customer bearer tokens (per-Org, hashed in DB) and **outbound** calls to `apps/server` via the `SERVER` service binding gated by `SERVER_INTERNAL_TOKEN`. There is no HMAC scheme in this app.
 
 ## Inbound: Bearer API Tokens
 
@@ -22,9 +22,9 @@ The list: `org:read`, `backups:read`, `schema:read`, `views:read`, `views:write`
 
 ## Outbound: SERVER Service Binding
 
-Per-Space schema reads go to `apps/server`'s `/api/internal/*` through the `SERVER` binding with the `x-internal-token: INTERNAL_TOKEN` header ([src/lib/server-client.ts](../src/lib/server-client.ts)).
+Per-Space schema reads go to `apps/server`'s `/api/internal/*` through the `SERVER` binding with the `x-internal-token: SERVER_INTERNAL_TOKEN` header ([src/lib/server-client.ts](../src/lib/server-client.ts)).
 
-The token is byte-identical to the value `baseout-server` holds (the same secret web's `BACKUP_ENGINE_INTERNAL_TOKEN` carries). The binding gives network-level isolation; the token stays as defense-in-depth. Secrets come from `.dev.vars` via the deploy script's `wrangler secret bulk` sync — never hand-set (CLAUDE.md §3.3).
+The token is byte-identical to the value `baseout-server` holds (the same secret web's `SERVER_INTERNAL_TOKEN` carries). The binding gives network-level isolation; the token stays as defense-in-depth. Secrets come from `.dev.vars` via the deploy script's `wrangler secret bulk` sync — never hand-set (CLAUDE.md §3.3).
 
 ## Where to Look
 

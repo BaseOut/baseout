@@ -4,7 +4,7 @@
 // The pure orchestration lives in ./delete-run-files.ts so tests can import
 // it without pulling the Trigger.dev SDK into the workerd test isolate.
 // This file is what Trigger.dev's runner picks up via the trigger.config.ts
-// dirs scan; it reads BACKUP_ENGINE_URL + INTERNAL_TOKEN from process.env,
+// dirs scan; it reads SERVER_URL + SERVER_INTERNAL_TOKEN from process.env,
 // resolves a real StorageWriter via the factory, and posts the per-prefix
 // outcome to /api/internal/runs/:runId/delete-complete.
 
@@ -50,13 +50,13 @@ export const deleteRunFilesTask = task({
   id: "delete-run-files",
   maxDuration: 60,
   run: async (payload: DeleteRunFilesPayload) => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
     if (!engineUrl) {
-      throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
+      throw new Error("SERVER_URL is not set in the Trigger.dev env");
     }
     if (!internalToken) {
-      throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+      throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
     return runDeleteRunFiles(payload, {

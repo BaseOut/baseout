@@ -1,5 +1,5 @@
 // Tests the only public route on the engine. CLAUDE.md §5.2 — /api/health is
-// the engine's liveness probe; everything else is INTERNAL_TOKEN-gated.
+// the engine's liveness probe; everything else is SERVER_INTERNAL_TOKEN-gated.
 
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
