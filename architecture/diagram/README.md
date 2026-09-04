@@ -1,7 +1,7 @@
 # architecture/diagram
 
 Interactive ReactFlow view of [`../systems-overview.md`](../systems-overview.md).
-Six tabs; `Overview` is the landing tab.
+Seven tabs; `Overview` is the landing tab.
 
 **`systems-overview.md` is the source of truth.** This app has no runtime data
 source — every node and edge is committed TypeScript. When the doc changes, edit
@@ -53,6 +53,7 @@ src/
     overview.ts         Main tab — edge to database, one request deep
     environments.ts     Three-provider account separation; dev-shares-staging
     workers.ts          Worker topology, service bindings, runtime bindings
+    auth.ts             §10 — five auth mechanisms, one lane per caller class
     data-network.ts     §9 drawn — the tunnel path, two consumers one door
     storage.ts          Snapshot destinations — 5 live writers, 3 accepted-but-not
     background-cicd.ts  Runtime job flow + Workers Builds pipelines

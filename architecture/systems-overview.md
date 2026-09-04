@@ -404,14 +404,104 @@ Why this is stronger than an allowlist:
 
 ---
 
-## 10. Auth, identity, and secrets
+## 10. Authentication — five mechanisms, one per caller class
 
-| Layer | Mechanism |
+Baseout has **five distinct authentication paths**, and they share almost nothing.
+Which one applies is decided by *who is calling*, not by which route is hit.
+
+| Caller | Worker | Mechanism | Credential lives in |
+|---|---|---|---|
+| Human customer | web | better-auth session (magic link) | `sessions` table + `SESSION` KV |
+| Staff | admin | web's session, re-verified + `role='super'` | `baseout_admin_session` cookie |
+| Machine / AI client | api | `Bearer bo_live_…` API token | `api_tokens.token_hash` |
+| Sibling Worker | server | `x-internal-token` header | `INTERNAL_TOKEN` secret |
+| Airtable | hooks | `X-Airtable-Content-MAC` signature | `mac_secret_base64_enc` |
+
+### 10.1 Customer auth — better-auth, passwordless
+
+**No passwords exist anywhere in the system.** There is no password column, no
+hashing, no reset flow; a requirement implying passwords is a scope conflict
+(PRD scope lock).
+
+- **Magic link** is the primary factor. Links expire in **60 seconds**.
+- **Optional TOTP 2FA**, with backup codes. TOTP secrets are encrypted at rest by
+  a transparent adapter wrapper (`two-factor/encryption.ts`) — the same wrapper
+  pattern §10.6 uses for env scoping.
+- **Airtable SSO** ("Continue with Airtable") via better-auth `genericOAuth` — a
+  **separate, minimal-scope OAuth app**, not the Connect integration. Registration
+  is still pending, and while both client vars are blank the button stays hidden
+  with zero behaviour change.
+- Sessions last **30 days** with a cookie cache in front of the DB lookup.
+
+**Users are per-environment.** `users` is unique on `(email, runtime_env)`, so the
+same address is a *separate row* per environment. `auth-env-scope.ts` wraps the
+adapter and appends `runtimeEnv = <worker env>` to every **email-addressed** user
+query; id-addressed lookups (session → user) pass through untouched, since ids are
+globally unique. An unknown worker env scopes to a match-nothing sentinel — fail
+closed. This is why login gating needs no explicit refusal gate: request a link on
+dev and you either get *your* dev user or a fresh one.
+
+### 10.2 Staff auth — admin has no login of its own
+
+Admin runs **no better-auth instance** and never issues or mutates a session. It
+only *reads*:
+
+1. Locally, `baseout.local` cookies are shared, so admin reads
+   `better-auth.session_token`, looks it up in the `sessions` table, and requires
+   `users.role === 'super'`.
+2. Deployed, web's cookie can never reach admin (host-only, and `workers.dev` is
+   on the Public Suffix List). So sign-in rides a **60-second AES-GCM handoff
+   token**: web's `/api/admin/handoff` mints it (gated on `role='super'`), admin's
+   `/auth/handoff` opens it and sets its own `baseout_admin_session` cookie.
+
+Staff role is `users.role` with values `customer | super` — **not** a
+`user_role = 'admin'` column, which does not exist. Google Workspace SSO is
+deferred to the `admin` umbrella change.
+
+### 10.3 Programmatic auth — API tokens and MCP
+
+`api` serves both the REST API and the **Baseout MCP server**, and *both use the
+same bearer path* — the MCP dispatcher takes the same `TokenGrant`, so a token's
+scopes constrain its MCP tools identically.
+
+- Format `bo_live_<base64url entropy>`; `parseBearerToken` rejects anything
+  without that prefix before a DB round-trip happens.
+- **Stored as SHA-256 hex, never plaintext** (`api_tokens.token_hash`). A display
+  prefix is kept for the UI; the secret itself is unrecoverable after issue.
+- **Ten scopes**, and write scopes do **not** imply their read scope — tokens
+  compose scopes explicitly (`documents:read` + `documents:write` are separate).
+- Tokens are **org-owned** and optionally Space-scoped.
+- **Tenant-safe by design:** an org/Space mismatch returns **404, never 403**, so
+  the existence of another tenant's ids is never confirmed. A missing *scope*
+  returns 403 — the distinction is deliberate.
+- Usability is re-checked per request (`is_active`, `expires_at`), with a
+  write-behind `last_used_at`.
+- Every request passes the `RATE_LIMITER` binding (per-token, currently shadow
+  mode) and meters into Analytics Engine via `API_USAGE`.
+
+### 10.4 Service-to-service — the internal gate
+
+Worker-to-Worker calls ride **service bindings**, so they never touch the public
+internet. On top of that network isolation, `server` gates every
+`/api/internal/*` request on an `x-internal-token` header compared against
+`INTERNAL_TOKEN` **in constant time**. Defence in depth: the binding is the
+network control, the token is the authorization.
+
+`web`, `admin`, and `api` each hold that value as
+`BACKUP_ENGINE_INTERNAL_TOKEN`. `/api/health` is the only ungated public route.
+
+### 10.5 Inbound webhooks — Airtable signs, hooks verifies
+
+`hooks` verifies the `X-Airtable-Content-MAC` signature against the
+per-Connection `mac_secret_base64_enc` (decrypted with `BASEOUT_ENCRYPTION_KEY`).
+`hooks` deliberately holds **no service binding to server**, so the receiver keeps
+verifying and dirty-marking through an engine outage.
+
+### 10.6 Encryption at rest, and the three values that must match
+
+| What | Mechanism |
 |---|---|
-| Customer auth | better-auth, **passwordless magic link** + optional TOTP 2FA. No passwords anywhere |
-| Staff auth | `users.role = 'super'`; admin reuses web's session via a 60s AES-GCM handoff token |
 | Airtable Connect | OAuth 2.0 + PKCE, per-Organization |
-| Service-to-service | `INTERNAL_TOKEN` / `BACKUP_ENGINE_INTERNAL_TOKEN` header gate |
 | Token storage | AES-256-GCM (`BASEOUT_ENCRYPTION_KEY`) in `*_enc` columns |
 | API tokens | Hashed (`api_tokens.token_hash`), never plaintext |
 
@@ -426,7 +516,25 @@ Why this is stronger than an allowlist:
 Secrets are declared per environment via `secrets.required` in `wrangler.jsonc`, so
 a missing secret **fails the deploy** rather than producing a broken Worker.
 `scripts/check-wrangler-secrets.mjs` enforces that the staging and production lists
-stay identical.
+stay identical, with one allowlisted exception: `web`'s `E2E_TEST_TOKEN` is
+staging-only, because it gates the Playwright bypass at `/api/internal/test/*` and
+that surface must never exist in production.
+
+### 10.7 `sql` declares auth secrets it does not yet use
+
+`apps/sql` lists `BASEOUT_ENCRYPTION_KEY` and `SERVICE_HMAC_TO_BACKUP` in
+`secrets.required`, but its source is a **single `index.ts` with no
+authentication code at all** — no bearer parse, no HMAC verify, no internal-token
+gate. It is a scaffold whose route (`sql.baseout.dev/v1/*`) is path-scoped
+precisely to limit what an unfinished Worker exposes.
+
+Two things follow, and both are deploy-blocking for that app:
+
+- **`SERVICE_HMAC_TO_BACKUP` has no counterpart in `server`'s
+  `secrets.required`.** Either a producer will sign with a key no consumer
+  verifies, or the name is dead. This is open decision #1 in §13.
+- Direct SQL is Business+ and **read-only by default** (PRD §10 / Features §14.2);
+  write access is an explicit opt-in. Neither is enforced by code yet.
 
 ---
 
