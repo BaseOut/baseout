@@ -171,7 +171,13 @@
         // every `wrangler deploy` (keep_vars defaults false) — that wipe is
         // what kept resurrecting the retired 1ae05093… app. Only the client
         // SECRET stays in Cloudflare Secrets (secrets survive deploys).
-        "AIRTABLE_OAUTH_CLIENT_ID": "8a326784-9556-4272-b42c-2c8d474c8519"
+        "AIRTABLE_OAUTH_CLIENT_ID": "8a326784-9556-4272-b42c-2c8d474c8519",
+        // One app serves login AND Connect on staging (verified 2026-09-03:
+        // SSO login exchange succeeds, so the login pair is the valid one;
+        // AIRTABLE_OAUTH_CLIENT_SECRET still holds the retired app's secret,
+        // which is unreadable/unfixable without dashboard write). Connect
+        // therefore uses the login pair — see getClientCredentials.
+        "AIRTABLE_CONNECT_USE_LOGIN_APP": "1"
       },
       // ⚠ ONE canonical list, byte-identical in env.staging and env.production.
       // `secrets` is NOT inherited from the top level (wrangler treats it like

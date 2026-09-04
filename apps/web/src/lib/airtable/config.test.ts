@@ -5,6 +5,7 @@ import {
   AIRTABLE_AUTHORIZE_URL,
   AIRTABLE_SCOPES,
   AIRTABLE_TOKEN_URL,
+  getClientCredentials,
   resolveAirtableUrls,
 } from './config'
 
@@ -45,5 +46,42 @@ describe('resolveAirtableUrls', () => {
       tokenUrl: 'https://baseout.local:4331/api/stub/airtable/token',
       apiBase: 'https://baseout.local:4331/api/stub/airtable',
     })
+  })
+})
+
+// One-app-per-env mode (2026-09-03): AIRTABLE_CONNECT_USE_LOGIN_APP=1 routes
+// Connect through the SSO login credential pair.
+describe('getClientCredentials', () => {
+  it('uses the Connect pair by default', () => {
+    expect(
+      getClientCredentials({
+        AIRTABLE_OAUTH_CLIENT_ID: 'connect-id',
+        AIRTABLE_OAUTH_CLIENT_SECRET: 'connect-secret',
+        AIRTABLE_LOGIN_OAUTH_CLIENT_ID: 'login-id',
+        AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET: 'login-secret',
+      }),
+    ).toEqual({ clientId: 'connect-id', clientSecret: 'connect-secret' })
+  })
+
+  it('uses the login pair when AIRTABLE_CONNECT_USE_LOGIN_APP=1', () => {
+    expect(
+      getClientCredentials({
+        AIRTABLE_CONNECT_USE_LOGIN_APP: '1',
+        AIRTABLE_OAUTH_CLIENT_ID: 'connect-id',
+        AIRTABLE_OAUTH_CLIENT_SECRET: 'connect-secret',
+        AIRTABLE_LOGIN_OAUTH_CLIENT_ID: 'login-id',
+        AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET: 'login-secret',
+      }),
+    ).toEqual({ clientId: 'login-id', clientSecret: 'login-secret' })
+  })
+
+  it('throws when the selected pair is incomplete', () => {
+    expect(() =>
+      getClientCredentials({
+        AIRTABLE_CONNECT_USE_LOGIN_APP: '1',
+        AIRTABLE_OAUTH_CLIENT_ID: 'connect-id',
+        AIRTABLE_OAUTH_CLIENT_SECRET: 'connect-secret',
+      }),
+    ).toThrow(/AIRTABLE_CONNECT_USE_LOGIN_APP/)
   })
 })

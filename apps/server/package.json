@@ -18,7 +18,7 @@
     "check:staging": "wrangler deploy --env staging --dry-run",
     "deploy:dev": "wrangler deploy --env dev && pnpm run secrets:sync:dev",
     "deploy:production": "wrangler deploy --env production",
-    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:staging": "node ../../db/scripts/deploy-bootstrap.mjs --worker baseout-server -- deploy --env staging",
     "dev": "node --env-file-if-exists=.dev.vars scripts/dev.mjs --env dev --port 8787",
     "lint": "eslint .",
     "secrets:sync:dev": "node scripts/sync-secrets.mjs --env dev",

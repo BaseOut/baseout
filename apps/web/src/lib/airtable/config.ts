@@ -32,6 +32,13 @@ export function getRedirectUri(origin: string): string {
 export interface AirtableOAuthEnv {
   AIRTABLE_OAUTH_CLIENT_ID?: string
   AIRTABLE_OAUTH_CLIENT_SECRET?: string
+  // One-app-per-env mode (oauth-setup.md §3.1): when '1', Connect uses the
+  // SSO login pair below, so envs whose single Airtable app serves both login
+  // and Connect need only one secret pair provisioned. Committed as a wrangler
+  // var per env — same code everywhere, config decides.
+  AIRTABLE_CONNECT_USE_LOGIN_APP?: string
+  AIRTABLE_LOGIN_OAUTH_CLIENT_ID?: string
+  AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET?: string
 }
 
 export interface AirtableClientCredentials {
@@ -42,12 +49,20 @@ export interface AirtableClientCredentials {
 export function getClientCredentials(
   env: AirtableOAuthEnv,
 ): AirtableClientCredentials {
-  const clientId = env.AIRTABLE_OAUTH_CLIENT_ID
-  const clientSecret = env.AIRTABLE_OAUTH_CLIENT_SECRET
+  const useLoginApp = env.AIRTABLE_CONNECT_USE_LOGIN_APP === '1'
+  const clientId = useLoginApp
+    ? env.AIRTABLE_LOGIN_OAUTH_CLIENT_ID
+    : env.AIRTABLE_OAUTH_CLIENT_ID
+  const clientSecret = useLoginApp
+    ? env.AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET
+    : env.AIRTABLE_OAUTH_CLIENT_SECRET
   if (!clientId || !clientSecret) {
     throw new Error(
-      'Airtable OAuth is not configured. Set AIRTABLE_OAUTH_CLIENT_ID and ' +
-        'AIRTABLE_OAUTH_CLIENT_SECRET in Cloudflare Secrets (or .dev.vars locally).',
+      useLoginApp
+        ? 'Airtable OAuth is not configured. AIRTABLE_CONNECT_USE_LOGIN_APP=1 ' +
+          'requires AIRTABLE_LOGIN_OAUTH_CLIENT_ID and _SECRET.'
+        : 'Airtable OAuth is not configured. Set AIRTABLE_OAUTH_CLIENT_ID and ' +
+          'AIRTABLE_OAUTH_CLIENT_SECRET in Cloudflare Secrets (or .dev.vars locally).',
     )
   }
   return { clientId, clientSecret }

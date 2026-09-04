@@ -83,3 +83,4 @@ apps/support/snapshots/
 # anywhere in the tree.
 secrets.env
 .env.secrets
+.wrangler-bootstrap-secrets.json

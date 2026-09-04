@@ -17,7 +17,7 @@
     "build:dev": "CLOUDFLARE_ENV=dev node --env-file-if-exists=.dev.vars scripts/launch.mjs build",
     "deploy:dev": "wrangler deploy --env dev && pnpm run secrets:sync",
     "build:staging": "CLOUDFLARE_ENV=staging node --env-file-if-exists=.dev.vars scripts/launch.mjs build",
-    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:staging": "node ../../db/scripts/deploy-bootstrap.mjs --worker baseout-admin -- deploy --env staging",
     "build:production": "CLOUDFLARE_ENV=production node --env-file-if-exists=.dev.vars scripts/launch.mjs build",
     "deploy:production": "wrangler deploy --env production"
   },
