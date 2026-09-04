@@ -14,9 +14,9 @@ export interface ServerResult {
 
 /** Returns null on transport failure/timeout/misconfig → caller maps to 502. */
 async function call(env: Env, path: string, init: RequestInit): Promise<ServerResult | null> {
-  if (!env.SERVER || !env.INTERNAL_TOKEN) return null;
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null;
   const headers = new Headers(init.headers);
-  headers.set("x-internal-token", env.INTERNAL_TOKEN);
+  headers.set("x-internal-token", env.SERVER_INTERNAL_TOKEN);
   const req = new Request(`https://baseout-server${path}`, { ...init, headers });
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), TIMEOUT_MS));
   try {

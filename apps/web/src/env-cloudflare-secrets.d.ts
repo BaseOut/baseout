@@ -9,7 +9,7 @@
 // `.dev.vars.example`; keep the two in sync when a secret is added or removed.
 declare namespace Cloudflare {
   interface Env {
-    BACKUP_ENGINE_INTERNAL_TOKEN: string;
+    SERVER_INTERNAL_TOKEN: string;
     BETTER_AUTH_SECRET: string;
     BASEOUT_ENCRYPTION_KEY: string;
     AIRTABLE_OAUTH_CLIENT_ID: string;

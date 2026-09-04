@@ -124,10 +124,10 @@ function mapEngineBase(b: EngineRunDetailBase) {
 
 let engineBases: ReturnType<typeof mapEngineBase>[] = [];
 
-if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+if (env.SERVER && env.SERVER_INTERNAL_TOKEN) {
   const engine = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   });
   const detailRes = await engine.getRunDetail(row.id);
   if (detailRes.ok && detailRes.bases.length > 0) {

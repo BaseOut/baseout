@@ -210,7 +210,7 @@ export interface BackupBaseDeps {
   /**
    * Optional override for the storage-credential fetcher. The production
    * default reads from the engine's `/api/internal/spaces/:spaceId/storage-destination`
-   * route (gated by INTERNAL_TOKEN). Tests pass a fake that returns deterministic
+   * route (gated by SERVER_INTERNAL_TOKEN). Tests pass a fake that returns deterministic
    * creds without touching the engine.
    */
   fetchStorageCreds?: (

@@ -154,5 +154,5 @@ When the system is *describing itself*:
   page. The trial-conversion CTA appears on a few specific surfaces
   (dashboard nudge, integrations limit) and nowhere else.
 - Jargon that requires Baseout-team knowledge to decode ("Durable
-  Object", "INTERNAL_TOKEN", "Trigger.dev task"). The user never
+  Object", "SERVER_INTERNAL_TOKEN", "Trigger.dev task"). The user never
   sees these.

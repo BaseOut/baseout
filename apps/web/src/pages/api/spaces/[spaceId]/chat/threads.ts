@@ -61,8 +61,8 @@ export async function handleChatThreads(input: ChatThreadsRouteInput): Promise<R
 }
 
 function buildEngine(): ChatThreadsRouteInput['engine'] {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
-  const e = createBackupEngine({ binding: env.BACKUP_ENGINE, internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN })
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
+  const e = createBackupEngine({ binding: env.SERVER, internalToken: env.SERVER_INTERNAL_TOKEN })
   return {
     listChatThreads: (sid, ia) => e.listChatThreads(sid, ia),
     createChatThread: (sid, uid) => e.createChatThread(sid, uid),

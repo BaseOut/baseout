@@ -1,6 +1,6 @@
 // POST /api/internal/restores/:restoreId/cancel (server-restore Phase D.2)
 //
-// Internal route apps/web's cancel button forwards to via the BACKUP_ENGINE
+// Internal route apps/web's cancel button forwards to via the SERVER
 // service binding. Atomically transitions the row from {queued | running}
 // → 'cancelling' → 'cancelled' and asks Trigger.dev to cancel each fanned-
 // out task. See src/lib/restores/cancel.ts for the state machine + idempotency

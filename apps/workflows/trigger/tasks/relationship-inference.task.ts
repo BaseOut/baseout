@@ -52,10 +52,10 @@ export const relationshipInferenceTask = task({
   id: "relationship-inference",
   maxDuration: 300,
   run: async (payload: RelationshipInferencePayload): Promise<RelationshipInferenceResult> => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
-    if (!engineUrl) throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
-    if (!internalToken) throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
+    if (!engineUrl) throw new Error("SERVER_URL is not set in the Trigger.dev env");
+    if (!internalToken) throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
 
     return runRelationshipInference(payload, {
       syncBase: (baseId) =>

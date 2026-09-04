@@ -10,8 +10,8 @@ declare module 'cloudflare:workers' {
     HYPERDRIVE: { connectionString: string };
     WEB_APP_URL?: string;
     ADMIN_HANDOFF_SECRET?: string;
-    BACKUP_ENGINE?: { fetch: (input: string, init?: RequestInit) => Promise<Response> };
-    BACKUP_ENGINE_INTERNAL_TOKEN?: string;
+    SERVER?: { fetch: (input: string, init?: RequestInit) => Promise<Response> };
+    SERVER_INTERNAL_TOKEN?: string;
   };
 }
 

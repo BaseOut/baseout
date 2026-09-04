@@ -4,7 +4,7 @@
  *   POST → create a definition (capability-gated: active_reports creation cap)
  *
  * Authenticated + IDOR-gated (guardReportsRequest), then forwards to
- * @baseout/server via the BACKUP_ENGINE binding. Testable inner handler takes
+ * @baseout/server via the SERVER binding. Testable inner handler takes
  * deps as args (no cloudflare:workers import reached in tests).
  */
 
@@ -90,10 +90,10 @@ export async function handleReports(input: ReportsRouteInput): Promise<Response>
 }
 
 function buildEngine() {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const e = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return {
     listReportDefinitions: (spaceId: string) => e.listReportDefinitions(spaceId),

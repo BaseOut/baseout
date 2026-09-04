@@ -1,12 +1,27 @@
-# Local-dev env for @baseout/workflows (Trigger.dev v3, Node runner).
-# Copy to .env and fill in. .env is gitignored — never commit real values.
+# Local-dev env for @baseout/workflows (Trigger.dev v4, Node runner).
+# Copy to .dev.vars and fill in. .dev.vars is gitignored — never commit real values.
 #
-#   cp apps/workflows/.env.example apps/workflows/.env
+#   cp apps/workflows/.dev.vars.example apps/workflows/.dev.vars
+#
+# NAMED .dev.vars, not .env, to match every other app in the repo. This app runs
+# on Node rather than workerd, so the name carries no wrangler magic here — the
+# dev/deploy scripts pass `--env-file .dev.vars` explicitly, which is the only
+# reason the Trigger.dev CLI finds it.
 #
 # These are read via process.env. For DEPLOYED Trigger.dev environments they are
 # NOT read from this file — set them in the Trigger.dev dashboard's env-vars UI
-# per environment (Development / Staging / Production). This .env only feeds the
+# per environment (Development / Staging / Production). This file only feeds the
 # local `trigger dev` runner. See the project memory "Trigger.dev env setup".
+
+# === Trigger.dev project ===
+# Read by trigger.config.ts, which has NO fallback — the CLI refuses to start
+# without it. Must match apps/server's TRIGGER_PROJECT_REF, or the Worker
+# enqueues into a project the runner is not watching.
+#
+# This DIFFERS between accounts: staging and production are separate Trigger.dev
+# accounts (systems-overview §2), so each has its own project ref. Staging's is
+# proj_lklmptmrmrkeaszrmhcs.
+TRIGGER_PROJECT_REF=
 
 # === Engine callback ===
 # URL of the @baseout/server Worker the task POSTs progress/completion to
@@ -18,19 +33,19 @@
 #       The engine runs locally (started by `pnpm dev`, or `pnpm --filter
 #       @baseout/server dev`, on :8787) and this Node runner reaches it over plain
 #       loopback HTTP. Point here:
-#         BACKUP_ENGINE_URL=http://localhost:8787
+#         SERVER_URL=http://localhost:8787
 #       No deploy needed; web binds to the same local engine by default.
 #
 #   (b) Deployed engine. Deploy first (`pnpm --filter @baseout/server deploy:dev`),
 #       run web with `pnpm dev:remote` (BACKUP_REMOTE=1), and point here:
-#         BACKUP_ENGINE_URL=https://baseout-server-dev.openside.workers.dev
-BACKUP_ENGINE_URL=
+#         SERVER_URL=https://baseout-server-dev.openside.workers.dev
+SERVER_URL=
 
 # Defense-in-depth token on every engine callback. MUST equal apps/server's
-# INTERNAL_TOKEN (and apps/web's BACKUP_ENGINE_INTERNAL_TOKEN). In the local loop
+# SERVER_INTERNAL_TOKEN (and apps/web's SERVER_INTERNAL_TOKEN). In the local loop
 # this travels over loopback http://localhost:8787 in cleartext — use a throwaway
 # local value, never the deployed token.
-INTERNAL_TOKEN=
+SERVER_INTERNAL_TOKEN=
 
 # === Managed R2 backup destination (required only for r2_managed; BYOS skips) ===
 # S3-API credentials for the managed R2 bucket (aws4fetch writer on the Node

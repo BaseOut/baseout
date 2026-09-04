@@ -1,7 +1,7 @@
 // Report capability gate (engine-side, defense-in-depth) — server-reports task 7.
 //
 // The user-facing cap is enforced by apps/web (checkCreationCap lives there);
-// this is the engine's server-side re-check on the INTERNAL_TOKEN surface.
+// this is the engine's server-side re-check on the SERVER_INTERNAL_TOKEN surface.
 //
 // Gated via resolveEntitlements(orgId) — NEVER Stripe metadata (CLAUDE.md §1).
 // Dark by default: only enforced when ENTITLEMENT_ENFORCEMENT === '1'; a missing

@@ -9,7 +9,7 @@
  *
  * Both apps/web (initial code exchange + Baseout-folder creation) and
  * apps/server (refresh on backup start) hold the secret. Workflows MUST NOT —
- * it asks the engine for fresh tokens via the INTERNAL_TOKEN-gated route.
+ * it asks the engine for fresh tokens via the SERVER_INTERNAL_TOKEN-gated route.
  *
  * Box-vs-Drive nuance worth knowing:
  *   - Box rotates the refresh token on every refresh; the new value must

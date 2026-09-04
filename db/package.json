@@ -5,12 +5,17 @@
   "type": "module",
   "description": "Master-DB migration lineage + runner. See root CLAUDE.md \u00a73.9.",
   "scripts": {
+    "db:check": "node --env-file-if-exists=.dev.vars --env-file-if-exists=../apps/web/.dev.vars scripts/check-migrations.mjs",
+    "db:down": "node tunnel/down.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:check": "node --env-file-if-exists=.dev.vars --env-file-if-exists=../apps/web/.dev.vars scripts/check-migrations.mjs",
+    "db:migrate:tunnel": "TUNNEL=1 node scripts/migrate.mjs",
     "db:seed": "node --env-file=.dev.vars --import tsx/esm seed/seed.ts",
     "db:seed:entitlements": "node --env-file=.dev.vars --import tsx/esm seed/seed-entitlements.ts",
-    "db:migrate:tunnel": "TUNNEL=1 node scripts/migrate.mjs"
+    "db:status": "node tunnel/down.mjs --status",
+    "db:test": "node scripts/test-connection.mjs",
+    "db:tunnel:login": "node -e \"import('cloudflared').then(m=>require('child_process').spawnSync(m.bin,['access','login',process.env.DB_TUNNEL_HOSTNAME||'db.baseout.dev'],{stdio:'inherit'}))\"",
+    "db:up": "node tunnel/up.mjs"
   },
   "devDependencies": {
     "cloudflared": "^0.7.3",

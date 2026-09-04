@@ -22,8 +22,8 @@ const { account, db } = Astro.locals;
 const orgId = account?.organization?.id ?? null;
 const spaceId = account?.space?.id ?? null;
 
-const engineBinding = env.BACKUP_ENGINE;
-const engineToken = env.BACKUP_ENGINE_INTERNAL_TOKEN;
+const engineBinding = env.SERVER;
+const engineToken = env.SERVER_INTERNAL_TOKEN;
 const rawEngine =
   spaceId && engineBinding && engineToken
     ? createBackupEngine({

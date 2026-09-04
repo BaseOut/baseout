@@ -409,10 +409,10 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
     promoteSpaceIfReady: (spaceId) => promoteSpaceIfSetupIncomplete(db, spaceId),
     ensureInternalSpaceReady: async (input) => {
       const engine =
-        env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+        env.SERVER && env.SERVER_INTERNAL_TOKEN
           ? createBackupEngine({
-              binding: env.BACKUP_ENGINE,
-              internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+              binding: env.SERVER,
+              internalToken: env.SERVER_INTERNAL_TOKEN,
             })
           : null
       await ensureInternalSpaceReady(input, buildInternalSpaceReadyDeps(db, engine))
@@ -435,17 +435,17 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
 
 /**
  * Build the engine-proxy callback that hands new scheduled frequencies
- * off to the SpaceDO. Returns null when the BACKUP_ENGINE binding or
- * INTERNAL_TOKEN is missing — in that environment the schedule won't be
+ * off to the SpaceDO. Returns null when the SERVER binding or
+ * SERVER_INTERNAL_TOKEN is missing — in that environment the schedule won't be
  * armed until the bootstrap script runs.
  */
 function buildScheduledFrequencyHandoff():
   | ((spaceId: string, schedule: SpaceScheduleInput) => Promise<void>)
   | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const engine = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return async (spaceId, schedule) => {
     await engine.setSpaceFrequency(spaceId, schedule)
@@ -455,17 +455,17 @@ function buildScheduledFrequencyHandoff():
 /**
  * Build the engine handoff for the webhook registration lifecycle
  * (web-instant-webhook; engine routes are server-instant-webhook Phase E).
- * Returns null when the BACKUP_ENGINE binding or INTERNAL_TOKEN is missing —
+ * Returns null when the SERVER binding or SERVER_INTERNAL_TOKEN is missing —
  * in that environment instant transitions persist config only, and the daily
  * safety sweep covers data until the wiring exists.
  */
 function buildWebhookLifecycleHandoff(
   action: 'register' | 'unregister',
 ): ((spaceId: string) => Promise<{ ok: true } | { ok: false; code: string; status: number }>) | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const engine = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return (spaceId) =>
     action === 'register'

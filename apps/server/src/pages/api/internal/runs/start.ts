@@ -2,7 +2,7 @@
 //
 // Routing + DB-and-Trigger.dev wiring on top of the pure processRunStart()
 // function in src/lib/runs/start.ts. apps/web's POST /api/spaces/:spaceId/
-// backup-runs (Phase 9) calls this via the BACKUP_ENGINE service binding
+// backup-runs (Phase 9) calls this via the SERVER service binding
 // once it has INSERTed a backup_runs row in 'queued' state.
 //
 // Token gate is applied by middleware (path begins /api/internal/). This

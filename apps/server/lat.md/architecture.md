@@ -2,7 +2,7 @@
 
 `@baseout/server` is a headless Cloudflare Worker. Astro adapter wraps the entry; the real fetch handler lives in [src/index.ts](../src/index.ts) and dispatches by `pathname`.
 
-It does **not** serve any UI, login, or customer auth. The frontend gates customer requests; this Worker only sees `INTERNAL_TOKEN`-bearing internal calls plus the public `/api/health` probe.
+It does **not** serve any UI, login, or customer auth. The frontend gates customer requests; this Worker only sees `SERVER_INTERNAL_TOKEN`-bearing internal calls plus the public `/api/health` probe.
 
 ## Worker Entry
 

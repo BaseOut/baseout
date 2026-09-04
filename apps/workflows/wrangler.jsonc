@@ -1,0 +1,38 @@
+// apps/workflows — Workers Builds ANCHOR CONFIG. Not a runtime Worker.
+//
+// This app is a Trigger.dev v3/v4 task project: the tasks run on Trigger.dev's
+// Node runner, never inside workerd (root CLAUDE.md §6). It has no Worker
+// surface and must never grow one.
+//
+// This file exists for exactly one reason: Cloudflare Workers Builds is
+// configured per *Worker*, so a Worker record must exist for the build trigger
+// to attach to. `main` points at ./ci/worker-stub.ts, a 404 handler that is
+// deployed ONCE by hand to create that record and then never again — the
+// Workers Builds deploy command for this app is `trigger.dev deploy`, not
+// `wrangler deploy`.
+//
+// ONE-TIME BOOTSTRAP (per account):
+//   pnpm --filter @baseout/workflows exec wrangler deploy
+//
+// There are deliberately NO `env` blocks. Every Baseout Worker uses the bare
+// name in both accounts (staging account vs the separate production account —
+// see apps/server/wrangler.jsonc), and Workers Builds overrides the name via
+// WRANGLER_CI_OVERRIDE_NAME anyway. The staging/production split for this app
+// lives entirely in the build trigger's deploy command
+// (`--env staging` vs `--env prod` on the Trigger.dev side), so per-env
+// wrangler config would be dead weight that could only drift.
+//
+// NO bindings, NO vars, NO secrets. Task runtime config comes from
+// process.env, populated in Trigger.dev's environment-variables UI per
+// environment (README.md "Runtime"). Nothing this app needs is reachable from
+// a Cloudflare binding.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-workflows",
+  "main": "./ci/worker-stub.ts",
+  "compatibility_date": "2026-04-22",
+  "workers_dev": false,
+  "observability": {
+    "enabled": false
+  }
+}

@@ -8,4 +8,4 @@ Each file documents one slice; navigate by `lat locate` or `lat section`.
 
 - [[architecture]] — request pipeline, operation registry, MCP mount, deployment state
 - [[versioning]] — URL versioning (`/v1/...`); breaking-change policy
-- [[service-auth]] — Bearer api_tokens (hashed) + scopes; outbound SERVER service binding with `INTERNAL_TOKEN`
+- [[service-auth]] — Bearer api_tokens (hashed) + scopes; outbound SERVER service binding with `SERVER_INTERNAL_TOKEN`

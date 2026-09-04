@@ -85,12 +85,12 @@ export async function handlePost(
 function buildDeps(locals: App.Locals): HandleInvalidateDeps {
   const db = locals.db
   const workerEnv = env as unknown as {
-    BACKUP_ENGINE?: { fetch: (input: string, init?: RequestInit) => Promise<Response> }
-    BACKUP_ENGINE_INTERNAL_TOKEN?: string
+    SERVER?: { fetch: (input: string, init?: RequestInit) => Promise<Response> }
+    SERVER_INTERNAL_TOKEN?: string
   }
   const engine = createAdminEngine({
-    binding: workerEnv.BACKUP_ENGINE,
-    internalToken: workerEnv.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: workerEnv.SERVER,
+    internalToken: workerEnv.SERVER_INTERNAL_TOKEN,
   })
   return {
     fetchConnectionById: async (connectionId) => {

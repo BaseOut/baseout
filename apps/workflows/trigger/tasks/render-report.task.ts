@@ -2,7 +2,7 @@
 //
 // The pure orchestration lives in ./render-report.ts so tests import it without
 // the Trigger.dev SDK. This file is what the runner picks up: it reads
-// BACKUP_ENGINE_URL + INTERNAL_TOKEN from process.env, resolves a real
+// SERVER_URL + SERVER_INTERNAL_TOKEN from process.env, resolves a real
 // StorageWriter, renders via the pure function, and POSTs the artifact locations
 // + status to /api/internal/reports/runs/:runId/rendered (fire-and-forget on
 // transport error — the engine's run-row state machine is the safety net).
@@ -69,10 +69,10 @@ export const renderReportTask = task({
   id: "render-report",
   maxDuration: 300,
   run: async (payload: RenderReportPayload) => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
-    if (!engineUrl) throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
-    if (!internalToken) throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
+    if (!engineUrl) throw new Error("SERVER_URL is not set in the Trigger.dev env");
+    if (!internalToken) throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
 
     const result = await renderReport(
       {

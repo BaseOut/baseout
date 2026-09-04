@@ -3,7 +3,7 @@
 // The engine's MCP workspace listing (server-mcp-workspaces): resolves the
 // Connection's token through the ConnectionDO /token gate, calls the MCP
 // `list_workspaces` tool, and returns the normalized list. Web proxies this
-// over the BACKUP_ENGINE service binding for the picker's workspace grouping;
+// over the SERVER service binding for the picker's workspace grouping;
 // the run-start auto-enroll check calls the fetch layer directly (cache
 // BYPASSED — correctness path).
 //

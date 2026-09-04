@@ -32,7 +32,7 @@ function trimSlash(s: string): string {
 
 /**
  * Fetch the org's AI routing decision + (for byok) the decrypted key from the
- * engine over the INTERNAL_TOKEN-gated credential endpoint. Never throws:
+ * engine over the SERVER_INTERNAL_TOKEN-gated credential endpoint. Never throws:
  * anything other than a well-formed byok body resolves to `{ mode: 'pool' }`.
  */
 export async function fetchAiCredential(

@@ -3,8 +3,8 @@
 //
 // Hourly cron. The pure orchestration lives in ./cleanup-expired-snapshots.ts
 // so tests import it without pulling the Trigger.dev SDK. This file is what the
-// runner picks up via trigger.config.ts `dirs`. It reads BACKUP_ENGINE_URL +
-// INTERNAL_TOKEN from process.env, fetches the delete plan from the engine,
+// runner picks up via trigger.config.ts `dirs`. It reads SERVER_URL +
+// SERVER_INTERNAL_TOKEN from process.env, fetches the delete plan from the engine,
 // deletes each planned run's storage prefixes via a real StorageWriter, and
 // posts the outcome back so the engine soft-deletes the confirmed rows.
 //
@@ -76,13 +76,13 @@ export const cleanupExpiredSnapshotsTask = schedules.task({
   id: "cleanup-expired-snapshots",
   cron: "0 * * * *", // hourly — worst-case skew between a policy edit and a prune is ≤1h
   run: async () => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
     if (!engineUrl) {
-      throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
+      throw new Error("SERVER_URL is not set in the Trigger.dev env");
     }
     if (!internalToken) {
-      throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+      throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
     return runCleanupSweep({

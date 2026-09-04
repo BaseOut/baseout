@@ -7,7 +7,7 @@
  * own the Space) — the engine token never reaches the browser.
  *
  * Same testable-inner-handler shape as backup-runs.ts: the wrapper wires real
- * Drizzle + the BACKUP_ENGINE binding; tests import handleInboxFeed with
+ * Drizzle + the SERVER binding; tests import handleInboxFeed with
  * vi.fn() deps.
  */
 
@@ -66,10 +66,10 @@ export const GET: APIRoute = async ({ locals, params }) => {
   const db = locals.db
   if (!db) return jsonResponse({ error: 'Database not initialized' }, 500)
   let engine: InboxFeedRouteInput['engine'] = null
-  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  if (env.SERVER && env.SERVER_INTERNAL_TOKEN) {
     const e = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      binding: env.SERVER,
+      internalToken: env.SERVER_INTERNAL_TOKEN,
     })
     engine = (spaceId) => e.getNotifications(spaceId)
   }

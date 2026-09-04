@@ -5,7 +5,7 @@
  *
  * Authenticated + IDOR- and tier-gated (guardSchemaDocsRequest — the same gate
  * the Data proxies use), then forwards to @baseout/server via the
- * BACKUP_ENGINE service binding. Testable inner handler takes deps as args.
+ * SERVER service binding. Testable inner handler takes deps as args.
  */
 
 import type { APIRoute } from 'astro'
@@ -100,10 +100,10 @@ export async function handleViews(input: ViewsRouteInput): Promise<Response> {
 // ── Astro APIRoute wrappers ──────────────────────────────────────────────
 
 function buildEngine() {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const e = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return {
     listSavedViews: (spaceId: string) => e.listSavedViews(spaceId),

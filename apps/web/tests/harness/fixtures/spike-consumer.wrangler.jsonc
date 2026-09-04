@@ -4,7 +4,7 @@
 // The `services` entry names the apps/server test Worker by its wrangler
 // `name` ("baseout-server-test"); the harness resolves it to the server
 // Worker running in the same test server, standing in for the deployed
-// `BACKUP_ENGINE → baseout-server-dev` binding in wrangler.jsonc.example.
+// `SERVER → baseout-server-dev` binding in wrangler.jsonc.example.
 {
   "$schema": "../../../node_modules/wrangler/config-schema.json",
   "name": "spike-consumer",
@@ -12,8 +12,8 @@
   "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    // Matches the INTERNAL_TOKEN the test passes to the server Worker.
-    "BACKUP_ENGINE_INTERNAL_TOKEN": "test-only-internal-token-min-32-chars-aaaa"
+    // Matches the SERVER_INTERNAL_TOKEN the test passes to the server Worker.
+    "SERVER_INTERNAL_TOKEN": "test-only-internal-token-min-32-chars-aaaa"
   },
-  "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-test" }]
+  "services": [{ "binding": "SERVER", "service": "baseout-server-test" }]
 }

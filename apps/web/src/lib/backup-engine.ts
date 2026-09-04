@@ -2,7 +2,7 @@
  * Internal-API client for @baseout/server (the backup engine).
  *
  * apps/web calls into the engine over a Cloudflare Worker service binding,
- * gated by INTERNAL_TOKEN sent as the `x-internal-token` header. Today this
+ * gated by SERVER_INTERNAL_TOKEN sent as the `x-internal-token` header. Today this
  * client exposes a single method (`whoami`) that proves a Connection's
  * stored token still works against Airtable. Future engine endpoints (run-
  * now, cancel-run, list-progress, etc.) extend this same client — they
@@ -15,9 +15,9 @@
  *   apps/server/src/pages/api/internal/connections/whoami.ts
  *
  * Transport:
- *   - apps/web declares `services: [{ binding: "BACKUP_ENGINE", service:
+ *   - apps/web declares `services: [{ binding: "SERVER", service:
  *     "baseout-server-<env>" }]` in wrangler.jsonc.example. At runtime
- *     `env.BACKUP_ENGINE` is a `Fetcher` that routes through Cloudflare's
+ *     `env.SERVER` is a `Fetcher` that routes through Cloudflare's
  *     internal Worker-to-Worker network — never public DNS, no RFC1918
  *     edge ban, identical behaviour in `wrangler dev --remote` and in
  *     deployed envs.
@@ -911,10 +911,10 @@ export type EngineRunDetailResult =
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
-   * at runtime as `env.BACKUP_ENGINE`. Tests inject a `Fetcher`-shaped stub.
+   * at runtime as `env.SERVER`. Tests inject a `Fetcher`-shaped stub.
    */
   binding: Fetcher;
-  /** Shared secret matching the engine's INTERNAL_TOKEN. */
+  /** Shared secret matching the engine's SERVER_INTERNAL_TOKEN. */
   internalToken: string;
 }
 

@@ -1,6 +1,6 @@
 // GET /api/internal/orgs/:orgId/ai-credential   (shared-ai-byok task 3.3)
 //
-// The trusted, INTERNAL_TOKEN-gated AI credential endpoint. The workflows chat
+// The trusted, SERVER_INTERNAL_TOKEN-gated AI credential endpoint. The workflows chat
 // task (task 4.1) runs on the Trigger.dev Node runner, which CANNOT decrypt the
 // stored `ai_provider_keys.key_enc` ciphertext itself — the master encryption
 // key (BASEOUT_ENCRYPTION_KEY) never leaves the Worker/env boundary. So at run
@@ -17,7 +17,7 @@
 //     defense-in-depth and rejects a bad/missing token BEFORE any resolve or
 //     decrypt (CLAUDE.md §5.2 "token gate stays as defense-in-depth").
 //   - The plaintext apiKey appears ONLY in this response body, which crosses
-//     the trusted service boundary (BACKUP_ENGINE binding + token gate). It is
+//     the trusted service boundary (SERVER binding + token gate). It is
 //     NEVER logged. `{ mode: 'pool' }` carries no secret.
 
 import type { AppLocals, Env } from "../../../../env";
@@ -76,7 +76,7 @@ function jsonResponse(body: unknown, status: number): Response {
 
 /**
  * Route handler (registered in src/index.ts). GET-only; wires the real deps:
- * a constant-time token check against env.INTERNAL_TOKEN and the DB-backed
+ * a constant-time token check against env.SERVER_INTERNAL_TOKEN and the DB-backed
  * `resolveByokAdapter` with the master encryption key.
  */
 export async function orgsAiCredentialHandler(
@@ -96,8 +96,8 @@ export async function orgsAiCredentialHandler(
     {
       verifyToken: (presented) =>
         !!presented &&
-        !!env.INTERNAL_TOKEN &&
-        constantTimeEqual(presented, env.INTERNAL_TOKEN),
+        !!env.SERVER_INTERNAL_TOKEN &&
+        constantTimeEqual(presented, env.SERVER_INTERNAL_TOKEN),
       resolveAdapter: (id) => {
         const { db } = locals.getMasterDb();
         return resolveByokAdapter(db, env.BASEOUT_ENCRYPTION_KEY, id);

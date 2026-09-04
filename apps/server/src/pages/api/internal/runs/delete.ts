@@ -1,7 +1,7 @@
 // POST /api/internal/runs/:runId/delete
 //
 // Internal route the apps/web Delete button forwards to via the
-// BACKUP_ENGINE service binding. Atomically transitions the row from
+// SERVER service binding. Atomically transitions the row from
 // <terminal> → 'deleting' and enqueues the delete-run-files Trigger.dev
 // task. The task POSTs back to /delete-complete which hard-DELETEs the
 // row. See src/lib/runs/delete.ts for the state machine.

@@ -121,13 +121,13 @@ export const restoreBaseTask = task({
   id: "restore-base",
   maxDuration: 600,
   run: async (payload: RestoreBaseTaskPayload, { ctx }) => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
     if (!engineUrl) {
-      throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
+      throw new Error("SERVER_URL is not set in the Trigger.dev env");
     }
     if (!internalToken) {
-      throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+      throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
     // Build the storage reader from the payload's storageType.

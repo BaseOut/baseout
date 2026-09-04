@@ -74,10 +74,10 @@ export const chatRespondTask = task({
   id: "chat-respond",
   maxDuration: 300,
   run: async (payload: ChatRespondPayload): Promise<ChatRespondResult> => {
-    const engineUrl = process.env.BACKUP_ENGINE_URL;
-    const internalToken = process.env.INTERNAL_TOKEN;
-    if (!engineUrl) throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
-    if (!internalToken) throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
+    const engineUrl = process.env.SERVER_URL;
+    const internalToken = process.env.SERVER_INTERNAL_TOKEN;
+    if (!engineUrl) throw new Error("SERVER_URL is not set in the Trigger.dev env");
+    if (!internalToken) throw new Error("SERVER_INTERNAL_TOKEN is not set in the Trigger.dev env");
 
     // BYOK routing (task 4.1): fetch the org's decision + (for byok) the
     // decrypted key over the gated credential endpoint, then build the client

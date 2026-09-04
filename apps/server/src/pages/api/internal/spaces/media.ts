@@ -4,7 +4,7 @@
 // GET /api/internal/spaces/:spaceId/media/:assetId/download    — stream / locator
 //
 // The Media Library read API (server-media-index). Web proxies these over the
-// BACKUP_ENGINE service binding and adds auth/middleware — the engine owns the
+// SERVER service binding and adds auth/middleware — the engine owns the
 // per-Space IO. Downloads: Baseout-stored assets (storage_kind 'r2_managed')
 // stream through the NATIVE read-only R2 binding (BACKUPS_R2 — credential-less,
 // zero egress; r2-setup.md §2.4's no-S3-creds rule untouched); destination-

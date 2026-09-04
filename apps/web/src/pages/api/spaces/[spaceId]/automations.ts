@@ -128,10 +128,10 @@ export const ALL: APIRoute = async ({ locals, params, request }) => {
 
   let getEngine: AutomationsRouteInput['getEngine'] = null
   let mutateEngine: AutomationsRouteInput['mutateEngine'] = null
-  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  if (env.SERVER && env.SERVER_INTERNAL_TOKEN) {
     const e = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      binding: env.SERVER,
+      internalToken: env.SERVER_INTERNAL_TOKEN,
     })
     getEngine = (spaceId, baseId, includeRemoved) => e.getAutomations(spaceId, baseId, includeRemoved)
     mutateEngine = (spaceId, body) => e.mutateAutomation(spaceId, body)

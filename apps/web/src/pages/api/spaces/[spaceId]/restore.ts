@@ -227,10 +227,10 @@ export async function handlePost(input: HandlePostInput): Promise<Response> {
 // ── Astro APIRoute wrapper ────────────────────────────────────────────────
 
 function buildEngine(): BackupEngineClient | null {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   return createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
 }
 

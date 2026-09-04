@@ -52,8 +52,8 @@ export const GET: APIRoute = async ({ locals, params, request }) => {
   const db = locals.db
   if (!db) return jsonResponse({ error: 'Database not initialized' }, 500)
   let engine: HealthConfigRouteInput['engine'] = null
-  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
-    const e = createBackupEngine({ binding: env.BACKUP_ENGINE, internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN })
+  if (env.SERVER && env.SERVER_INTERNAL_TOKEN) {
+    const e = createBackupEngine({ binding: env.SERVER, internalToken: env.SERVER_INTERNAL_TOKEN })
     engine = (sid, bid) => e.getHealthConfig(sid, bid)
   }
   return handleHealthConfig({

@@ -12,7 +12,7 @@ Adding any other public route requires updating this section, the [root cross-ap
 
 ## Internal Surface
 
-`/api/internal/*` — gated by the `x-internal-token` header. The token must equal `env.INTERNAL_TOKEN` (a Cloudflare Secret). Comparison is constant-time.
+`/api/internal/*` — gated by the `x-internal-token` header. The token must equal `env.SERVER_INTERNAL_TOKEN` (a Cloudflare Secret). Comparison is constant-time.
 
 Currently routed handlers:
 
@@ -25,7 +25,7 @@ New `/api/internal/*` routes are added by:
 
 1. Writing the handler in `src/pages/api/internal/<name>.ts`.
 2. Wiring it into the path dispatch in [src/index.ts](../src/index.ts).
-3. Adding any new `INTERNAL_TOKEN`-class secret to the security checklist.
+3. Adding any new `SERVER_INTERNAL_TOKEN`-class secret to the security checklist.
 
 ## Internal Auth
 
@@ -35,7 +35,7 @@ The token gate is implemented in [src/middleware.ts](../src/middleware.ts) by `a
 - Path `/api/internal/*` with mismatched token → 401.
 - Token comparison uses `constantTimeEqual` to avoid leaking the secret via response timing.
 
-Both `apps/web` and `apps/admin` hold the same token in their own Cloudflare Secrets (`BACKUP_ENGINE_INTERNAL_TOKEN`). Rotating it requires updating all three Worker Secret namespaces in lockstep.
+Both `apps/web` and `apps/admin` hold the same token in their own Cloudflare Secrets (`SERVER_INTERNAL_TOKEN`). Rotating it requires updating all three Worker Secret namespaces in lockstep.
 
 ## What This Worker Does Not Expose
 

@@ -26,6 +26,10 @@ brainstorm-agenda.html
 # Environment + secrets (NEVER commit)
 .dev.vars
 .dev.vars.prev
+# Timestamped backups of .dev.vars — same live credentials as the original, so
+# they need the same protection. Created by ad-hoc edits (2026-09-04).
+.dev.vars.bak-*
+.dev.vars.bak.*
 .dev.vars.local
 .env
 .env.local
@@ -77,10 +81,13 @@ shared/internal/comp-ai*
 apps/support/snapshots/
 
 # Per-app staging/production secret bundles fed to `wrangler secret bulk`.
-# Real credential values — never commit. The canonical name is
-# apps/<app>/.env.secrets, already covered by each app's own `.env.*` rule;
-# these no-slash patterns are belt-and-braces and also catch the other spelling
-# anywhere in the tree.
+# Real credential values — never commit. The canonical names are
+# apps/<app>/.env.secrets.<env> (staging | production). web/admin are already
+# covered by their own `.env.*` rule, but api/hooks/server/sql have no such rule,
+# so these no-slash patterns are the ONLY thing protecting them.
+#
+# The trailing * is load-bearing: a bare `.env.secrets` is an exact-name match and
+# does NOT cover `.env.secrets.production`. That gap existed until 2026-09-03.
 secrets.env
-.env.secrets
+.env.secrets*
 .wrangler-bootstrap-secrets.json

@@ -4,7 +4,7 @@
  * Mirrors the @baseout/server processRunStart pattern (see
  * apps/server/src/lib/runs/start.ts): all side-effects (DB queries, engine
  * call) injected as deps so validation paths are unit-testable without
- * touching Postgres or the BACKUP_ENGINE binding. The route wires real
+ * touching Postgres or the SERVER binding. The route wires real
  * Drizzle queries + a real BackupEngineClient and calls startBackupRun().
  *
  * Flow:

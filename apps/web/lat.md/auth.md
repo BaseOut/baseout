@@ -2,7 +2,7 @@
 
 Customer auth is **passwordless** — magic link via [better-auth](https://www.better-auth.com). No password inputs, no hashing flows, no "forgot password" flows in V1.
 
-`apps/web` is the only place in the monorepo that runs better-auth. `apps/server` and the other backend apps have no customer auth — they take `INTERNAL_TOKEN`-bearing service calls only.
+`apps/web` is the only place in the monorepo that runs better-auth. `apps/server` and the other backend apps have no customer auth — they take `SERVER_INTERNAL_TOKEN`-bearing service calls only.
 
 ## Magic Link Flow
 

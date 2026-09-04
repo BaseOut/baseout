@@ -15,7 +15,7 @@ const HANDLED_NOISE = /Stream was cancelled/;
 // would shadow wrangler.test.jsonc `vars` with the developer's real local
 // secrets. PR2 (real Postgres) will swap DATABASE_URL for a Docker test DB.
 const TEST_BINDINGS = {
-  INTERNAL_TOKEN: "test-only-internal-token-min-32-chars-aaaa",
+  SERVER_INTERNAL_TOKEN: "test-only-internal-token-min-32-chars-aaaa",
   DATABASE_URL:
     process.env.DATABASE_URL ??
     "postgres://postgres:postgres@127.0.0.1:5432/baseout_test_unused",

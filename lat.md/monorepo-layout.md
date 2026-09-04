@@ -1,6 +1,6 @@
 # Monorepo Layout
 
-`pnpm@9.12.0` workspaces. Two conceptual halves over one shared Postgres: **frontend** (`apps/web`) and **backend / backup engine** (`apps/server`). Other apps are smaller surfaces around the same data plane. Long form lives in [CLAUDE.md](../CLAUDE.md) §2.
+`pnpm@11.1.1` workspaces. Two conceptual halves over one shared Postgres: **frontend** (`apps/web`) and **backend / backup engine** (`apps/server`). Other apps are smaller surfaces around the same data plane. Long form lives in [CLAUDE.md](../CLAUDE.md) §2.
 
 ## Workspaces
 
@@ -44,7 +44,7 @@ Per [CLAUDE.md](../CLAUDE.md) §2, Baseout is conceptually two Workers + one sha
 - **Frontend (`apps/web`)** owns: customer auth (better-auth, magic-link), OAuth Connect, settings, `/ops` console, **master-DB schema** ownership.
 - **Backend (`apps/server`)** owns: backup/restore execution, Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), Trigger.dev tasks, R2/BYOS streaming.
 
-The backend has **no** UI, **no** `/login`, **no** `/api/auth/*`, **no** better-auth, **no** per-engine user identity. It sees only `INTERNAL_TOKEN` from the frontend.
+The backend has **no** UI, **no** `/login`, **no** `/api/auth/*`, **no** better-auth, **no** per-engine user identity. It sees only `SERVER_INTERNAL_TOKEN` from the frontend.
 
 Mirrored DB tables in `apps/server` carry header comments naming the canonical migration source in the frontend. Anchor: [apps/server lat graph](../apps/server/lat.md/) `db-mirror.md`.
 
@@ -57,7 +57,7 @@ Pinned versions and their rationale. Newer is fine for non-Workers tooling (e.g.
 | Tool | Version |
 |---|---|
 | Node | ≥20 for Workers tooling; **≥22 for lat.md** |
-| pnpm | 9.12.0 (pinned in [package.json](../package.json)) |
+| pnpm | 11.1.1 (pinned in [package.json](../package.json) `packageManager`) — **11, not 9**: [pnpm-workspace.yaml](../pnpm-workspace.yaml) uses pnpm-11-only keys (`allowBuilds`, `minimumReleaseAgeExclude`) and reads `overrides` from there rather than `package.json`. Any CI image defaulting to pnpm 10 silently drops the CVE `overrides`. |
 | TypeScript | strict, ESNext, verbatimModuleSyntax |
 | Astro | SSR adapter for Cloudflare |
 | Wrangler | per-app `wrangler.jsonc` |

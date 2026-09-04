@@ -19,7 +19,7 @@ The minimum set of secrets the system depends on:
 | Database connection strings | Cloudflare Secrets | Per-environment |
 | Trigger.dev API key | Cloudflare Secrets | |
 | better-auth secret | Cloudflare Secrets | Session signing key |
-| `INTERNAL_TOKEN` | Cloudflare Secrets | Service-to-service gate for `apps/server` |
+| `SERVER_INTERNAL_TOKEN` | Cloudflare Secrets | Service-to-service gate for `apps/server` |
 
 The `${FONTAWESOME_TOKEN}` env-var form is mandatory in `.npmrc` — never commit a literal token.
 
@@ -54,7 +54,7 @@ CSRF is enforced via better-auth helpers on mutating forms; raw POST handlers wi
 
 Service-to-service auth between apps:
 
-- `apps/server`'s `/api/internal/*` routes are gated by the `x-internal-token` header (`INTERNAL_TOKEN` secret). Public surface is `/api/health` only.
+- `apps/server`'s `/api/internal/*` routes are gated by the `x-internal-token` header (`SERVER_INTERNAL_TOKEN` secret). Public surface is `/api/health` only.
 - Cross-app HTTP calls are authenticated with HMAC tokens minted from `@baseout/shared` — see [[cross-app-comm]].
 
 Principle of least privilege applies to OAuth scopes, DB roles, and API tokens — narrowest viable set.

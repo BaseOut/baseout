@@ -1,0 +1,33 @@
+{
+  "name": "@baseout/arch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive architecture diagram (ReactFlow) for architecture/systems-overview.md. Static-assets Worker, arch.baseout.dev.",
+  "scripts": {
+    "dev": "vite --port 4344",
+    "build": "vite build",
+    "build:deps": "pwd && echo \"no workspace deps — the diagram is self-contained by design\"",
+    "build:dev": "pnpm run build",
+    "build:staging": "pnpm run build",
+    "build:production": "pnpm run build",
+    "deploy:dev": "wrangler deploy --env dev",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "preview": "vite preview --port 4344",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.3.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6",
+    "wrangler": "^4.124.0"
+  }
+}

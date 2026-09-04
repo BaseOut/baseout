@@ -32,14 +32,14 @@ declare module 'cloudflare:workers' {
   interface ProvidedEnv extends Env {
     /**
      * Service binding to @baseout/server (the backup engine). Declared in
-     * wrangler.jsonc.example as `services: [{ binding: "BACKUP_ENGINE",
+     * wrangler.jsonc.example as `services: [{ binding: "SERVER",
      * service: "baseout-server-<env>" }]`. The generated Env from
      * `npm run cf-typegen` carries the Fetcher type; this declaration is
      * a fallback for when types haven't been regenerated yet.
      */
-    BACKUP_ENGINE: Fetcher;
-    /** Shared secret with @baseout/server's INTERNAL_TOKEN. Sent as x-internal-token header on every binding call to the engine. */
-    BACKUP_ENGINE_INTERNAL_TOKEN: string;
+    SERVER: Fetcher;
+    /** Shared secret with @baseout/server's SERVER_INTERNAL_TOKEN. Sent as x-internal-token header on every binding call to the engine. */
+    SERVER_INTERNAL_TOKEN: string;
   }
 }
 

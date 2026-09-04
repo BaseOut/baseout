@@ -1,0 +1,110 @@
+// architecture/diagram — interactive architecture diagram (ReactFlow).
+//
+//   Top level      = shared config only; always deploy with --env.
+//   env.dev        = baseout-diagram-dev  (staging account)
+//   env.staging    = baseout-diagram      (staging account, `staging` branch)
+//   env.production = baseout-diagram      (SEPARATE production account)
+//
+// Static-assets Worker: no `main`, no bindings, no secrets. The diagram is a
+// build-time artifact — every fact in it is committed source, so there is
+// nothing to read at runtime and no `secrets` block to validate. Same shape as
+// apps/support.
+//
+// NOTE: this renders INTERNAL architecture (account IDs, tunnel hostnames,
+// resource IDs). It carries no credential, but it should not be world-readable
+// either — put Cloudflare Access in front of arch.baseout.dev. That is a
+// dashboard/Zero-Trust setting, not a wrangler one, so it cannot be pinned here.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-arch",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist"
+  },
+  "env": {
+    "dev": {
+      "account_id": "33857e356899b7369fb01c18ace8d780",
+      // Keep the workers.dev alias alive for quick sharing before DNS exists.
+      "workers_dev": true
+    },
+    "staging": {
+      // Workers Builds deploys onto the Worker the build is connected to and
+      // overrides any other name via WRANGLER_CI_OVERRIDE_NAME. The connected
+      // Workers are unsuffixed, so this env must produce the bare name or the
+      // deploy silently lands on a different Worker than the config describes.
+      // Production lives in its own account, so the two cannot collide.
+      "name": "baseout-arch",
+      // Full observability for staging: every request logged AND traced, nothing
+      // sampled away. `observability` is INHERITABLE, so this env block overrides
+      // the top-level default and leaves dev/production on their own settings.
+      // Fields verified against wrangler 4.124's config-schema.json, which sets
+      // additionalProperties:false — `redact_query_string` is NOT valid and is
+      // silently dropped with a warning. `destinations` is omitted: no Logpush
+      // destination exists yet (systems-overview §13).
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        }
+      },
+      // account_id intentionally omitted — Workers Builds runs inside the
+      // owning account and supplies it. Pinning it here can only create a
+      // mismatch, since production builds read this same file in a different
+      // account. env.dev keeps its pin for local wrangler use.
+      "workers_dev": true,
+      "routes": [
+        {
+          "pattern": "arch.baseout.dev",
+          "custom_domain": true
+        }
+      ]
+    },
+    "production": {
+      "name": "baseout-arch",
+      // Full observability for production: every request logged AND traced.
+      // `observability` is INHERITABLE, so this block overrides the top level —
+      // which matters for web/admin, whose top-level `enabled: false` would
+      // otherwise leave production logging NOTHING.
+      //
+      // head_sampling_rate is the cost/volume lever. 1 = keep everything, which is
+      // the right posture at launch (low traffic, maximum diagnosability) and the
+      // first thing to dial back if ingest volume becomes a bill. Lower it here
+      // only — staging should stay at 1.
+      //
+      // Fields validated against wrangler 4.124's config-schema.json
+      // (additionalProperties:false). `destinations` omitted: no Logpush
+      // destination exists yet (systems-overview §13).
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        }
+      },
+      // account_id intentionally omitted — supplied by Workers Builds in the
+      // production account.
+      "workers_dev": true,
+      // No production route on purpose: this is an internal engineering view and
+      // has no place on the customer apex. If production ever needs its own
+      // copy, arch.baseout.com goes here — behind Access, same as staging.
+      "routes": []
+    }
+  }
+}

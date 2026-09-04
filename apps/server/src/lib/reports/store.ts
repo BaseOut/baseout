@@ -3,7 +3,7 @@
 // Thin, typed Drizzle wrappers over the three mirror tables plus pure input
 // validation. The engine is the run/delivery writer; definitions are canonically
 // written by apps/web but the engine also creates/updates them on behalf of the
-// web proxy (which forwards user actions through the INTERNAL_TOKEN gate).
+// web proxy (which forwards user actions through the SERVER_INTERNAL_TOKEN gate).
 
 import { and, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import type { AppDb } from "../../db/worker";

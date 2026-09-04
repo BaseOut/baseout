@@ -1,10 +1,10 @@
 // @lat: [[architecture#Architecture#Middleware]]
 // @lat: [[surface-contract#Surface Contract#Internal Auth]]
-// Per-request middleware: INTERNAL_TOKEN gate for /api/internal/* + masterDb attachment.
+// Per-request middleware: SERVER_INTERNAL_TOKEN gate for /api/internal/* + masterDb attachment.
 //
 // Per CLAUDE.md §5.2:
 //   - /api/health is public (no token)
-//   - /api/internal/* requires `x-internal-token` header to equal env.INTERNAL_TOKEN
+//   - /api/internal/* requires `x-internal-token` header to equal env.SERVER_INTERNAL_TOKEN
 // Per CLAUDE.md §3.3:
 //   - constant-time comparison so a timing oracle can't reveal the token
 //
@@ -47,10 +47,10 @@ export function applyMiddleware(request: Request, env: Env): MiddlewareResult {
   const url = new URL(request.url);
   if (url.pathname.startsWith("/api/internal/")) {
     const presented = request.headers.get("x-internal-token");
-    if (!presented || !env.INTERNAL_TOKEN) {
+    if (!presented || !env.SERVER_INTERNAL_TOKEN) {
       return { res: unauthorized() };
     }
-    if (!constantTimeEqual(presented, env.INTERNAL_TOKEN)) {
+    if (!constantTimeEqual(presented, env.SERVER_INTERNAL_TOKEN)) {
       return { res: unauthorized() };
     }
   }

@@ -57,10 +57,10 @@ export async function handleArtifact(input: ArtifactRouteInput): Promise<Respons
 }
 
 function buildEngine() {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const e = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return {
     getReportArtifact: (spaceId: string, runId: string, format: 'pdf' | 'html') =>

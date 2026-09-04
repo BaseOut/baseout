@@ -103,9 +103,9 @@ GA docs quoted later in this file for anything previews-related:
 - **Solutions explored for the regroup (2026-08-25 evening — details in
   `openspec/changes/shared-worker-previews/design.md` D5–D7):**
   - *Service-binding→prod gap (D5):* recommend **token partition** now (preview
-    `BACKUP_ENGINE_INTERNAL_TOKEN` ≠ prod `INTERNAL_TOKEN` → engine calls from previews fail
+    `SERVER_INTERNAL_TOKEN` ≠ prod `SERVER_INTERNAL_TOKEN` → engine calls from previews fail
     cleanly instead of cross-writing DBs; zero code). Full engine-in-previews is a small,
-    scoped refactor (one `getEngineBinding(env)` helper + `BACKUP_ENGINE_URL` shim pointing at
+    scoped refactor (one `getEngineBinding(env)` helper + `SERVER_URL` shim pointing at
     the server's stable staging preview URL). Preview-to-preview bindings are not in the API
     today (probed; it stores but ignores extra fields) — roadmap question for the beta channel.
   - *Public previews (D6):* account has ZERO Access apps today (verified). Ready plan: Zero
@@ -236,10 +236,10 @@ Per-environment overrides go under `env.<name>`. Anything not overridden inherit
 ```jsonc
 {
   "name": "baseout-web",
-  "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server" }],
+  "services": [{ "binding": "SERVER", "service": "baseout-server" }],
   "env": {
     "staging": {
-      "services": [{ "binding": "BACKUP_ENGINE", "service": "baseout-server-staging" }]
+      "services": [{ "binding": "SERVER", "service": "baseout-server-staging" }]
     }
   }
 }
@@ -254,7 +254,7 @@ npx wrangler deploy --env production
 
 ### This also fixes our currently-broken build
 
-`apps/web/wrangler.jsonc` still binds `BACKUP_ENGINE` → `baseout-server-dev`, a Worker that was
+`apps/web/wrangler.jsonc` still binds `SERVER` → `baseout-server-dev`, a Worker that was
 deleted. That is why `pnpm --filter @baseout/web typecheck` / `build` die during remote-proxy setup
 before typechecking anything. The fix is the pattern above, pointed at whatever the new Worker names
 end up being — **the names are Dan's call**, so confirm them before editing.
@@ -333,10 +333,80 @@ there a beta guide, a Cloudflare contact, or a support channel that came with th
 feature had just come back from being broken?
 
 1. **Worker names.** Is it `baseout-web` + `env.staging`, or separate `baseout-web-staging` Workers?
-   Every binding in every app depends on this answer, and it's the thing blocking the `BACKUP_ENGINE`
+   Every binding in every app depends on this answer, and it's the thing blocking the `SERVER`
    fix.
 2. **Is `staging` the branch?** It doesn't exist yet. Today's work happens on `web-ui-sync-promotion`.
 3. **Does staging get its own database**, or point at the existing dev DB? Note the dev Postgres
    cluster is already near its connection ceiling (~19) and Hyperdrive pools 15 — a second pool against
    the same cluster will saturate it (`reference_dev_pg_hyperdrive_conn_limits`).
 4. Confirm the `.dev.vars` sync rule (§4) still holds for the new environments, or what replaces it.
+
+## 8. `apps/workflows` — Workers Builds deploying to Trigger.dev (2026-09-03)
+
+`apps/workflows` is the one app whose Workers Build **does not deploy a Worker**. It is a Trigger.dev
+task project (root `CLAUDE.md` §6): the tasks run on Trigger.dev's Node runner, and the deploy command
+is `trigger.dev deploy`, not `wrangler deploy`. Before this, the app had no CI/CD at all — it was
+deployed by hand. There was never a GitHub Actions deploy for it to migrate away from (root
+`ci.yml` only tests; the `apps/web/.github/workflows/*` files are vestigial — GitHub reads only the
+repo-root `.github/`).
+
+### The anchor Worker
+
+Workers Builds is configured **per Cloudflare Worker**, so a Worker record must exist for the build
+trigger to attach to. `apps/workflows/wrangler.jsonc` + `apps/workflows/ci/worker-stub.ts` create one —
+a 404 handler, no bindings, no vars, no `env` blocks. Bootstrap once per account:
+
+```bash
+pnpm --filter @baseout/workflows exec wrangler deploy
+```
+
+CI never runs wrangler for this app, so `baseout-workflows` stays pinned at that stub version forever
+and shows as never-redeployed in the dashboard. That is expected, not a broken build. The
+staging/production split lives entirely in the **deploy command** (`--env staging` vs `--env prod` on
+the Trigger.dev side), which is why the config has no `env` blocks to drift.
+
+### Build-trigger settings
+
+| Setting | staging account (`staging` branch) | production account (`main`) |
+| --- | --- | --- |
+| Root directory | `apps/workflows` | `apps/workflows` |
+| Build command | `pnpm run build` | `pnpm run build` |
+| Deploy command | `pnpm run deploy:staging` | `pnpm run deploy:production` |
+| Watch paths | `apps/workflows/**`, `packages/shared/**`, `packages/db-schema/**`, `pnpm-lock.yaml` | same |
+| `branch_includes` | `["staging"]` | `["main"]` |
+
+`pnpm run build` = `build:deps` (`pnpm --filter "@baseout/workflows^..." run build`) then `tsc --noEmit`.
+The deps build is **not optional**: `@baseout/shared` resolves through `./dist/*`, so skipping it means
+`trigger.dev deploy` bundles against files that do not exist.
+
+### Build variables — three, and two of them are version pins
+
+| Variable | Value | Kind |
+| --- | --- | --- |
+| `TRIGGER_ACCESS_TOKEN` | `tr_pat_…` (Trigger.dev → profile → Personal Access Tokens) | **secret** |
+| `PNPM_VERSION` | `11.1.1` | var |
+| `NODE_VERSION` | `22.23.2` | var |
+
+⚠️ **`PNPM_VERSION` is load-bearing, and this trap applies to every app's build trigger, not just
+workflows.** The Workers Builds image ships **pnpm 10.11.1** and does **not** read `packageManager`
+from `package.json`. This repo is pinned to `pnpm@11.1.1` and `pnpm-workspace.yaml` uses pnpm-11-only
+keys: `allowBuilds` (pnpm 10 spells it `onlyBuiltDependencies`) and `minimumReleaseAgeExclude`. On
+pnpm 10 the install fails with `ERR_PNPM_IGNORED_BUILDS`, and the `overrides` block that carries the
+`system-dep-remediation` CVE pins is silently ignored — a green build that quietly reintroduces known
+highs. Audit the existing web/server/admin build triggers for this pin.
+
+`TRIGGER_ACCESS_TOKEN` is the **personal access token**, not `TRIGGER_SECRET_KEY` (that one is a
+*runtime* secret on `apps/server`, used to enqueue). It is build-time only — the anchor Worker never
+serves traffic, so it holds no secrets at all, and §4's two-kinds-of-secrets distinction collapses to
+one kind here.
+
+Not needed: `TRIGGER_PROJECT_REF` (in `trigger.config.ts`), `TRIGGER_API_URL` (self-hosted only),
+`NPM_TOKEN` / `FONTAWESOME_TOKEN` (root `.npmrc` redirects are commented out; `@opensided` is vendored
+via `file:`), any `CLOUDFLARE_API_TOKEN`.
+
+Task **runtime** config (`SERVER_URL`, `SERVER_INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS keys) is not a
+Cloudflare concern in either direction — it lives in Trigger.dev's own environment-variables UI, per
+Trigger.dev environment.
+
+Full per-app detail: [`apps/workflows/README.md`](../../apps/workflows/README.md) "Deploy".
+Change record: `openspec/changes/system-workflows-cf-builds/`.

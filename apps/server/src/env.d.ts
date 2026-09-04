@@ -4,8 +4,8 @@
 import type { createMasterDb } from "./db/worker";
 
 export interface Env {
-  /** Shared secret with apps/web (BACKUP_ENGINE_INTERNAL_TOKEN). Gates /api/internal/*. */
-  INTERNAL_TOKEN: string;
+  /** Shared secret with apps/web (SERVER_INTERNAL_TOKEN). Gates /api/internal/*. */
+  SERVER_INTERNAL_TOKEN: string;
   /** Master Postgres URL — used in local wrangler dev only; deployed envs use HYPERDRIVE binding. */
   DATABASE_URL: string;
   /** Hyperdrive binding — used in deployed envs (production / staging). Optional locally. */

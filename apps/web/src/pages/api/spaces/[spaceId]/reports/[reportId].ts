@@ -76,10 +76,10 @@ export async function handleReport(input: ReportRouteInput): Promise<Response> {
 }
 
 function buildEngine() {
-  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  if (!env.SERVER || !env.SERVER_INTERNAL_TOKEN) return null
   const e = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.SERVER,
+    internalToken: env.SERVER_INTERNAL_TOKEN,
   })
   return {
     getReportDefinition: (spaceId: string, defId: string) => e.getReportDefinition(spaceId, defId),

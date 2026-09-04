@@ -7,7 +7,7 @@
  * intent/result rows are the accountability mechanism.
  *
  * Auth: role='super' middleware gate. CSRF: same-origin + SameSite=Lax.
- * 503 server_misconfigured when the BACKUP_ENGINE binding/token is absent.
+ * 503 server_misconfigured when the SERVER binding/token is absent.
  */
 
 import type { APIRoute } from 'astro'
@@ -44,7 +44,7 @@ export interface HandleForceBackupInput {
 export interface HandleForceBackupDeps {
   fetchSpaceById: (spaceId: string) => Promise<{ id: string; organizationId: string } | null>
   backup: ForceBackupDeps
-  /** False when the BACKUP_ENGINE binding or internal token is missing. */
+  /** False when the SERVER binding or internal token is missing. */
   engineConfigured: boolean
   audit: AuditDeps
 }
@@ -93,12 +93,12 @@ export async function handlePost(
 function buildDeps(locals: App.Locals): HandleForceBackupDeps {
   const db = locals.db
   const workerEnv = env as unknown as {
-    BACKUP_ENGINE?: { fetch: (input: string, init?: RequestInit) => Promise<Response> }
-    BACKUP_ENGINE_INTERNAL_TOKEN?: string
+    SERVER?: { fetch: (input: string, init?: RequestInit) => Promise<Response> }
+    SERVER_INTERNAL_TOKEN?: string
   }
   const engine = createAdminEngine({
-    binding: workerEnv.BACKUP_ENGINE,
-    internalToken: workerEnv.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: workerEnv.SERVER,
+    internalToken: workerEnv.SERVER_INTERNAL_TOKEN,
   })
   return {
     fetchSpaceById: async (spaceId) => {

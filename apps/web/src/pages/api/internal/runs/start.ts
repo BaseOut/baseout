@@ -40,8 +40,8 @@ function errorResponse(
 
 export const POST: APIRoute = async ({ request }) => {
   const presented = request.headers.get('x-internal-token')
-  const expected = (env as unknown as { BACKUP_ENGINE_INTERNAL_TOKEN?: string })
-    .BACKUP_ENGINE_INTERNAL_TOKEN
+  const expected = (env as unknown as { SERVER_INTERNAL_TOKEN?: string })
+    .SERVER_INTERNAL_TOKEN
   if (!presented || !expected) {
     return errorResponse('not_authenticated', 'Missing internal token', 401)
   }

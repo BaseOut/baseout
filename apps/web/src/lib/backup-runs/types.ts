@@ -2,7 +2,7 @@
  * Wire-shape types for the apps/web side of the backup-run lifecycle.
  *
  * apps/web INSERTs `backup_runs` rows in 'queued' state, then calls the
- * @baseout/server engine via the BACKUP_ENGINE service binding to fan out
+ * @baseout/server engine via the SERVER service binding to fan out
  * one Trigger.dev task per included base. The engine flips status to
  * 'running'; per-base tasks call back to /api/internal/runs/:runId/complete
  * (Phase 8b) which rolls up to 'succeeded' / 'failed' / 'trial_*'.

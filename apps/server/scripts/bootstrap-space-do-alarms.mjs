@@ -17,11 +17,11 @@
 //
 // Required env:
 //   DATABASE_URL                  — master DB connection string
-//   BACKUP_ENGINE_URL             — base URL of the engine Worker
+//   SERVER_URL             — base URL of the engine Worker
 //                                   (e.g. http://localhost:8787 in dev,
 //                                    or the deployed Worker URL in
 //                                    staging/production)
-//   INTERNAL_TOKEN                — shared secret matching env.INTERNAL_TOKEN
+//   SERVER_INTERNAL_TOKEN                — shared secret matching env.SERVER_INTERNAL_TOKEN
 //                                   on the engine
 //
 // Reads DATABASE_URL via the same `postgres` driver apps/server uses for
@@ -37,18 +37,18 @@ function trimSlash(s) {
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
-  const engineUrl = process.env.BACKUP_ENGINE_URL;
-  const internalToken = process.env.INTERNAL_TOKEN;
+  const engineUrl = process.env.SERVER_URL;
+  const internalToken = process.env.SERVER_INTERNAL_TOKEN;
   if (!databaseUrl) {
     console.error("bootstrap-space-do-alarms: DATABASE_URL is required");
     process.exit(1);
   }
   if (!engineUrl) {
-    console.error("bootstrap-space-do-alarms: BACKUP_ENGINE_URL is required");
+    console.error("bootstrap-space-do-alarms: SERVER_URL is required");
     process.exit(1);
   }
   if (!internalToken) {
-    console.error("bootstrap-space-do-alarms: INTERNAL_TOKEN is required");
+    console.error("bootstrap-space-do-alarms: SERVER_INTERNAL_TOKEN is required");
     process.exit(1);
   }
 

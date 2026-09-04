@@ -50,7 +50,7 @@ credentials. All three env blocks now carry the binding (2026-08-27 env model).
 
 ## 1. Environments
 
-| Env     | R2 bucket name    | Cloudflare account                          | Trigger.dev env | Engine Worker (writes via `INTERNAL_TOKEN`) |
+| Env     | R2 bucket name    | Cloudflare account                          | Trigger.dev env | Engine Worker (writes via `SERVER_INTERNAL_TOKEN`) |
 |---------|-------------------|---------------------------------------------|-----------------|---------------------------------------------|
 | dev     | `baseout-dev`     | staging acct `33857e356899b7369fb01c18ace8d780` | Development     | `baseout-server-dev` (`--env dev`)          |
 | staging | `baseout-staging` | staging acct `33857e356899b7369fb01c18ace8d780` | Staging         | `baseout-server-staging` (`--env staging`; deploys via Workers Builds from the `staging` branch) |
@@ -67,7 +67,7 @@ All three Workers deploy from the single committed `apps/server/wrangler.jsonc`
 - **Region**: `auto` (R2 convention; `aws4fetch` passes this verbatim).
 
 **Local dev mirrors the dev env** — `npx trigger.dev dev` reads
-`apps/workflows/.env`, which holds the same four `R2_*` values as the
+`apps/workflows/.dev.vars`, which holds the same four `R2_*` values as the
 Trigger.dev Development environment. There is no separate "localhost"
 bucket; local backup smoke runs write into `baseout-dev`.
 
@@ -101,7 +101,7 @@ it immediately. If lost, the token must be regenerated.
 | Consumer                                            | Where the secret lives                     |
 |-----------------------------------------------------|--------------------------------------------|
 | **Trigger.dev runner** (dev / staging / prod tasks) | Trigger.dev project → Environments → Environment Variables — per env |
-| **Local `npx trigger.dev dev`**                     | `apps/workflows/.env` (gitignored)         |
+| **Local `npx trigger.dev dev`**                     | `apps/workflows/.dev.vars` (gitignored)         |
 | **Cloudflare Workers** (`apps/server`, `apps/web`)  | NEVER. The Workers never reach R2.         |
 
 Trigger.dev encrypts env vars at rest. They're injected into the task's
@@ -125,7 +125,7 @@ bucket-scoped surface like this.
 1. Cloudflare dashboard → R2 → Manage R2 API Tokens → **revoke** the old token.
 2. Generate a replacement with the same scope ([§2.1](#21-token-generation-one-time-per-env)).
 3. Update the four `R2_*` values in the affected Trigger.dev environment.
-4. If the env was dev, update `apps/workflows/.env` too.
+4. If the env was dev, update `apps/workflows/.dev.vars` too.
 5. Smoke-test one backup against that env (Steps 2–3 of [§5](#5-verification-protocol)).
    No engine / Worker restart is required — Trigger.dev re-reads env vars at
    the start of every task.
@@ -167,7 +167,7 @@ that env's token) — never on inference.
 | Trigger.dev **Development** env: `R2_ACCESS_KEY_ID` set                                | ❌ MISSING | —              |
 | Trigger.dev **Development** env: `R2_SECRET_ACCESS_KEY` set                            | ❌ MISSING | —              |
 | Trigger.dev **Development** env: `R2_BUCKET=baseout-dev`                               | ❌ MISSING | —              |
-| `apps/workflows/.env` (local) mirrors the four values above                            | ❌ MISSING | —              |
+| `apps/workflows/.dev.vars` (local) mirrors the four values above                            | ❌ MISSING | —              |
 
 ### 3.2 staging
 
@@ -210,7 +210,7 @@ Each item below is a single dashboard action. Tick the box and update [§3](#3-p
 
 ### 4.3 Local dev (engineer's machine)
 
-- [ ] Edit `apps/workflows/.env` — set the four `R2_*` values to the dev-env token (`R2_BUCKET=baseout-dev`). Restart `npx trigger.dev dev` so the runner picks them up.
+- [ ] Edit `apps/workflows/.dev.vars` — set the four `R2_*` values to the dev-env token (`R2_BUCKET=baseout-dev`). Restart `npx trigger.dev dev` so the runner picks them up.
 
 ### 4.4 Engine redeploy (per environment, after the corresponding env's §4.1 + §4.2 are done)
 
@@ -350,7 +350,7 @@ thresholds):
 
 Updates required:
 
-1. `R2_ACCOUNT_ID` in every Trigger.dev environment + `apps/workflows/.env`.
+1. `R2_ACCOUNT_ID` in every Trigger.dev environment + `apps/workflows/.dev.vars`.
 2. Endpoint URL references in this doc (§1 and §5.1).
 3. Cross-reference in [`system-r2-revive`](../../openspec/changes/system-r2-revive/proposal.md)
    if it cites the old account ID.

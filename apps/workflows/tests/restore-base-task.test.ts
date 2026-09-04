@@ -7,7 +7,7 @@
 // error fallback.
 //
 // Three test groups:
-//   A. Env-var validation: missing BACKUP_ENGINE_URL / INTERNAL_TOKEN throws.
+//   A. Env-var validation: missing SERVER_URL / SERVER_INTERNAL_TOKEN throws.
 //   B. Happy path: runRestoreBase succeeds → POST /complete with status='succeeded'.
 //   C. Thrown-error: runRestoreBase throws → POST /complete with status='failed'.
 
@@ -21,7 +21,7 @@ import {
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
 const ENGINE_URL = "https://engine.example.com";
-const INTERNAL_TOKEN = "tok-internal";
+const SERVER_INTERNAL_TOKEN = "tok-internal";
 
 const BASE_INPUT: RestoreBaseInput = {
   restoreId: "restore-1",
@@ -78,7 +78,7 @@ function makePassingDeps(overrides: Partial<RestoreBaseDeps> = {}): RestoreBaseD
 
   return {
     engineUrl: ENGINE_URL,
-    internalToken: INTERNAL_TOKEN,
+    internalToken: SERVER_INTERNAL_TOKEN,
     fetchImpl: fetchMock,
     reader,
     ensureRestoreTarget: vi.fn(async () => ({
@@ -105,7 +105,7 @@ function makePassingDeps(overrides: Partial<RestoreBaseDeps> = {}): RestoreBaseD
 // documenting that:
 //   - runRestoreBase itself works when valid engineUrl + internalToken are provided.
 //   - The Trigger.dev task wrapper throws before calling runRestoreBase when
-//     BACKUP_ENGINE_URL or INTERNAL_TOKEN env vars are absent.
+//     SERVER_URL or SERVER_INTERNAL_TOKEN env vars are absent.
 //
 // We test the pure-function surface here; the env-var guard in the wrapper
 // is covered by the happy-path test (which passes a real engineUrl).
@@ -143,7 +143,7 @@ describe("restore-base env-var contract", () => {
     };
     const result = await runRestoreBase(BASE_INPUT, {
       engineUrl: ENGINE_URL,
-      internalToken: INTERNAL_TOKEN,
+      internalToken: SERVER_INTERNAL_TOKEN,
       fetchImpl: fetchMock,
       reader,
       ensureRestoreTarget: vi.fn(),
@@ -244,7 +244,7 @@ describe("runRestoreBase — thrown-error branch", () => {
     try {
       await runRestoreBase(BASE_INPUT, {
         engineUrl: ENGINE_URL,
-        internalToken: INTERNAL_TOKEN,
+        internalToken: SERVER_INTERNAL_TOKEN,
         fetchImpl: fetchMock,
         reader,
         ensureRestoreTarget,
@@ -305,7 +305,7 @@ describe("runRestoreBase — thrown-error branch", () => {
     try {
       await runRestoreBase(BASE_INPUT, {
         engineUrl: ENGINE_URL,
-        internalToken: INTERNAL_TOKEN,
+        internalToken: SERVER_INTERNAL_TOKEN,
         fetchImpl: fetchMock,
         reader,
         ensureRestoreTarget,
