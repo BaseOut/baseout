@@ -234,7 +234,7 @@ async function main() {
     console.log('    For login email, use: pnpm --filter @baseout/web run dev:remote');
     console.log('    `pnpm dev` (repo root) also starts the engine + trigger.dev runner.');
     console.log('    Runner env must point SERVER_URL at http://localhost:8787 with a');
-    console.log('    matching SERVER_INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md §7.4.');
+    console.log('    matching SERVER_INTERNAL_TOKEN (apps/workflows/.dev.vars). See ops-setup.md §7.4.');
   }
 
   const hasTrustedCert = existsSync(CERT) && existsSync(KEY);

@@ -597,7 +597,7 @@ Postgres, so `schema-sync`/`records-sync` resolve exactly as they do in prod.
 **One-time local setup:**
 
 ```sh
-# apps/workflows/.env  — point the Node runner at the LOCAL engine (loopback):
+# apps/workflows/.dev.vars  — point the Node runner at the LOCAL engine (loopback):
 #   SERVER_URL=http://localhost:8787
 #   SERVER_INTERNAL_TOKEN=<same value as apps/server/.dev.vars SERVER_INTERNAL_TOKEN>
 #   R2_* left blank → backups write to apps/workflows/.backups/ via LocalFsWriter

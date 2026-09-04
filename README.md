@@ -127,7 +127,7 @@ for app in web server admin api sql hooks; do
   # edit apps/$app/.dev.vars with your DB string, API keys, etc.
 done
 # workflows uses .env (Trigger.dev runner is Node, not workerd):
-cp apps/workflows/.env.example apps/workflows/.env 2>/dev/null || true
+cp apps/workflows/.dev.vars.example apps/workflows/.dev.vars 2>/dev/null || true
 
 # 7. apps/web only — one-time local setup (canonical dev URL is
 #    https://baseout.local:4331, NOT localhost — see note below)

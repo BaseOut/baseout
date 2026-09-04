@@ -11,7 +11,7 @@
     "./tasks/backup-base.task": "./trigger/tasks/backup-base.task.ts"
   },
   "scripts": {
-    "dev": "npx trigger.dev@4.5.7 dev",
+    "dev": "npx trigger.dev@4.5.7 dev start --env-file .dev.vars",
     "build:deps": "pnpm --filter \"@baseout/workflows^...\" run build",
     "build": "pnpm run build:deps && pnpm run typecheck",
     "deploy": "npx trigger.dev@4.5.7 deploy",

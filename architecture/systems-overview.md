@@ -282,7 +282,13 @@ location + rotation: [shared/internal/r2-setup.md](../shared/internal/r2-setup.m
 ## 7. Background processing — Trigger.dev
 
 Long-running work cannot fit in a Worker's wall-clock budget, so it runs on
-Trigger.dev's **Node** runner (v4 SDK, project `proj_lklmptmrmrkeaszrmhcs`).
+Trigger.dev's **Node** runner (v4 SDK). The project ref is **not hardcoded** —
+`trigger.config.ts` reads `TRIGGER_PROJECT_REF` and throws without it, because
+staging and production are separate accounts with different refs (§2). Staging's
+is `proj_lklmptmrmrkeaszrmhcs`. Locally it comes from `apps/workflows/.dev.vars`
+(the `dev` script passes `--env-file`); in CI it is a Workers Builds build
+variable, and the deploy scripts pass no `--env-file` because the CLI hard-fails
+on a missing path.
 
 **Flow:** `server` enqueues via `@trigger.dev/sdk` → Trigger.dev runs the task on
 Node → the task POSTs progress and completion back to
